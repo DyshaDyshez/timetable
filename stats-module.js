@@ -611,3 +611,21 @@ window.showWeekDetails = function(weekId) {
         window.showNotification || console.log
     );
 };
+
+// ===== ФУНКЦИЯ ДЛЯ ОБНОВЛЕНИЯ СТАТИСТИКИ ПОСЛЕ ОЧИСТКИ =====
+window.updateStatsAfterClear = async function(employeeId) {
+    // Если статистика открыта, перезагружаем её
+    const modal = document.getElementById('statsModal');
+    if (modal && modal.classList.contains('active')) {
+        const data = window._statsData;
+        if (data && data.employeeId === employeeId) {
+            // Перезагружаем статистику
+            await renderStats(
+                data.employeeId,
+                data.employeeName,
+                db, collection, doc, query, where, getDocs, getDoc,
+                window.showNotification || console.log
+            );
+        }
+    }
+};

@@ -1,7 +1,7 @@
 // employee.js
 // Скрипт страницы сотрудника
 
-const { db, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } = window;
+const { db, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs } = window;
 
 // Получаем ID сотрудника из URL
 const urlParams = new URLSearchParams(window.location.search);
@@ -25,6 +25,7 @@ let currentWeekOffset = 0;
 let currentData = null;
 let isSaving = false;
 let employeeName = 'Сотрудник';
+let employeeRoomId = null;
 let settings = {
     rDay: 3000,
     rExtra: 3500,
@@ -36,6 +37,49 @@ let settings = {
 
 // Константы
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+// ============================================
+// ЗАГРУЗКА ИНФОРМАЦИИ О СОТРУДНИКЕ
+// ============================================
+
+async function loadEmployeeInfo() {
+    try {
+        const docRef = doc(db, 'salaryEmployees', EMPLOYEE_ID);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            employeeName = data.name || 'Сотрудник';
+            employeeRoomId = data.roomId || null;
+            console.log('👤 Имя сотрудника:', employeeName);
+            console.log('🏠 Комната:', employeeRoomId);
+            
+            const badge = document.getElementById('userBadge');
+            const nameEl = document.getElementById('userName');
+            const avatarEl = document.getElementById('userAvatar');
+            const idLabelEl = document.getElementById('userIdLabel');
+            
+            if (badge) {
+                badge.style.display = 'flex';
+                badge.title = `ID: ${EMPLOYEE_ID}`;
+            }
+            if (nameEl) nameEl.textContent = employeeName;
+            if (avatarEl) avatarEl.textContent = employeeName.charAt(0).toUpperCase();
+            if (idLabelEl) idLabelEl.textContent = `ID: ${EMPLOYEE_ID.substring(0, 8)}...`;
+            
+            return data;
+        }
+    } catch (error) {
+        console.warn('Не удалось загрузить информацию о сотруднике:', error);
+        const badge = document.getElementById('userBadge');
+        if (badge) {
+            badge.style.display = 'flex';
+            badge.title = `ID: ${EMPLOYEE_ID}`;
+        }
+        const idLabelEl = document.getElementById('userIdLabel');
+        if (idLabelEl) idLabelEl.textContent = `ID: ${EMPLOYEE_ID.substring(0, 8)}...`;
+    }
+    return null;
+}
 
 // ============================================
 // ЗАГРУЗКА НАСТРОЕК ИЗ БАЗЫ
@@ -57,7 +101,6 @@ async function loadSettings() {
             };
             console.log('⚙️ Настройки загружены:', settings);
             
-            // Обновляем поля ввода
             document.getElementById('rDay').value = settings.rDay;
             document.getElementById('rExtra').value = settings.rExtra;
             document.getElementById('rOt1').value = settings.rOt1;
@@ -66,7 +109,6 @@ async function loadSettings() {
             document.getElementById('otLimit').value = settings.otLimit;
         } else {
             console.log('⚙️ Настройки не найдены, используем дефолтные');
-            // Сохраняем дефолтные настройки в БД
             await saveSettings();
         }
     } catch (error) {
@@ -77,7 +119,7 @@ async function loadSettings() {
 async function saveSettings() {
     try {
         const docRef = doc(db, 'salarySettings', EMPLOYEE_ID);
-        await setDoc(docRef, {
+        const data = {
             employeeId: EMPLOYEE_ID,
             rDay: settings.rDay,
             rExtra: settings.rExtra,
@@ -86,48 +128,14 @@ async function saveSettings() {
             hpd: settings.hpd,
             otLimit: settings.otLimit,
             updatedAt: new Date().toISOString()
-        }, { merge: true });
+        };
+        if (employeeRoomId) {
+            data.roomId = employeeRoomId;
+        }
+        await setDoc(docRef, data, { merge: true });
         console.log('⚙️ Настройки сохранены');
     } catch (error) {
         console.warn('Не удалось сохранить настройки:', error);
-    }
-}
-
-// ============================================
-// ЗАГРУЗКА ИМЕНИ СОТРУДНИКА
-// ============================================
-
-async function loadEmployeeName() {
-    try {
-        const docRef = doc(db, 'salaryEmployees', EMPLOYEE_ID);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            employeeName = data.name || 'Сотрудник';
-            console.log('👤 Имя сотрудника:', employeeName);
-            
-            const badge = document.getElementById('userBadge');
-            const nameEl = document.getElementById('userName');
-            const avatarEl = document.getElementById('userAvatar');
-            const idLabelEl = document.getElementById('userIdLabel');
-            
-            if (badge) {
-                badge.style.display = 'flex';
-                badge.title = `ID: ${EMPLOYEE_ID}`;
-            }
-            if (nameEl) nameEl.textContent = employeeName;
-            if (avatarEl) avatarEl.textContent = employeeName.charAt(0).toUpperCase();
-            if (idLabelEl) idLabelEl.textContent = `ID: ${EMPLOYEE_ID.substring(0, 8)}...`;
-        }
-    } catch (error) {
-        console.warn('Не удалось загрузить имя сотрудника:', error);
-        const badge = document.getElementById('userBadge');
-        if (badge) {
-            badge.style.display = 'flex';
-            badge.title = `ID: ${EMPLOYEE_ID}`;
-        }
-        const idLabelEl = document.getElementById('userIdLabel');
-        if (idLabelEl) idLabelEl.textContent = `ID: ${EMPLOYEE_ID.substring(0, 8)}...`;
     }
 }
 
@@ -170,6 +178,26 @@ function formatDate(d) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }).replace('.', '');
 }
 
+// Проверяем, является ли неделя будущей (начинается после сегодня)
+function isFutureWeek(weekKey) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todayMonday = getMonday(today);
+    const weekDates = getWeekDates(0);
+    const currentWeekKey = getWeekKey(weekDates[0]);
+    
+    const currentNum = parseInt(currentWeekKey.match(/W(\d+)/)?.[1] || 0);
+    const currentYear = parseInt(currentWeekKey.match(/^(\d+)-/)?.[1] || 0);
+    const weekNum = parseInt(weekKey.match(/W(\d+)/)?.[1] || 0);
+    const weekYear = parseInt(weekKey.match(/^(\d+)-/)?.[1] || 0);
+    
+    if (weekYear > currentYear) return true;
+    if (weekYear === currentYear && weekNum > currentNum) return true;
+    
+    return false;
+}
+
 // ============================================
 // РАБОТА С БАЗОЙ ДАННЫХ (НЕДЕЛИ)
 // ============================================
@@ -209,14 +237,18 @@ async function saveWeekData(weekKey, workDays, hours) {
     
     try {
         const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
-        await setDoc(docRef, {
+        const data = {
             employeeId: EMPLOYEE_ID,
             weekKey: weekKey,
             workDays: workDays,
             hours: hours,
             isPaid: currentData?.isPaid || false,
             updatedAt: new Date().toISOString()
-        }, { merge: true });
+        };
+        if (employeeRoomId) {
+            data.roomId = employeeRoomId;
+        }
+        await setDoc(docRef, data, { merge: true });
         
         showSaveIndicator('✅ Сохранено');
     } catch (error) {
@@ -224,6 +256,82 @@ async function saveWeekData(weekKey, workDays, hours) {
         showSaveIndicator('❌ Ошибка сохранения');
     } finally {
         isSaving = false;
+    }
+}
+
+// ============================================
+// ОЧИСТКА БУДУЩИХ НЕДЕЛЬ (УЛУЧШЕННАЯ)
+// ============================================
+async function clearFutureWeeks() {
+    const dates = getWeekDates(0);
+    const currentWeekKey = getWeekKey(dates[0]);
+    
+    // Проверяем, есть ли будущие недели
+    const weeksRef = collection(db, 'salaryWeeks');
+    const q = query(weeksRef, where('employeeId', '==', EMPLOYEE_ID));
+    const snapshot = await getDocs(q);
+    
+    let futureWeeks = [];
+    snapshot.forEach((doc) => {
+        const week = { id: doc.id, ...doc.data() };
+        if (isFutureWeek(week.weekKey)) {
+            futureWeeks.push(week);
+        }
+    });
+    
+    if (futureWeeks.length === 0) {
+        showSaveIndicator('✅ Нет будущих недель для очистки');
+        return;
+    }
+    
+    // Показываем список недель, которые будут удалены
+    const weekList = futureWeeks.map(w => {
+        const num = w.weekKey.match(/W(\d+)/)?.[1] || '?';
+        return `Неделя ${num}`;
+    }).join(', ');
+    
+    if (!confirm(`Найдено ${futureWeeks.length} будущих недель:\n${weekList}\n\nОчистить их?`)) {
+        return;
+    }
+    
+    let deletedCount = 0;
+    for (const week of futureWeeks) {
+        try {
+            const docRef = doc(db, 'salaryWeeks', week.id);
+            await deleteDoc(docRef);
+            deletedCount++;
+            console.log(`🗑️ Удалена неделя: ${week.weekKey}`);
+        } catch (error) {
+            console.error('Ошибка удаления недели:', week.weekKey, error);
+        }
+    }
+    
+    showSaveIndicator(`✅ Очищено ${deletedCount} будущих недель`);
+    
+    // 👇 ВАЖНО: Возвращаемся на текущую неделю и перезагружаем данные
+    currentWeekOffset = 0;
+    const newDates = getWeekDates(0);
+    const newWeekKey = getWeekKey(newDates[0]);
+    updateWeekLabel(newDates);
+    currentData = await loadWeekData(newWeekKey);
+    if (!currentData) {
+        currentData = {
+            workDays: [true, true, true, true, true, false, false],
+            hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
+            isPaid: false
+        };
+    }
+    update();
+    
+    // 👇 ВАЖНО: Обновляем статистику у админа (если она открыта)
+    // Отправляем событие, чтобы админская статистика обновилась
+    try {
+        // Попытка обновить статистику через глобальную функцию
+        if (window.updateStatsAfterClear) {
+            await window.updateStatsAfterClear(EMPLOYEE_ID);
+        }
+    } catch (e) {
+        console.log('Статистика не обновлена (возможно, не открыта)');
     }
 }
 
@@ -242,7 +350,7 @@ function showSaveIndicator(message) {
     el.textContent = message;
     el.classList.add('show');
     clearTimeout(el._timer);
-    el._timer = setTimeout(() => el.classList.remove('show'), 1500);
+    el._timer = setTimeout(() => el.classList.remove('show'), 2500);
 }
 
 function showSettingsSaved(message, isError = false) {
@@ -264,7 +372,8 @@ function update() {
     const dates = getWeekDates(currentWeekOffset);
     const weekKey = getWeekKey(dates[0]);
     
-    // Используем настройки из глобального объекта
+    const isFuture = isFutureWeek(weekKey);
+    
     const rD = settings.rDay;
     const rE = settings.rExtra;
     const r1 = settings.rOt1;
@@ -392,6 +501,19 @@ function update() {
     const weekLabel = `неделя №${weekKey.replace('W', '')} · ${formatDate(mon)} – ${formatDate(sun)}`;
     document.getElementById('eyebrow').textContent = `Табель · ${weekLabel}`;
     document.getElementById('wk').textContent = weekLabel;
+    
+    // Показываем предупреждение, если неделя будущая
+    const clearBtn = document.getElementById('clearFutureBtn');
+    if (clearBtn) {
+        if (isFuture) {
+            clearBtn.style.display = 'inline-block';
+            clearBtn.style.background = 'var(--red)';
+            clearBtn.style.color = '#fff';
+            clearBtn.textContent = '⚠️ Будущая неделя! Очистить всё';
+        } else {
+            clearBtn.style.display = 'none';
+        }
+    }
 }
 
 function buildUI() {
@@ -472,11 +594,8 @@ function updateWeekLabel(dates) {
 // ============================================
 
 async function init() {
-    // Загружаем настройки
     await loadSettings();
-    
-    // Загружаем имя сотрудника
-    await loadEmployeeName();
+    await loadEmployeeInfo();
     
     buildUI();
     
@@ -487,7 +606,7 @@ async function init() {
     if (!currentData) {
         currentData = {
             workDays: [true, true, true, true, true, false, false],
-            hours: [8, 8, 8, 8, 8, 0, 0],
+            hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
             isPaid: false
         };
     }
@@ -504,7 +623,7 @@ async function init() {
         if (!currentData) {
             currentData = {
                 workDays: [true, true, true, true, true, false, false],
-                hours: [8, 8, 8, 8, 8, 0, 0],
+                hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
                 isPaid: false
             };
         }
@@ -520,7 +639,7 @@ async function init() {
         if (!currentData) {
             currentData = {
                 workDays: [true, true, true, true, true, false, false],
-                hours: [8, 8, 8, 8, 8, 0, 0],
+                hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
                 isPaid: false
             };
         }
@@ -536,7 +655,7 @@ async function init() {
         if (!currentData) {
             currentData = {
                 workDays: [true, true, true, true, true, false, false],
-                hours: [8, 8, 8, 8, 8, 0, 0],
+                hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
                 isPaid: false
             };
         }
@@ -582,13 +701,25 @@ async function init() {
                 update();
             });
             el.addEventListener('input', () => {
-                // Обновляем UI в реальном времени
                 const value = parseFloat(el.value) || 0;
                 settings[id] = value;
                 update();
             });
         }
     });
+    
+    // ===== КНОПКА ОЧИСТКИ БУДУЩИХ НЕДЕЛЬ =====
+    const clearFutureBtn = document.createElement('button');
+    clearFutureBtn.id = 'clearFutureBtn';
+    clearFutureBtn.className = 'btn btn-ghost';
+    clearFutureBtn.style.display = 'none';
+    clearFutureBtn.textContent = '⚠️ Будущая неделя! Очистить всё';
+    clearFutureBtn.addEventListener('click', clearFutureWeeks);
+    
+    const actionsDiv = document.querySelector('.actions');
+    if (actionsDiv) {
+        actionsDiv.appendChild(clearFutureBtn);
+    }
     
     document.getElementById('resetBtn').addEventListener('click', async () => {
         if (!confirm('Сбросить данные за эту неделю?')) return;
@@ -673,6 +804,15 @@ style.textContent = `
     }
     .settings-saved.error {
         color: var(--red);
+    }
+    #clearFutureBtn {
+        background: var(--red) !important;
+        color: #fff !important;
+        border: 1px solid var(--red) !important;
+    }
+    #clearFutureBtn:hover {
+        background: #c0392b !important;
+        transform: translateY(-2px);
     }
 `;
 document.head.appendChild(style);
