@@ -1,0 +1,35 @@
+# 🔐 СЕКРЕТНЫЕ ФАЙЛЫ
+config.js
+config.local.js
+*.secret
+*.key.json
+*-key.json
+.env
+.env.local
+
+# 📦 ЗАВИСИМОСТИ
+node_modules/
+package-lock.json
+yarn.lock
+
+# 🖥️ СИСТЕМНЫЕ ФАЙЛЫ
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp
+
+# 💾 БАЗЫ ДАННЫХ
+*.sqlite
+*.sqlite3
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 📁 ПАПКИ СБОРКИ
+dist/
+build/

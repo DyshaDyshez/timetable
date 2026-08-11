@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Моя зарплата</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="stripe" aria-hidden="true"></div>
+    <div class="wrap">
+        <header>
+            <div>
+                <div class="eyebrow" id="eyebrow">Табель · неделя</div>
+                <h1>Расчёт <em>зарплаты</em> за неделю</h1>
+                <p class="sub">Выберите рабочие дни, укажите часы — 6-й и 7-й рабочий день оплачиваются по повышенной ставке.</p>
+            </div>
+            <div class="chips">
+                <span class="chip"><i style="background:var(--teal)"></i><span id="chip1">1–5 день · 3 000 ₽</span></span>
+                <span class="chip"><i style="background:var(--amber)"></i><span id="chip2">6–7 день · 3 500 ₽</span></span>
+                <span class="chip"><i style="background:var(--red)"></i><span id="chip3">переработка · 400 / 800 ₽/ч</span></span>
+            </div>
+        </header>
+
+        <main class="grid">
+            <section class="panel" aria-label="Исходные данные">
+                <h2>Исходные данные</h2>
+
+                <div class="calendar-nav">
+                    <button id="weekPrev" aria-label="Предыдущая неделя">◀</button>
+                    <div class="week-label">
+                        <span id="weekRange">—</span>
+                        <small id="weekSub">текущая неделя</small>
+                    </div>
+                    <button id="weekNext" aria-label="Следующая неделя">▶</button>
+                    <button id="weekToday" style="font-size:.75rem;padding:4px 12px;border-color:var(--amber);color:var(--amber)">Сегодня</button>
+                </div>
+
+                <div class="field">
+                    <div class="f-head">
+                        <span class="f-label">Рабочие дни</span>
+                        <span class="f-hint">клик — переключить</span>
+                    </div>
+                    <div class="days" id="days"></div>
+                    <div class="step-row">
+                        <button class="step" id="dMinus" aria-label="Убрать день">−</button>
+                        <div class="step-val"><b id="dOut">0</b><span>дней</span></div>
+                        <button class="step" id="dPlus" aria-label="Добавить день">+</button>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="f-head">
+                        <span class="f-label">Часы по дням</span>
+                        <span class="f-hint" id="normOut">норма: 0 ч</span>
+                    </div>
+                    <div class="day-hours" id="dayHours"></div>
+                    <div class="badges">
+                        <span class="badge ot" id="otBadge" hidden></span>
+                        <span class="badge uw" id="uwBadge" hidden></span>
+                    </div>
+                </div>
+
+                <div class="field" style="margin-bottom:6px">
+                    <details open>
+                        <summary>Ставки и параметры <span class="arr"></span></summary>
+                        <div class="rate-grid">
+                            <label>День 1–5 (базовая), ₽<input type="number" id="rDay" value="3000" min="0" step="100"></label>
+                            <label>День 6–7 (повышенная), ₽<input type="number" id="rExtra" value="3500" min="0" step="100"></label>
+                            <label>Перераб. ≤ лимита, ₽/ч<input type="number" id="rOt1" value="400" min="0" step="50"></label>
+                            <label>Перераб. сверх, ₽/ч<input type="number" id="rOt2" value="800" min="0" step="50"></label>
+                            <label>Часов в рабочем дне (норма)<input type="number" id="hpd" value="8" min="1" max="24" step="1"></label>
+                            <label>Лимит дешёвой перераб., ч<input type="number" id="otLimit" value="5" min="0" max="24" step="1"></label>
+                        </div>
+                    </details>
+                </div>
+            </section>
+
+            <div class="doc">
+                <section class="receipt" aria-label="Расчётная ведомость" aria-live="polite">
+                    <div class="holes l" aria-hidden="true"></div>
+                    <div class="holes r" aria-hidden="true"></div>
+
+                    <div class="r-head">
+                        <b>Расчётная ведомость</b>
+                        <span id="wk">неделя №— · —</span>
+                    </div>
+
+                    <div class="row" id="rowBase">
+                        <span class="lbl">Основные дни (1–5 рабочие)</span>
+                        <span class="qty" id="qBase"></span>
+                        <span class="dots"></span>
+                        <span class="val" id="vBase">0 ₽</span>
+                    </div>
+                    <div class="row gone" id="rowExtra">
+                        <span class="lbl">Дни 6–7 рабочие (повышенные)</span>
+                        <span class="qty" id="qExtra"></span>
+                        <span class="dots"></span>
+                        <span class="val" id="vExtra">0 ₽</span>
+                    </div>
+                    <div class="row gone" id="rowOt1">
+                        <span class="lbl">Переработка, первые часы</span>
+                        <span class="qty" id="qOt1"></span>
+                        <span class="dots"></span>
+                        <span class="val" id="vOt1">0 ₽</span>
+                    </div>
+                    <div class="row gone" id="rowOt2">
+                        <span class="lbl">Переработка, сверх лимита</span>
+                        <span class="qty" id="qOt2"></span>
+                        <span class="dots"></span>
+                        <span class="val" id="vOt2">0 ₽</span>
+                    </div>
+
+                    <div class="bar-wrap">
+                        <div class="bar"><i id="bNorm"></i><i id="bOt1"></i><i id="bOt2"></i></div>
+                        <div class="bar-legend">
+                            <span><i class="sw sw-n"></i>норма <b id="lNorm">—</b></span>
+                            <span><i class="sw sw-1"></i>перераб. ≤ лимита <b id="lOt1">—</b></span>
+                            <span><i class="sw sw-2"></i>сверх лимита <b id="lOt2">—</b></span>
+                        </div>
+                    </div>
+
+                    <div class="sep"></div>
+
+                    <div class="total-row">
+                        <div class="t-label">К выплате<br>за неделю</div>
+                        <div class="t-val"><span id="totalOut">0</span><span class="cur">₽</span></div>
+                        <div class="stamp" id="stamp">К выплате</div>
+                    </div>
+
+                    <div class="formula" id="formula">—</div>
+                    <div class="r-meta" id="metaLine"></div>
+                </section>
+                <div class="tear" aria-hidden="true"></div>
+
+                <div class="actions">
+                    <button class="btn btn-amber" id="copyBtn">📋 Скопировать</button>
+                    <button class="btn btn-ghost" id="resetBtn">Сбросить</button>
+                </div>
+            </div>
+        </main>
+
+        <section class="rules">
+            <h2 class="reveal">Как это <em>считается</em></h2>
+            <p class="rules-sub reveal">Три правила, зашитые в калькулятор. Ставки выше можно поменять — логика сохраняется.</p>
+            <div class="rule reveal">
+                <span class="num">01</span>
+                <div>
+                    <h3>Первые 5 рабочих дней — по базовой ставке</h3>
+                    <p>Независимо от того, какие это дни недели, первые 5 отработанных дней оплачиваются по базовой ставке.</p>
+                    <code>5 дней (вт–сб) → 5 × 3 000 ₽ = 15 000 ₽</code>
+                </div>
+            </div>
+            <div class="rule reveal">
+                <span class="num">02</span>
+                <div>
+                    <h3>6-й и 7-й рабочий день — по повышенной ставке</h3>
+                    <p>Если отработано больше 5 дней, 6-й и 7-й по счёту рабочие дни оплачиваются по повышенной ставке.</p>
+                    <code>6 дней → 5 × 3 000 + 1 × 3 500 = 18 500 ₽</code>
+                </div>
+            </div>
+            <div class="rule reveal">
+                <span class="num">03</span>
+                <div>
+                    <h3>Переработка — от часов сверх нормы</h3>
+                    <p>Норма зависит от числа рабочих дней: 5 дн = 40 ч, 6 дн = 48 ч, 7 дн = 56 ч. Всё, что сверху, оплачивается по часам: первые 5 часов переработки — по 400 ₽/ч, каждый следующий час — по 800 ₽/ч.</p>
+                    <code>6 дней, 55 ч → 5×3000 + 1×3500 + 5×400 + 2×800 = 22 100 ₽</code>
+                </div>
+            </div>
+        </section>
+
+        <footer>один html-файл · без зависимостей · расчёт выполняется локально в браузере</footer>
+    </div>
+
+    <!-- Импорт конфига -->
+    <script type="module">
+        import { firebaseConfig } from './config.js';
+        
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.db = db;
+        window.doc = doc;
+        window.getDoc = getDoc;
+        window.setDoc = setDoc;
+        window.updateDoc = updateDoc;
+        window.collection = collection;
+        window.query = query;
+        window.where = where;
+        window.getDocs = getDocs;
+    </script>
+    <script type="module" src="employee.js"></script>
+</body>
+</html>
