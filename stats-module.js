@@ -79,17 +79,27 @@ export function getWeekNumber(weekKey) {
     return match ? parseInt(match[1]) : weekKey;
 }
 
-export function getWeekDateRange(weekKey, year) {
-    if (!year) {
-        const yearMatch = weekKey.match(/^(\d+)-W/);
-        year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+// ===== ПРАВИЛЬНЫЙ РАСЧЁТ НЕДЕЛИ ПО ISO (ПОНЕДЕЛЬНИК → ВОСКРЕСЕНЬЕ) =====
+export function getWeekDateRange(weekKey) {
+    const match = weekKey.match(/^(\d+)-W(\d+)/);
+    if (!match) {
+        return { startDate: new Date(), endDate: new Date() };
     }
     
-    const weekNum = getWeekNumber(weekKey);
-    const jan1 = new Date(year, 0, 1);
-    const jan1Day = jan1.getDay();
-    const daysToMonday = (jan1Day === 0) ? 6 : jan1Day - 1;
-    const firstMonday = new Date(year, 0, 1 + daysToMonday);
+    const year = parseInt(match[1]);
+    const weekNum = parseInt(match[2]);
+    
+    const jan4 = new Date(year, 0, 4);
+    const dayOfWeek = jan4.getDay();
+    let daysToMonday;
+    if (dayOfWeek === 0) {
+        daysToMonday = 1;
+    } else {
+        daysToMonday = 1 - dayOfWeek;
+    }
+    
+    const firstMonday = new Date(jan4);
+    firstMonday.setDate(jan4.getDate() + daysToMonday);
     
     const startDate = new Date(firstMonday);
     startDate.setDate(firstMonday.getDate() + (weekNum - 1) * 7);
@@ -102,19 +112,23 @@ export function getWeekDateRange(weekKey, year) {
 
 export function formatDateRange(weekKey) {
     try {
-        const yearMatch = weekKey.match(/^(\d+)-W/);
-        const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
-        const { startDate, endDate } = getWeekDateRange(weekKey, year);
-        
+        const { startDate, endDate } = getWeekDateRange(weekKey);
         const options = { day: '2-digit', month: 'short' };
         const start = startDate.toLocaleDateString('ru-RU', options);
         const end = endDate.toLocaleDateString('ru-RU', options);
-        
         return `${start} – ${end}`;
     } catch (error) {
         console.warn('Ошибка форматирования даты для', weekKey, error);
         return weekKey;
     }
+}
+
+// ===== ПОЛУЧЕНИЕ МЕСЯЦА ИЗ НЕДЕЛИ =====
+export function getWeekMonth(weekKey) {
+    const { startDate } = getWeekDateRange(weekKey);
+    const month = startDate.getMonth(); // 0-11
+    const year = startDate.getFullYear();
+    return { month, year, label: startDate.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }) };
 }
 
 export async function updatePaidAmount(weekId, amount, db, doc, updateDoc) {
@@ -130,6 +144,24 @@ export async function updatePaidAmount(weekId, amount, db, doc, updateDoc) {
     }
 }
 
+// ===== ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ УНИКАЛЬНЫХ МЕСЯЦЕВ =====
+function getUniqueMonths(weeks) {
+    const months = new Map();
+    weeks.forEach(week => {
+        const { month, year, label } = getWeekMonth(week.weekKey);
+        const key = `${year}-${month}`;
+        if (!months.has(key)) {
+            months.set(key, { month, year, label, weeks: [] });
+        }
+        months.get(key).weeks.push(week);
+    });
+    return Array.from(months.values()).sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.month - b.month;
+    });
+}
+
+// ===== МОДАЛКА С ДЕТАЛЯМИ НЕДЕЛИ =====
 export function renderWeekDetailsModal(weekData, settings, employeeName, weekKey, weekId, db, doc, updateDoc, showNotification) {
     const oldModal = document.getElementById('weekDetailsModal');
     if (oldModal) oldModal.remove();
@@ -263,6 +295,7 @@ export function renderWeekDetailsModal(weekData, settings, employeeName, weekKey
     });
 }
 
+// ===== ОСНОВНАЯ ФУНКЦИЯ СТАТИСТИКИ =====
 export async function renderStats(employeeId, employeeName, db, collection, doc, query, where, getDocs, getDoc, showNotification) {
     const oldModal = document.getElementById('statsModal');
     if (oldModal) oldModal.remove();
@@ -273,17 +306,18 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
     const q = query(weeksRef, where('employeeId', '==', employeeId));
     const snapshot = await getDocs(q);
     
-    const weeks = [];
+    const allWeeks = [];
     snapshot.forEach((doc) => {
-        weeks.push({ id: doc.id, ...doc.data() });
+        allWeeks.push({ id: doc.id, ...doc.data() });
     });
     
-    // ===== СОРТИРОВКА: СТАРЫЕ → НОВЫЕ (по возрастанию) =====
-    weeks.sort((a, b) => a.weekKey.localeCompare(b.weekKey));
+    allWeeks.sort((a, b) => a.weekKey.localeCompare(b.weekKey));
     
-    window._statsData = { weeks, settings, employeeName, employeeId };
+    window._statsData = { weeks: allWeeks, settings, employeeName, employeeId };
     
-    let showArchived = false;
+    // Получаем уникальные месяцы для фильтров
+    const uniqueMonths = getUniqueMonths(allWeeks);
+    let currentFilter = 'all'; // 'all' или месяц в формате '2024-10'
     
     const modal = document.createElement('div');
     modal.id = 'statsModal';
@@ -304,115 +338,46 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
                     📂 Показать архив
                 </button>
             </div>
-            <div style="color: var(--mut); font-size: .85rem; margin-bottom: 20px;">
-                Всего недель: ${weeks.length}
+            
+            <div style="color: var(--mut); font-size: .85rem; margin-bottom: 12px;">
+                Всего недель: ${allWeeks.length}
                 <span style="margin-left: 16px;">⚙️ Ставка: ${settings.rDay.toLocaleString()}₽ / ${settings.rExtra.toLocaleString()}₽</span>
             </div>
+            
+            <!-- ===== КНОПКИ ФИЛЬТРОВ ПО МЕСЯЦАМ ===== -->
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);">
+                <button class="filter-btn active" data-filter="all" 
+                        style="background: var(--amber); color: #241d10; border: none; 
+                               padding: 6px 18px; border-radius: 999px; cursor: pointer; font-weight: bold; 
+                               font-size: .8rem; transition: all .2s;">
+                    📅 Все недели
+                </button>
     `;
     
-    if (weeks.length === 0) {
+    uniqueMonths.forEach((monthData, index) => {
+        const filterKey = `${monthData.year}-${String(monthData.month + 1).padStart(2, '0')}`;
+        const weeksCount = monthData.weeks.length;
         bodyHTML += `
-            <div style="text-align:center; padding: 40px; color: var(--mut);">
-                Нет данных. Сотрудник ещё не заполнял расписание.
-            </div>
+            <button class="filter-btn" data-filter="${filterKey}" 
+                    style="background: rgba(255,255,255,.05); color: var(--txt); border: 1px solid var(--line); 
+                           padding: 6px 18px; border-radius: 999px; cursor: pointer; 
+                           font-size: .8rem; transition: all .2s;">
+                ${monthData.label} (${weeksCount})
+            </button>
         `;
-    } else {
-        bodyHTML += `
-            <div style="overflow-x:auto;">
-                <table class="stats-table" id="statsTable">
-                    <thead>
-                        <tr>
-                            <th>Неделя</th>
-                            <th style="min-width: 120px;">Период</th>
-                            <th>Дней</th>
-                            <th>Часов</th>
-                            <th>Переработка</th>
-                            <th style="text-align:right;">Расчёт</th>
-                            <th style="text-align:right;">Выплачено</th>
-                            <th style="text-align:center;">Детали</th>
-                        </tr>
-                    </thead>
-                    <tbody id="statsBody">
-        `;
-        
-        let totalDays = 0;
-        let totalHours = 0;
-        let totalPay = 0;
-        let totalPaid = 0;
-        let visibleCount = 0;
-        
-        weeks.forEach((week, index) => {
-            const stats = calculateWeekStats(week, settings);
-            const weekNum = getWeekNumber(week.weekKey);
-            const dateRange = formatDateRange(week.weekKey);
-            const paidAmount = week.paidAmount || 0;
-            const isArchived = week.isArchived || false;
-            
-            if (!isArchived) {
-                totalDays += stats.days;
-                totalHours += stats.totalHours;
-                totalPay += stats.total;
-                totalPaid += paidAmount;
-                visibleCount++;
-            }
-            
-            const rowClass = isArchived ? 'archived-row' : '';
-            const displayStyle = isArchived ? 'style="display: none;"' : '';
-            
-            bodyHTML += `
-                <tr class="${rowClass}" data-archived="${isArchived}" ${displayStyle}>
-                    <td><b>${weekNum}</b></td>
-                    <td style="font-size: .8rem; color: var(--mut);">${dateRange}</td>
-                    <td>${stats.days}</td>
-                    <td>${stats.totalHours} ч</td>
-                    <td>${stats.ot > 0 ? stats.ot + ' ч' : '—'}</td>
-                    <td style="text-align:right;"><b>${stats.total.toLocaleString()} ₽</b></td>
-                    <td style="text-align:right; color: ${paidAmount > 0 ? 'var(--teal)' : 'var(--mut)'};">
-                        ${paidAmount > 0 ? paidAmount.toLocaleString() + ' ₽' : '—'}
-                    </td>
-                    <td style="text-align:center;">
-                        <button onclick="window.showWeekDetails('${week.id}')" 
-                                style="background: rgba(255,181,46,.15); border: 1px solid var(--amber); 
-                                       color: var(--amber2); padding: 4px 10px; border-radius: 6px; 
-                                       cursor: pointer; font-size: .7rem; margin: 2px;">
-                            👁️
-                        </button>
-                        <button onclick="window.toggleArchive('${week.id}', ${isArchived})" 
-                                style="background: ${isArchived ? 'rgba(62,207,168,.15)' : 'rgba(255,255,255,.05)'}; 
-                                       border: 1px solid ${isArchived ? 'var(--teal)' : 'var(--line)'}; 
-                                       color: ${isArchived ? 'var(--teal)' : 'var(--mut)'}; 
-                                       padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: .7rem; margin: 2px;">
-                            ${isArchived ? '📤' : '📥'}
-                        </button>
-                    </td>
-                </tr>
-            `;
-        });
-        
-        bodyHTML += `
-                    <tr style="border-top: 2px solid var(--amber);">
-                        <td><b style="color: var(--amber);">📊 ИТОГО</b></td>
-                        <td style="font-size: .7rem; color: var(--mut);">${visibleCount} недель</td>
-                        <td><b>${totalDays}</b></td>
-                        <td><b>${totalHours} ч</b></td>
-                        <td>—</td>
-                        <td style="text-align:right;"><b style="color: var(--amber); font-size: 1.1rem;">${totalPay.toLocaleString()} ₽</b></td>
-                        <td style="text-align:right;"><b style="color: var(--teal); font-size: 1.1rem;">${totalPaid.toLocaleString()} ₽</b></td>
-                        <td></td>
-                    </tr>
-        `;
-        
-        bodyHTML += `
-                    </tbody>
-                </table>
-            </div>
-            <div style="margin-top: 8px; font-size: .7rem; color: var(--mut);">
-                💡 Кнопка ${'📥'} — архив (скрыть неделю) · ${'📤'} — восстановить из архива
-            </div>
-        `;
-    }
+    });
     
     bodyHTML += `
+            </div>
+            
+            <div id="statsContent">
+    `;
+    
+    bodyHTML += buildStatsTable(allWeeks, settings, false);
+    
+    bodyHTML += `
+            </div>
+            
             <div style="margin-top: 16px; font-size: .7rem; color: var(--mut); border-top: 1px solid var(--line); padding-top: 12px;">
                 ⚙️ Ставки: ${settings.rDay.toLocaleString()}₽ / ${settings.rExtra.toLocaleString()}₽ · 
                 переработка ${settings.rOt1.toLocaleString()}₽ / ${settings.rOt2.toLocaleString()}₽ · 
@@ -424,11 +389,60 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
     modal.innerHTML = bodyHTML;
     document.body.appendChild(modal);
     
+    // ===== ОБРАБОТЧИКИ КНОПОК ФИЛЬТРОВ =====
+    const filterButtons = modal.querySelectorAll('.filter-btn');
+    const contentContainer = modal.querySelector('#statsContent');
+    
+    filterButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Убираем активный класс у всех кнопок
+            filterButtons.forEach(b => {
+                b.style.background = 'rgba(255,255,255,.05)';
+                b.style.color = 'var(--txt)';
+                b.style.border = '1px solid var(--line)';
+                b.classList.remove('active');
+            });
+            // Активируем нажатую кнопку
+            btn.style.background = 'var(--amber)';
+            btn.style.color = '#241d10';
+            btn.style.border = 'none';
+            btn.classList.add('active');
+            
+            const filter = btn.dataset.filter;
+            currentFilter = filter;
+            
+            let filteredWeeks;
+            if (filter === 'all') {
+                filteredWeeks = allWeeks;
+            } else {
+                const [year, month] = filter.split('-').map(Number);
+                filteredWeeks = allWeeks.filter(week => {
+                    const { month: wMonth, year: wYear } = getWeekMonth(week.weekKey);
+                    return wYear === year && wMonth === month - 1;
+                });
+            }
+            
+            contentContainer.innerHTML = buildStatsTable(filteredWeeks, settings, false);
+            
+            // Обновляем показ архива
+            const archiveVisible = modal._archiveVisible || false;
+            if (!archiveVisible) {
+                const rows = contentContainer.querySelectorAll('.archived-row');
+                rows.forEach(row => {
+                    row.style.display = 'none';
+                });
+            }
+        });
+    });
+    
+    // ===== ОБРАБОТЧИК АРХИВА =====
     const toggleBtn = modal.querySelector('#toggleArchiveBtn');
     let archiveVisible = false;
+    modal._archiveVisible = archiveVisible;
     
     toggleBtn.addEventListener('click', () => {
         archiveVisible = !archiveVisible;
+        modal._archiveVisible = archiveVisible;
         const rows = modal.querySelectorAll('.archived-row');
         rows.forEach(row => {
             row.style.display = archiveVisible ? '' : 'none';
@@ -445,6 +459,115 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
     });
 }
 
+// ===== ПОСТРОЕНИЕ ТАБЛИЦЫ СТАТИСТИКИ =====
+function buildStatsTable(weeks, settings, showAll) {
+    if (!weeks || weeks.length === 0) {
+        return `
+            <div style="text-align:center; padding: 40px; color: var(--mut);">
+                Нет данных за выбранный период
+            </div>
+        `;
+    }
+    
+    let totalDays = 0;
+    let totalHours = 0;
+    let totalPay = 0;
+    let totalPaid = 0;
+    let visibleCount = 0;
+    
+    let tableHTML = `
+        <div style="overflow-x:auto;">
+            <table class="stats-table" id="statsTable">
+                <thead>
+                    <tr>
+                        <th>Неделя</th>
+                        <th style="min-width: 120px;">Период</th>
+                        <th>Дней</th>
+                        <th>Часов</th>
+                        <th>Переработка</th>
+                        <th style="text-align:right;">Расчёт</th>
+                        <th style="text-align:right;">Выплачено</th>
+                        <th style="text-align:center;">Детали</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    weeks.forEach((week) => {
+        const stats = calculateWeekStats(week, settings);
+        const weekNum = getWeekNumber(week.weekKey);
+        const dateRange = formatDateRange(week.weekKey);
+        const paidAmount = week.paidAmount || 0;
+        const isArchived = week.isArchived || false;
+        
+        if (!isArchived) {
+            totalDays += stats.days;
+            totalHours += stats.totalHours;
+            totalPay += stats.total;
+            totalPaid += paidAmount;
+            visibleCount++;
+        }
+        
+        const rowClass = isArchived ? 'archived-row' : '';
+        const displayStyle = isArchived ? 'style="display: none;"' : '';
+        
+        tableHTML += `
+            <tr class="${rowClass}" data-archived="${isArchived}" ${displayStyle}>
+                <td><b>${weekNum}</b></td>
+                <td style="font-size: .8rem; color: var(--mut);">${dateRange}</td>
+                <td>${stats.days}</td>
+                <td>${stats.totalHours} ч</td>
+                <td>${stats.ot > 0 ? stats.ot + ' ч' : '—'}</td>
+                <td style="text-align:right;"><b>${stats.total.toLocaleString()} ₽</b></td>
+                <td style="text-align:right; color: ${paidAmount > 0 ? 'var(--teal)' : 'var(--mut)'};">
+                    ${paidAmount > 0 ? paidAmount.toLocaleString() + ' ₽' : '—'}
+                </td>
+                <td style="text-align:center;">
+                    <button onclick="window.showWeekDetails('${week.id}')" 
+                            style="background: rgba(255,181,46,.15); border: 1px solid var(--amber); 
+                                   color: var(--amber2); padding: 4px 10px; border-radius: 6px; 
+                                   cursor: pointer; font-size: .7rem; margin: 2px;">
+                        👁️
+                    </button>
+                    <button onclick="window.toggleArchive('${week.id}', ${isArchived})" 
+                            style="background: ${isArchived ? 'rgba(62,207,168,.15)' : 'rgba(255,255,255,.05)'}; 
+                                   border: 1px solid ${isArchived ? 'var(--teal)' : 'var(--line)'}; 
+                                   color: ${isArchived ? 'var(--teal)' : 'var(--mut)'}; 
+                                   padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: .7rem; margin: 2px;">
+                        ${isArchived ? '📤' : '📥'}
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    // Итоговая строка
+    tableHTML += `
+                <tr style="border-top: 2px solid var(--amber);">
+                    <td><b style="color: var(--amber);">📊 ИТОГО</b></td>
+                    <td style="font-size: .7rem; color: var(--mut);">${visibleCount} недель</td>
+                    <td><b>${totalDays}</b></td>
+                    <td><b>${totalHours} ч</b></td>
+                    <td>—</td>
+                    <td style="text-align:right;"><b style="color: var(--amber); font-size: 1.1rem;">${totalPay.toLocaleString()} ₽</b></td>
+                    <td style="text-align:right;"><b style="color: var(--teal); font-size: 1.1rem;">${totalPaid.toLocaleString()} ₽</b></td>
+                    <td></td>
+                </tr>
+    `;
+    
+    tableHTML += `
+                </tbody>
+            </table>
+        </div>
+        <div style="margin-top: 8px; font-size: .7rem; color: var(--mut);">
+            💡 Кнопка ${'📥'} — архив (скрыть неделю) · ${'📤'} — восстановить из архива
+        </div>
+    `;
+    
+    return tableHTML;
+}
+
+// ===== ГЛОБАЛЬНЫЕ ФУНКЦИИ =====
 window.toggleArchive = async function(weekId, currentStatus) {
     try {
         const { db, doc, updateDoc } = window;
