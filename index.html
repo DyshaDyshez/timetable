@@ -56,9 +56,13 @@
             transform: scale(1.02);
             filter: brightness(1.1);
         }
+        .add-form button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
         .employee-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
         }
         .employee-card {
@@ -67,23 +71,36 @@
             border-radius: 12px;
             padding: 20px;
             transition: .2s;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
         .employee-card:hover {
             border-color: var(--amber);
             transform: translateY(-3px);
         }
-        .employee-card h3 {
-            margin-bottom: 5px;
+        .employee-card .emp-name {
+            font-size: 1.1rem;
+            font-weight: bold;
         }
-        .employee-card .tab {
+        .employee-card .emp-phone {
             color: var(--mut);
             font-size: .9rem;
-            margin-bottom: 15px;
+        }
+        .employee-card .emp-id {
+            color: var(--mut);
+            font-size: .7rem;
+            font-family: var(--mono);
+            background: rgba(255,255,255,.05);
+            padding: 2px 8px;
+            border-radius: 4px;
+            display: inline-block;
         }
         .employee-card .actions {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             flex-wrap: wrap;
+            margin-top: 4px;
         }
         .employee-card .actions a,
         .employee-card .actions button {
@@ -92,12 +109,16 @@
             border: none;
             cursor: pointer;
             text-decoration: none;
-            font-size: .85rem;
+            font-size: .8rem;
             transition: .2s;
+            white-space: nowrap;
         }
         .btn-link {
             background: var(--amber2);
             color: #241d10;
+        }
+        .btn-link:hover {
+            filter: brightness(1.1);
         }
         .btn-stats {
             background: rgba(255, 255, 255, .1);
@@ -116,6 +137,19 @@
         .btn-delete:hover {
             background: var(--red);
             color: #fff;
+        }
+        .btn-copy-link {
+            background: rgba(62, 207, 168, .15);
+            color: var(--teal);
+            border: 1px solid var(--teal);
+        }
+        .btn-copy-link:hover {
+            background: var(--teal);
+            color: #0c1520;
+        }
+        .btn-copy-link.copied {
+            background: var(--teal);
+            color: #0c1520;
         }
         .modal {
             display: none;
@@ -166,12 +200,6 @@
         .stats-table td {
             padding: 12px 8px;
             border-bottom: 1px solid var(--line);
-        }
-        .stats-table .paid {
-            color: var(--teal);
-        }
-        .stats-table .unpaid {
-            color: var(--red);
         }
         .loading {
             text-align: center;
@@ -235,6 +263,38 @@
             align-items: center;
             gap: 15px;
         }
+        .notification {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: var(--teal);
+            color: #0c1520;
+            padding: 15px 25px;
+            border-radius: 12px;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.4s;
+            z-index: 9999;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            font-family: var(--mono);
+        }
+        .notification.show {
+            opacity: 1;
+        }
+        .notification.error {
+            background: var(--red);
+            color: #fff;
+        }
+        .link-hint {
+            font-size: .65rem;
+            color: var(--mut);
+            margin-top: 2px;
+            word-break: break-all;
+            cursor: pointer;
+        }
+        .link-hint:hover {
+            color: var(--amber);
+        }
     </style>
 </head>
 <body>
@@ -257,15 +317,15 @@
             <div class="admin-header">
                 <h1>👨‍💼 Админ-панель</h1>
                 <div class="admin-header-right">
-                    <span style="color:var(--mut)">Управление сотрудниками</span>
+                    <span style="color:var(--mut)" id="userEmail">Управление сотрудниками</span>
                     <button class="logout-btn" id="logoutBtn">Выйти</button>
                 </div>
             </div>
 
             <div class="add-form" id="addEmployeeForm">
                 <input type="text" id="empName" placeholder="ФИО сотрудника" required>
-                <input type="text" id="empTab" placeholder="Табельный номер" required>
-                <button type="submit">➕ Добавить</button>
+                <input type="text" id="empPhone" placeholder="Номер телефона" required>
+                <button type="button" id="addBtn">➕ Добавить</button>
             </div>
 
             <div id="employeeList" class="employee-grid">
@@ -274,40 +334,26 @@
         </div>
     </div>
 
-    <!-- Модалка статистики -->
-    <div class="modal" id="statsModal">
-        <div class="modal-content">
-            <button class="modal-close" id="closeModal">&times;</button>
-            <h2 id="statsName">Статистика сотрудника</h2>
-            <div style="overflow-x:auto;">
-                <table class="stats-table" id="statsTable">
-                    <thead>
-                        <tr>
-                            <th>Неделя</th>
-                            <th>Раб. дней</th>
-                            <th>Часов</th>
-                            <th>Переработка</th>
-                            <th>Зарплата (₽)</th>
-                            <th>Статус</th>
-                            <th>Действие</th>
-                        </tr>
-                    </thead>
-                    <tbody id="statsBody">
-                        <tr><td colspan="7" style="text-align:center;color:var(--mut);">Нет данных</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+    <div id="notification" class="notification"></div>
 
-    <!-- Импорт конфига -->
     <script type="module">
-        // Импортируем конфиг из файла config.js (который НЕ в Git)
         import { firebaseConfig } from './config.js';
         
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, doc, getDocs, addDoc, updateDoc, deleteDoc, 
+            query, where, onSnapshot, getDoc 
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { 
+            getAuth, 
+            signInWithEmailAndPassword, 
+            onAuthStateChanged, 
+            signOut 
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        
+        // Импорт модуля статистики
+        import { renderStats } from './stats-module.js';
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -324,10 +370,242 @@
         window.query = query;
         window.where = where;
         window.onSnapshot = onSnapshot;
+        window.getDoc = getDoc;
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.onAuthStateChanged = onAuthStateChanged;
         window.signOut = signOut;
+
+        console.log('🚀 Админ-панель загружена');
+
+        function showNotification(message, isError = false) {
+            const el = document.getElementById('notification');
+            if (!el) return;
+            el.textContent = message;
+            el.className = 'notification show';
+            if (isError) el.classList.add('error');
+            clearTimeout(el._timer);
+            el._timer = setTimeout(() => el.classList.remove('show'), 3000);
+        }
+
+        function getBaseUrl() {
+            const url = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
+            return url;
+        }
+
+        async function copyToClipboard(text, btnElement) {
+            try {
+                await navigator.clipboard.writeText(text);
+                const originalText = btnElement.textContent;
+                btnElement.textContent = '✅ Скопировано!';
+                btnElement.classList.add('copied');
+                setTimeout(() => {
+                    btnElement.textContent = originalText;
+                    btnElement.classList.remove('copied');
+                }, 2000);
+                showNotification('✅ Ссылка скопирована!');
+            } catch (error) {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                    const originalText = btnElement.textContent;
+                    btnElement.textContent = '✅ Скопировано!';
+                    btnElement.classList.add('copied');
+                    setTimeout(() => {
+                        btnElement.textContent = originalText;
+                        btnElement.classList.remove('copied');
+                    }, 2000);
+                    showNotification('✅ Ссылка скопирована!');
+                } catch (err) {
+                    showNotification('❌ Не удалось скопировать', true);
+                }
+                document.body.removeChild(textarea);
+            }
+        }
+
+        // Авторизация
+        onAuthStateChanged(auth, (user) => {
+            console.log('👤 Auth state:', user ? user.email : 'No user');
+            const authScreen = document.getElementById('authScreen');
+            const adminContent = document.getElementById('adminContent');
+            const userEmail = document.getElementById('userEmail');
+            
+            if (user) {
+                authScreen.classList.remove('active');
+                authScreen.style.display = 'none';
+                adminContent.style.display = 'block';
+                if (userEmail) userEmail.textContent = '👤 ' + user.email;
+                loadEmployees();
+            } else {
+                authScreen.classList.add('active');
+                authScreen.style.display = 'block';
+                adminContent.style.display = 'none';
+            }
+        });
+
+        document.getElementById('loginBtn').addEventListener('click', async () => {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const errorEl = document.getElementById('loginError');
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                errorEl.textContent = '';
+                showNotification('✅ Вход выполнен!');
+            } catch (error) {
+                errorEl.textContent = '❌ ' + error.message;
+            }
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            signOut(auth);
+        });
+
+        // Показ статистики через модуль
+        window.showStats = async (employeeId, employeeName) => {
+            try {
+                await renderStats(employeeId, employeeName, db, collection, doc, query, where, getDocs, getDoc);
+            } catch (error) {
+                console.error('❌ Ошибка статистики:', error);
+                showNotification('❌ Ошибка загрузки статистики', true);
+            }
+        };
+
+        // Загрузка сотрудников
+        function loadEmployees() {
+            const employeesRef = collection(db, 'salaryEmployees');
+            onSnapshot(employeesRef, (snapshot) => {
+                const container = document.getElementById('employeeList');
+                container.innerHTML = '';
+                if (snapshot.empty) {
+                    container.innerHTML = '<div class="loading">Нет сотрудников. Добавьте первого!</div>';
+                    return;
+                }
+                snapshot.forEach((doc) => {
+                    const emp = { id: doc.id, ...doc.data() };
+                    const baseUrl = getBaseUrl();
+                    const employeeLink = baseUrl + 'employee.html?id=' + emp.id;
+                    
+                    const card = document.createElement('div');
+                    card.className = 'employee-card';
+                    card.innerHTML = `
+                        <div>
+                            <div class="emp-name">${emp.name || 'Без имени'}</div>
+                            <div class="emp-phone">📱 ${emp.phone || 'Нет телефона'}</div>
+                            <div class="emp-id">🆔 ${emp.id}</div>
+                        </div>
+                        <div class="actions">
+                            <a href="/timetable/employee.html?id=${emp.id}" class="btn-link" target="_blank">📊 Калькулятор</a>
+                            <button class="btn-copy-link" data-link="${employeeLink}">📋 Ссылка</button>
+                            <button class="btn-stats" onclick="window.showStats('${emp.id}', '${emp.name}')">📈 Статистика</button>
+                            <button class="btn-delete" onclick="window.deleteEmployee('${emp.id}')">🗑️</button>
+                        </div>
+                        <div class="link-hint" id="linkHint_${emp.id}">${employeeLink}</div>
+                    `;
+                    container.appendChild(card);
+
+                    const copyBtn = card.querySelector('.btn-copy-link');
+                    copyBtn.addEventListener('click', function() {
+                        const link = this.dataset.link;
+                        copyToClipboard(link, this);
+                    });
+
+                    const hint = card.querySelector('.link-hint');
+                    hint.addEventListener('click', function() {
+                        const link = this.textContent;
+                        const btn = this.parentElement.querySelector('.btn-copy-link');
+                        copyToClipboard(link, btn);
+                    });
+                });
+            });
+        }
+
+        // ============================================
+        // ДОБАВЛЕНИЕ СОТРУДНИКА
+        // ============================================
+        
+        const addBtn = document.getElementById('addBtn');
+        const nameInput = document.getElementById('empName');
+        const phoneInput = document.getElementById('empPhone');
+
+        if (addBtn) {
+            addBtn.addEventListener('click', async () => {
+                const name = nameInput.value.trim();
+                const phone = phoneInput.value.trim();
+                
+                if (!name || !phone) {
+                    showNotification('❌ Заполните все поля!', true);
+                    return;
+                }
+
+                if (!auth.currentUser) {
+                    showNotification('❌ Вы не авторизованы!', true);
+                    return;
+                }
+
+                addBtn.disabled = true;
+                addBtn.textContent = '⏳ Сохранение...';
+
+                try {
+                    const docRef = await addDoc(collection(db, 'salaryEmployees'), {
+                        name: name,
+                        phone: phone,
+                        createdAt: new Date().toISOString(),
+                        adminId: auth.currentUser.uid,
+                        adminEmail: auth.currentUser.email
+                    });
+                    
+                    nameInput.value = '';
+                    phoneInput.value = '';
+                    
+                    const baseUrl = getBaseUrl();
+                    const link = baseUrl + 'employee.html?id=' + docRef.id;
+                    showNotification('✅ Сотрудник добавлен! Ссылка: ' + link);
+                    
+                } catch (error) {
+                    console.error('❌ ОШИБКА:', error);
+                    showNotification('❌ ' + error.message, true);
+                } finally {
+                    addBtn.disabled = false;
+                    addBtn.textContent = '➕ Добавить';
+                }
+            });
+        }
+
+        // Удаление сотрудника
+        window.deleteEmployee = async (id) => {
+            if (!confirm('🗑️ Удалить сотрудника и все его данные?')) return;
+            try {
+                const q = query(collection(db, 'salaryWeeks'), where('employeeId', '==', id));
+                const snapshot = await getDocs(q);
+                for (const doc of snapshot.docs) {
+                    await deleteDoc(doc.ref);
+                }
+                await deleteDoc(doc(db, 'salaryEmployees', id));
+                showNotification('🗑️ Удалено');
+            } catch (error) {
+                showNotification('❌ ' + error.message, true);
+            }
+        };
+
+        console.log('✅ Админ-панель готова к работе!');
+
+    // ... остальной код ...
+    
+    // Делаем функции глобальными для stats-module
+    window.collection = collection;
+    window.doc = doc;
+    window.query = query;
+    window.where = where;
+    window.getDocs = getDocs;
+    window.getDoc = getDoc;
+    window.updateDoc = updateDoc;
+    window.db = db;  
+    // Показ уведомлений из модуля
+    window.showNotification = showNotification;
+
+
     </script>
-    <script type="module" src="admin.js"></script>
 </body>
 </html>

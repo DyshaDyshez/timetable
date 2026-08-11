@@ -8,7 +8,15 @@ const urlParams = new URLSearchParams(window.location.search);
 const EMPLOYEE_ID = urlParams.get('id');
 
 if (!EMPLOYEE_ID) {
-    document.body.innerHTML = '<div style="padding:50px;text-align:center;color:var(--red);"><h1>Ошибка!</h1><p>Не указан ID сотрудника. Обратитесь к руководителю.</p></div>';
+    document.body.innerHTML = `
+        <div style="padding:50px;text-align:center;color:var(--red);">
+            <h1>❌ Ошибка!</h1>
+            <p>Не указан ID сотрудника. Обратитесь к руководителю.</p>
+            <p style="font-size:0.8rem;color:var(--mut);margin-top:20px;">
+                Ссылка должна быть: employee.html?id=ВАШ_ID
+            </p>
+        </div>
+    `;
     throw new Error('No employee ID');
 }
 
@@ -16,11 +24,117 @@ if (!EMPLOYEE_ID) {
 let currentWeekOffset = 0;
 let currentData = null;
 let isSaving = false;
+let employeeName = 'Сотрудник';
+let settings = {
+    rDay: 3000,
+    rExtra: 3500,
+    rOt1: 400,
+    rOt2: 800,
+    hpd: 8,
+    otLimit: 5
+};
 
 // Константы
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
-// Функции работы с датами
+// ============================================
+// ЗАГРУЗКА НАСТРОЕК ИЗ БАЗЫ
+// ============================================
+
+async function loadSettings() {
+    try {
+        const docRef = doc(db, 'salarySettings', EMPLOYEE_ID);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            settings = {
+                rDay: data.rDay || 3000,
+                rExtra: data.rExtra || 3500,
+                rOt1: data.rOt1 || 400,
+                rOt2: data.rOt2 || 800,
+                hpd: data.hpd || 8,
+                otLimit: data.otLimit || 5
+            };
+            console.log('⚙️ Настройки загружены:', settings);
+            
+            // Обновляем поля ввода
+            document.getElementById('rDay').value = settings.rDay;
+            document.getElementById('rExtra').value = settings.rExtra;
+            document.getElementById('rOt1').value = settings.rOt1;
+            document.getElementById('rOt2').value = settings.rOt2;
+            document.getElementById('hpd').value = settings.hpd;
+            document.getElementById('otLimit').value = settings.otLimit;
+        } else {
+            console.log('⚙️ Настройки не найдены, используем дефолтные');
+            // Сохраняем дефолтные настройки в БД
+            await saveSettings();
+        }
+    } catch (error) {
+        console.warn('Не удалось загрузить настройки:', error);
+    }
+}
+
+async function saveSettings() {
+    try {
+        const docRef = doc(db, 'salarySettings', EMPLOYEE_ID);
+        await setDoc(docRef, {
+            employeeId: EMPLOYEE_ID,
+            rDay: settings.rDay,
+            rExtra: settings.rExtra,
+            rOt1: settings.rOt1,
+            rOt2: settings.rOt2,
+            hpd: settings.hpd,
+            otLimit: settings.otLimit,
+            updatedAt: new Date().toISOString()
+        }, { merge: true });
+        console.log('⚙️ Настройки сохранены');
+    } catch (error) {
+        console.warn('Не удалось сохранить настройки:', error);
+    }
+}
+
+// ============================================
+// ЗАГРУЗКА ИМЕНИ СОТРУДНИКА
+// ============================================
+
+async function loadEmployeeName() {
+    try {
+        const docRef = doc(db, 'salaryEmployees', EMPLOYEE_ID);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            employeeName = data.name || 'Сотрудник';
+            console.log('👤 Имя сотрудника:', employeeName);
+            
+            const badge = document.getElementById('userBadge');
+            const nameEl = document.getElementById('userName');
+            const avatarEl = document.getElementById('userAvatar');
+            const idLabelEl = document.getElementById('userIdLabel');
+            
+            if (badge) {
+                badge.style.display = 'flex';
+                badge.title = `ID: ${EMPLOYEE_ID}`;
+            }
+            if (nameEl) nameEl.textContent = employeeName;
+            if (avatarEl) avatarEl.textContent = employeeName.charAt(0).toUpperCase();
+            if (idLabelEl) idLabelEl.textContent = `ID: ${EMPLOYEE_ID.substring(0, 8)}...`;
+        }
+    } catch (error) {
+        console.warn('Не удалось загрузить имя сотрудника:', error);
+        const badge = document.getElementById('userBadge');
+        if (badge) {
+            badge.style.display = 'flex';
+            badge.title = `ID: ${EMPLOYEE_ID}`;
+        }
+        const idLabelEl = document.getElementById('userIdLabel');
+        if (idLabelEl) idLabelEl.textContent = `ID: ${EMPLOYEE_ID.substring(0, 8)}...`;
+    }
+}
+
+// ============================================
+// ФУНКЦИИ РАБОТЫ С ДАТАМИ
+// ============================================
+
 function getWeekKey(date) {
     const d = new Date(date);
     const day = d.getUTCDay() || 7;
@@ -56,10 +170,13 @@ function formatDate(d) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }).replace('.', '');
 }
 
-// Загрузка данных из Firestore
+// ============================================
+// РАБОТА С БАЗОЙ ДАННЫХ (НЕДЕЛИ)
+// ============================================
+
 async function loadWeekData(weekKey) {
     try {
-        const docRef = doc(db, 'weeks', `${EMPLOYEE_ID}_${weekKey}`);
+        const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
         const docSnap = await getDoc(docRef);
         
         if (docSnap.exists()) {
@@ -78,17 +195,20 @@ async function loadWeekData(weekKey) {
         }
     } catch (error) {
         console.error('Ошибка загрузки:', error);
-        return null;
+        return {
+            workDays: [true, true, true, true, true, false, false],
+            hours: [8, 8, 8, 8, 8, 0, 0],
+            isPaid: false
+        };
     }
 }
 
-// Сохранение данных в Firestore
 async function saveWeekData(weekKey, workDays, hours) {
     if (isSaving) return;
     isSaving = true;
     
     try {
-        const docRef = doc(db, 'weeks', `${EMPLOYEE_ID}_${weekKey}`);
+        const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
         await setDoc(docRef, {
             employeeId: EMPLOYEE_ID,
             weekKey: weekKey,
@@ -107,37 +227,50 @@ async function saveWeekData(weekKey, workDays, hours) {
     }
 }
 
-// Показать индикатор сохранения
+// ============================================
+// UI КОМПОНЕНТЫ
+// ============================================
+
 function showSaveIndicator(message) {
-    const el = document.getElementById('saveIndicator') || createSaveIndicator();
+    let el = document.getElementById('saveIndicator');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'saveIndicator';
+        el.className = 'save-indicator';
+        document.body.appendChild(el);
+    }
     el.textContent = message;
     el.classList.add('show');
     clearTimeout(el._timer);
     el._timer = setTimeout(() => el.classList.remove('show'), 1500);
 }
 
-function createSaveIndicator() {
-    const el = document.createElement('div');
-    el.id = 'saveIndicator';
-    el.className = 'save-indicator';
-    document.body.appendChild(el);
-    return el;
+function showSettingsSaved(message, isError = false) {
+    const el = document.getElementById('settingsSaved');
+    if (!el) return;
+    el.textContent = message;
+    el.className = 'settings-saved show';
+    if (isError) el.classList.add('error');
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => {
+        el.classList.remove('show');
+    }, 3000);
 }
 
-// Обновление UI
 function update() {
     if (!currentData) return;
     
-    const { workDays, hours, isPaid } = currentData;
+    const { workDays, hours } = currentData;
     const dates = getWeekDates(currentWeekOffset);
     const weekKey = getWeekKey(dates[0]);
     
-    const rD = parseFloat(document.getElementById('rDay').value) || 3000;
-    const rE = parseFloat(document.getElementById('rExtra').value) || 3500;
-    const r1 = parseFloat(document.getElementById('rOt1').value) || 400;
-    const r2 = parseFloat(document.getElementById('rOt2').value) || 800;
-    const hpd = parseFloat(document.getElementById('hpd').value) || 8;
-    const lim = parseFloat(document.getElementById('otLimit').value) || 5;
+    // Используем настройки из глобального объекта
+    const rD = settings.rDay;
+    const rE = settings.rExtra;
+    const r1 = settings.rOt1;
+    const r2 = settings.rOt2;
+    const hpd = settings.hpd;
+    const lim = settings.otLimit;
     
     const days = workDays.filter(Boolean).length;
     const totalHours = hours.reduce((a, b) => a + b, 0);
@@ -166,8 +299,11 @@ function update() {
     
     document.querySelectorAll('#dayHours .dh-item input').forEach((inp, i) => {
         inp.disabled = !workDays[i];
-        if (!workDays[i]) inp.value = 0;
-        else if (parseFloat(inp.value) !== hours[i]) inp.value = hours[i];
+        if (!workDays[i]) {
+            inp.value = 0;
+        } else if (parseFloat(inp.value) !== hours[i]) {
+            inp.value = hours[i];
+        }
     });
     
     document.getElementById('dOut').textContent = days;
@@ -175,6 +311,7 @@ function update() {
     
     const otB = document.getElementById('otBadge');
     const uwB = document.getElementById('uwBadge');
+    
     if (ot > 0) {
         otB.hidden = false;
         otB.textContent = `переработка +${ot} ч`;
@@ -182,6 +319,7 @@ function update() {
     } else {
         otB.hidden = true;
     }
+    
     if (days > 0 && totalHours < norm) {
         uwB.hidden = false;
         uwB.textContent = `меньше нормы на ${norm - totalHours} ч — переработки нет`;
@@ -192,17 +330,32 @@ function update() {
     document.getElementById('qBase').textContent = `${baseDays} × ${rD.toLocaleString()} ₽`;
     document.getElementById('vBase').textContent = payBase.toLocaleString() + ' ₽';
     
-    document.getElementById('rowExtra').classList.toggle('gone', extraDays === 0);
-    document.getElementById('qExtra').textContent = `${extraDays} × ${rE.toLocaleString()} ₽`;
-    document.getElementById('vExtra').textContent = payExtra.toLocaleString() + ' ₽';
+    const rowExtra = document.getElementById('rowExtra');
+    if (extraDays === 0) {
+        rowExtra.classList.add('gone');
+    } else {
+        rowExtra.classList.remove('gone');
+        document.getElementById('qExtra').textContent = `${extraDays} × ${rE.toLocaleString()} ₽`;
+        document.getElementById('vExtra').textContent = payExtra.toLocaleString() + ' ₽';
+    }
     
-    document.getElementById('rowOt1').classList.toggle('gone', ot1 === 0);
-    document.getElementById('qOt1').textContent = `${ot1} ч × ${r1.toLocaleString()} ₽`;
-    document.getElementById('vOt1').textContent = payOt1.toLocaleString() + ' ₽';
+    const rowOt1 = document.getElementById('rowOt1');
+    if (ot1 === 0) {
+        rowOt1.classList.add('gone');
+    } else {
+        rowOt1.classList.remove('gone');
+        document.getElementById('qOt1').textContent = `${ot1} ч × ${r1.toLocaleString()} ₽`;
+        document.getElementById('vOt1').textContent = payOt1.toLocaleString() + ' ₽';
+    }
     
-    document.getElementById('rowOt2').classList.toggle('gone', ot2 === 0);
-    document.getElementById('qOt2').textContent = `${ot2} ч × ${r2.toLocaleString()} ₽`;
-    document.getElementById('vOt2').textContent = payOt2.toLocaleString() + ' ₽';
+    const rowOt2 = document.getElementById('rowOt2');
+    if (ot2 === 0) {
+        rowOt2.classList.add('gone');
+    } else {
+        rowOt2.classList.remove('gone');
+        document.getElementById('qOt2').textContent = `${ot2} ч × ${r2.toLocaleString()} ₽`;
+        document.getElementById('vOt2').textContent = payOt2.toLocaleString() + ' ₽';
+    }
     
     const scale = Math.max(totalHours, norm, 1);
     document.getElementById('bNorm').style.width = (Math.min(totalHours, norm) / scale * 100) + '%';
@@ -213,6 +366,11 @@ function update() {
     document.getElementById('lOt2').textContent = ot2 + ' ч';
     
     document.getElementById('totalOut').textContent = total.toLocaleString();
+    
+    const stamp = document.getElementById('stamp');
+    stamp.classList.remove('pop');
+    void stamp.offsetWidth;
+    stamp.classList.add('pop');
     
     const parts = [];
     if (baseDays) parts.push(`<b class="f-n">${baseDays}×${rD.toLocaleString()}</b>`);
@@ -236,7 +394,6 @@ function update() {
     document.getElementById('wk').textContent = weekLabel;
 }
 
-// Построение UI
 function buildUI() {
     const daysBox = document.getElementById('days');
     const dhBox = document.getElementById('dayHours');
@@ -254,7 +411,7 @@ function buildUI() {
             if (!currentData) return;
             currentData.workDays[i] = !currentData.workDays[i];
             if (currentData.workDays[i]) {
-                currentData.hours[i] = parseFloat(document.getElementById('hpd').value) || 8;
+                currentData.hours[i] = settings.hpd;
             } else {
                 currentData.hours[i] = 0;
             }
@@ -276,7 +433,7 @@ function buildUI() {
         inp.addEventListener('input', async (e) => {
             if (!currentData) return;
             const v = parseFloat(e.target.value);
-            if (!isNaN(v) && v >= 0) {
+            if (!isNaN(v) && v >= 0 && v <= 24) {
                 currentData.hours[i] = v;
                 update();
                 const dates = getWeekDates(currentWeekOffset);
@@ -284,17 +441,56 @@ function buildUI() {
                 await saveWeekData(weekKey, currentData.workDays, currentData.hours);
             }
         });
+        inp.addEventListener('blur', (e) => {
+            let v = parseFloat(e.target.value);
+            if (isNaN(v) || v < 0) v = 0;
+            if (v > 24) v = 24;
+            e.target.value = v;
+            if (currentData) {
+                currentData.hours[i] = v;
+                update();
+            }
+        });
         dhBox.appendChild(div);
     });
 }
 
-// Инициализация
+function updateWeekLabel(dates) {
+    const mon = dates[0];
+    const sun = dates[6];
+    const weekKey = getWeekKey(mon);
+    const today = new Date();
+    const todayWeek = getWeekKey(today);
+    const isCurrent = weekKey === todayWeek;
+    
+    document.getElementById('weekRange').textContent = `${formatDate(mon)} – ${formatDate(sun)}`;
+    document.getElementById('weekSub').textContent = isCurrent ? 'текущая неделя' : weekKey;
+}
+
+// ============================================
+// ИНИЦИАЛИЗАЦИЯ
+// ============================================
+
 async function init() {
+    // Загружаем настройки
+    await loadSettings();
+    
+    // Загружаем имя сотрудника
+    await loadEmployeeName();
+    
     buildUI();
     
     const dates = getWeekDates(0);
     const weekKey = getWeekKey(dates[0]);
     currentData = await loadWeekData(weekKey);
+    
+    if (!currentData) {
+        currentData = {
+            workDays: [true, true, true, true, true, false, false],
+            hours: [8, 8, 8, 8, 8, 0, 0],
+            isPaid: false
+        };
+    }
     
     updateWeekLabel(dates);
     update();
@@ -305,6 +501,13 @@ async function init() {
         const weekKey = getWeekKey(dates[0]);
         updateWeekLabel(dates);
         currentData = await loadWeekData(weekKey);
+        if (!currentData) {
+            currentData = {
+                workDays: [true, true, true, true, true, false, false],
+                hours: [8, 8, 8, 8, 8, 0, 0],
+                isPaid: false
+            };
+        }
         update();
     });
     
@@ -314,6 +517,13 @@ async function init() {
         const weekKey = getWeekKey(dates[0]);
         updateWeekLabel(dates);
         currentData = await loadWeekData(weekKey);
+        if (!currentData) {
+            currentData = {
+                workDays: [true, true, true, true, true, false, false],
+                hours: [8, 8, 8, 8, 8, 0, 0],
+                isPaid: false
+            };
+        }
         update();
     });
     
@@ -323,6 +533,13 @@ async function init() {
         const weekKey = getWeekKey(dates[0]);
         updateWeekLabel(dates);
         currentData = await loadWeekData(weekKey);
+        if (!currentData) {
+            currentData = {
+                workDays: [true, true, true, true, true, false, false],
+                hours: [8, 8, 8, 8, 8, 0, 0],
+                isPaid: false
+            };
+        }
         update();
     });
     
@@ -344,7 +561,7 @@ async function init() {
         const idx = currentData.workDays.indexOf(false);
         if (idx !== -1) {
             currentData.workDays[idx] = true;
-            currentData.hours[idx] = parseFloat(document.getElementById('hpd').value) || 8;
+            currentData.hours[idx] = settings.hpd;
             update();
             const dates = getWeekDates(currentWeekOffset);
             const weekKey = getWeekKey(dates[0]);
@@ -352,8 +569,25 @@ async function init() {
         }
     });
     
-    ['rDay', 'rExtra', 'rOt1', 'rOt2', 'hpd', 'otLimit'].forEach(id => {
-        document.getElementById(id).addEventListener('input', update);
+    // ===== ОБРАБОТЧИКИ ДЛЯ СТАВОК =====
+    const settingsFields = ['rDay', 'rExtra', 'rOt1', 'rOt2', 'hpd', 'otLimit'];
+    settingsFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('change', async () => {
+                const value = parseFloat(el.value) || 0;
+                settings[id] = value;
+                await saveSettings();
+                showSettingsSaved('✅ Настройки сохранены');
+                update();
+            });
+            el.addEventListener('input', () => {
+                // Обновляем UI в реальном времени
+                const value = parseFloat(el.value) || 0;
+                settings[id] = value;
+                update();
+            });
+        }
     });
     
     document.getElementById('resetBtn').addEventListener('click', async () => {
@@ -362,7 +596,7 @@ async function init() {
         const weekKey = getWeekKey(dates[0]);
         currentData = {
             workDays: [true, true, true, true, true, false, false],
-            hours: [8, 8, 8, 8, 8, 0, 0],
+            hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
             isPaid: false
         };
         update();
@@ -388,23 +622,18 @@ async function init() {
             ta.select();
             document.execCommand('copy');
             ta.remove();
+            const btn = document.getElementById('copyBtn');
+            const old = btn.textContent;
+            btn.textContent = '✓ Скопировано';
+            setTimeout(() => btn.textContent = old, 1500);
         }
     });
 }
 
-function updateWeekLabel(dates) {
-    const mon = dates[0];
-    const sun = dates[6];
-    const weekKey = getWeekKey(mon);
-    const today = new Date();
-    const todayWeek = getWeekKey(today);
-    const isCurrent = weekKey === todayWeek;
-    
-    document.getElementById('weekRange').textContent = `${formatDate(mon)} – ${formatDate(sun)}`;
-    document.getElementById('weekSub').textContent = isCurrent ? 'текущая неделя' : weekKey;
-}
+// ============================================
+// ДОБАВЛЯЕМ СТИЛИ
+// ============================================
 
-// Добавляем стиль для индикатора сохранения
 const style = document.createElement('style');
 style.textContent = `
     .save-indicator {
@@ -422,12 +651,38 @@ style.textContent = `
         pointer-events: none;
         font-family: var(--mono);
         z-index: 9999;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     }
     .save-indicator.show {
         opacity: 1;
     }
+    .save-indicator.error {
+        background: var(--red);
+        color: #fff;
+    }
+    .settings-saved {
+        font-size: .7rem;
+        color: var(--teal);
+        margin-left: 8px;
+        opacity: 0;
+        transition: opacity .3s;
+        font-weight: normal;
+    }
+    .settings-saved.show {
+        opacity: 1;
+    }
+    .settings-saved.error {
+        color: var(--red);
+    }
 `;
 document.head.appendChild(style);
 
-// Запускаем
-init();
+// ============================================
+// ЗАПУСК
+// ============================================
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}

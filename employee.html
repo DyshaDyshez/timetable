@@ -6,8 +6,192 @@
     <meta name="color-scheme" content="dark">
     <title>Моя зарплата</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .user-badge {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 181, 46, 0.15);
+            border: 1px solid var(--amber);
+            color: var(--amber2);
+            padding: 6px 16px;
+            border-radius: 999px;
+            font-size: .78rem;
+            font-family: var(--mono);
+            z-index: 100;
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            transition: all .3s;
+        }
+        .user-badge:hover {
+            transform: scale(1.05);
+            background: rgba(255, 181, 46, 0.25);
+        }
+        .user-badge .avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--amber);
+            color: #241d10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: .7rem;
+        }
+        .user-badge .name {
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .user-badge .id-label {
+            color: var(--mut);
+            font-size: .6rem;
+            opacity: 0.7;
+        }
+        @media (max-width: 768px) {
+            .user-badge {
+                top: 12px;
+                right: 12px;
+                padding: 4px 12px;
+                font-size: .65rem;
+            }
+            .user-badge .avatar {
+                width: 20px;
+                height: 20px;
+                font-size: .6rem;
+            }
+            .user-badge .name {
+                max-width: 100px;
+            }
+        }
+        @media (max-width: 480px) {
+            .user-badge {
+                top: 8px;
+                right: 8px;
+                padding: 3px 10px;
+                font-size: .55rem;
+            }
+            .user-badge .avatar {
+                width: 16px;
+                height: 16px;
+                font-size: .5rem;
+            }
+            .user-badge .name {
+                max-width: 70px;
+            }
+            .user-badge .id-label {
+                display: none;
+            }
+        }
+
+        .settings-saved {
+            font-size: .7rem;
+            color: var(--teal);
+            margin-left: 8px;
+            opacity: 0;
+            transition: opacity .3s;
+        }
+        .settings-saved.show {
+            opacity: 1;
+        }
+        .settings-saved.error {
+            color: var(--red);
+        }
+
+        .rules {
+            margin-top: 70px;
+        }
+        .rules h2 {
+            font-family: var(--display);
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            font-size: clamp(1.5rem, 3vw, 2.1rem);
+            margin-bottom: 8px;
+        }
+        .rules h2 em {
+            font-style: normal;
+            color: var(--amber);
+        }
+        .rules-sub {
+            color: var(--mut);
+            margin-bottom: 28px;
+            font-size: .95rem;
+        }
+        .rule {
+            display: grid;
+            grid-template-columns: 110px 1fr;
+            gap: 22px;
+            padding: 26px 8px;
+            border-top: 1px dashed var(--line);
+            align-items: start;
+        }
+        .rule:last-child {
+            border-bottom: 1px dashed var(--line);
+        }
+        .rule .num {
+            font-family: var(--display);
+            font-size: 3.6rem;
+            line-height: 1;
+            color: transparent;
+            -webkit-text-stroke: 1.5px var(--amber);
+            text-stroke: 1.5px var(--amber);
+        }
+        @supports not (-webkit-text-stroke: 1px red) {
+            .rule .num {
+                color: var(--amber);
+            }
+        }
+        .rule h3 {
+            font-size: 1.08rem;
+            margin-bottom: 8px;
+        }
+        .rule p {
+            color: var(--mut);
+            font-size: .94rem;
+            max-width: 64ch;
+            line-height: 1.55;
+        }
+        .rule code {
+            display: inline-block;
+            margin-top: 12px;
+            font-family: var(--mono);
+            font-size: .8rem;
+            color: var(--amber2);
+            background: rgba(255, 181, 46, .08);
+            border: 1px solid rgba(255, 181, 46, .25);
+            padding: 6px 12px;
+            border-radius: 7px;
+        }
+        @media (max-width: 640px) {
+            .rule {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            .rule .num {
+                font-size: 2.6rem;
+            }
+        }
+
+        /* Убираем скрытие по умолчанию для .reveal */
+        .reveal {
+            opacity: 1 !important;
+            transform: none !important;
+        }
+    </style>
 </head>
 <body>
+    <div class="user-badge" id="userBadge" style="display: none;">
+        <div class="avatar" id="userAvatar">?</div>
+        <span class="name" id="userName">Загрузка...</span>
+        <span class="id-label" id="userIdLabel">ID: —</span>
+    </div>
+
     <div class="stripe" aria-hidden="true"></div>
     <div class="wrap">
         <header>
@@ -64,7 +248,11 @@
 
                 <div class="field" style="margin-bottom:6px">
                     <details open>
-                        <summary>Ставки и параметры <span class="arr"></span></summary>
+                        <summary>
+                            Ставки и параметры
+                            <span class="settings-saved" id="settingsSaved">✅ Сохранено</span>
+                            <span class="arr"></span>
+                        </summary>
                         <div class="rate-grid">
                             <label>День 1–5 (базовая), ₽<input type="number" id="rDay" value="3000" min="0" step="100"></label>
                             <label>День 6–7 (повышенная), ₽<input type="number" id="rExtra" value="3500" min="0" step="100"></label>
@@ -141,9 +329,11 @@
             </div>
         </main>
 
+        <!-- ===== ИНСТРУКЦИЯ ===== -->
         <section class="rules">
             <h2 class="reveal">Как это <em>считается</em></h2>
             <p class="rules-sub reveal">Три правила, зашитые в калькулятор. Ставки выше можно поменять — логика сохраняется.</p>
+
             <div class="rule reveal">
                 <span class="num">01</span>
                 <div>
@@ -173,10 +363,8 @@
         <footer>один html-файл · без зависимостей · расчёт выполняется локально в браузере</footer>
     </div>
 
-    <!-- Импорт конфига -->
     <script type="module">
         import { firebaseConfig } from './config.js';
-        
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
