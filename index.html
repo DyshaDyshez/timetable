@@ -493,10 +493,10 @@
                         <div>
                             <div class="emp-name">${emp.name || 'Без имени'}</div>
                             <div class="emp-phone">📱 ${emp.phone || 'Нет телефона'}</div>
-                            <div class="emp-id">🆔 ${emp.id}</div>
+                           <!--  <div class="emp-id">🆔 ${emp.id}</div> -->
                         </div>
                         <div class="actions">
-                            <a href="/timetable/employee.html?id=${emp.id}" class="btn-link" target="_blank">📊 Калькулятор</a>
+                      <!-- <a href="/timetable/employee.html?id=${emp.id}" class="btn-link" target="_blank">📊 Калькулятор</a> -->
                             <button class="btn-copy-link" data-link="${employeeLink}">📋 Ссылка</button>
                             <button class="btn-stats" onclick="window.showStats('${emp.id}', '${emp.name}')">📈 Статистика</button>
                             <button class="btn-delete" onclick="window.deleteEmployee('${emp.id}')">🗑️</button>
