@@ -352,7 +352,6 @@
             signOut 
         } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         
-        // Импорт модуля статистики
         import { renderStats } from './stats-module.js';
 
         const app = initializeApp(firebaseConfig);
@@ -374,6 +373,7 @@
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.onAuthStateChanged = onAuthStateChanged;
         window.signOut = signOut;
+        window.showNotification = showNotification;
 
         console.log('🚀 Админ-панель загружена');
 
@@ -465,7 +465,7 @@
         // Показ статистики через модуль
         window.showStats = async (employeeId, employeeName) => {
             try {
-                await renderStats(employeeId, employeeName, db, collection, doc, query, where, getDocs, getDoc);
+                await renderStats(employeeId, employeeName, db, collection, doc, query, where, getDocs, getDoc, showNotification);
             } catch (error) {
                 console.error('❌ Ошибка статистики:', error);
                 showNotification('❌ Ошибка загрузки статистики', true);
@@ -493,10 +493,9 @@
                         <div>
                             <div class="emp-name">${emp.name || 'Без имени'}</div>
                             <div class="emp-phone">📱 ${emp.phone || 'Нет телефона'}</div>
-                           <!--  <div class="emp-id">🆔 ${emp.id}</div> -->
                         </div>
                         <div class="actions">
-                      <!-- <a href="/timetable/employee.html?id=${emp.id}" class="btn-link" target="_blank">📊 Калькулятор</a> -->
+                            <!-- <a href="employee.html?id=${emp.id}" class="btn-link" target="_blank">📊 Калькулятор</a> -->
                             <button class="btn-copy-link" data-link="${employeeLink}">📋 Ссылка</button>
                             <button class="btn-stats" onclick="window.showStats('${emp.id}', '${emp.name}')">📈 Статистика</button>
                             <button class="btn-delete" onclick="window.deleteEmployee('${emp.id}')">🗑️</button>
@@ -590,22 +589,6 @@
         };
 
         console.log('✅ Админ-панель готова к работе!');
-
-    // ... остальной код ...
-    
-    // Делаем функции глобальными для stats-module
-    window.collection = collection;
-    window.doc = doc;
-    window.query = query;
-    window.where = where;
-    window.getDocs = getDocs;
-    window.getDoc = getDoc;
-    window.updateDoc = updateDoc;
-    window.db = db;  
-    // Показ уведомлений из модуля
-    window.showNotification = showNotification;
-
-
     </script>
 </body>
 </html>
