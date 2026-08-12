@@ -3,7 +3,6 @@
 
 const { db, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs } = window;
 
-// Получаем ID сотрудника из URL
 const urlParams = new URLSearchParams(window.location.search);
 const EMPLOYEE_ID = urlParams.get('id');
 
@@ -20,7 +19,6 @@ if (!EMPLOYEE_ID) {
     throw new Error('No employee ID');
 }
 
-// Глобальные переменные
 let currentWeekOffset = 0;
 let currentData = null;
 let isSaving = false;
@@ -31,15 +29,51 @@ let settings = {
     rExtra: 3500,
     rOt1: 400,
     rOt2: 800,
-    hpd: 8,
     otLimit: 5
 };
-
-// Константы
+const NORMAL_HOURS_PER_DAY = 8;
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 // ============================================
-// ЗАГРУЗКА ИНФОРМАЦИИ О СОТРУДНИКЕ
+// ФУНКЦИИ ДЛЯ РАБОТЫ СО ВРЕМЕНЕМ
+// ============================================
+
+function timeToMinutes(timeStr) {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+}
+
+function timeToHours(timeStr) {
+    return timeToMinutes(timeStr) / 60;
+}
+
+function minutesToTime(minutes) {
+    const h = Math.floor(minutes / 60);
+    const m = Math.floor(minutes % 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function calculateHoursFromTime(startTime, endTime) {
+    if (!startTime || !endTime) return 0;
+    const startMin = timeToMinutes(startTime);
+    let endMin = timeToMinutes(endTime);
+    if (endMin <= startMin) {
+        endMin += 24 * 60;
+    }
+    return Math.round((endMin - startMin) / 60 * 100) / 100;
+}
+
+function getDefaultStartTime() {
+    return '08:00';
+}
+
+function getDefaultEndTime() {
+    return '17:00';
+}
+
+// ============================================
+// ЗАГРУЗКА НАСТРОЕК
 // ============================================
 
 async function loadEmployeeInfo() {
@@ -51,13 +85,11 @@ async function loadEmployeeInfo() {
             employeeName = data.name || 'Сотрудник';
             employeeRoomId = data.roomId || null;
             console.log('👤 Имя сотрудника:', employeeName);
-            console.log('🏠 Комната:', employeeRoomId);
             
             const badge = document.getElementById('userBadge');
             const nameEl = document.getElementById('userName');
             const avatarEl = document.getElementById('userAvatar');
             const idLabelEl = document.getElementById('userIdLabel');
-            
             if (badge) {
                 badge.style.display = 'flex';
                 badge.title = `ID: ${EMPLOYEE_ID}`;
@@ -65,7 +97,6 @@ async function loadEmployeeInfo() {
             if (nameEl) nameEl.textContent = employeeName;
             if (avatarEl) avatarEl.textContent = employeeName.charAt(0).toUpperCase();
             if (idLabelEl) idLabelEl.textContent = `ID: ${EMPLOYEE_ID.substring(0, 8)}...`;
-            
             return data;
         }
     } catch (error) {
@@ -81,10 +112,6 @@ async function loadEmployeeInfo() {
     return null;
 }
 
-// ============================================
-// ЗАГРУЗКА НАСТРОЕК ИЗ БАЗЫ
-// ============================================
-
 async function loadSettings() {
     try {
         const docRef = doc(db, 'salarySettings', EMPLOYEE_ID);
@@ -96,16 +123,13 @@ async function loadSettings() {
                 rExtra: data.rExtra || 3500,
                 rOt1: data.rOt1 || 400,
                 rOt2: data.rOt2 || 800,
-                hpd: data.hpd || 8,
                 otLimit: data.otLimit || 5
             };
             console.log('⚙️ Настройки загружены:', settings);
-            
             document.getElementById('rDay').value = settings.rDay;
             document.getElementById('rExtra').value = settings.rExtra;
             document.getElementById('rOt1').value = settings.rOt1;
             document.getElementById('rOt2').value = settings.rOt2;
-            document.getElementById('hpd').value = settings.hpd;
             document.getElementById('otLimit').value = settings.otLimit;
         } else {
             console.log('⚙️ Настройки не найдены, используем дефолтные');
@@ -125,7 +149,6 @@ async function saveSettings() {
             rExtra: settings.rExtra,
             rOt1: settings.rOt1,
             rOt2: settings.rOt2,
-            hpd: settings.hpd,
             otLimit: settings.otLimit,
             updatedAt: new Date().toISOString()
         };
@@ -178,78 +201,77 @@ function formatDate(d) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }).replace('.', '');
 }
 
-// Проверяем, является ли неделя будущей (начинается после сегодня)
 function isFutureWeek(weekKey) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    const todayMonday = getMonday(today);
     const weekDates = getWeekDates(0);
     const currentWeekKey = getWeekKey(weekDates[0]);
-    
     const currentNum = parseInt(currentWeekKey.match(/W(\d+)/)?.[1] || 0);
     const currentYear = parseInt(currentWeekKey.match(/^(\d+)-/)?.[1] || 0);
     const weekNum = parseInt(weekKey.match(/W(\d+)/)?.[1] || 0);
     const weekYear = parseInt(weekKey.match(/^(\d+)-/)?.[1] || 0);
-    
     if (weekYear > currentYear) return true;
     if (weekYear === currentYear && weekNum > currentNum) return true;
-    
     return false;
 }
 
 // ============================================
-// РАБОТА С БАЗОЙ ДАННЫХ (НЕДЕЛИ)
+// РАБОТА С БАЗОЙ ДАННЫХ
 // ============================================
 
 async function loadWeekData(weekKey) {
     try {
         const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
         const docSnap = await getDoc(docRef);
-        
         if (docSnap.exists()) {
             const data = docSnap.data();
             return {
                 workDays: data.workDays || [true, true, true, true, true, false, false],
-                hours: data.hours || [8, 8, 8, 8, 8, 0, 0],
-                isPaid: data.isPaid || false
+                hours: data.hours || [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+                isPaid: data.isPaid || false,
+                workStart: data.workStart || [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
+                workEnd: data.workEnd || [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', '']
             };
         } else {
             return {
                 workDays: [true, true, true, true, true, false, false],
-                hours: [8, 8, 8, 8, 8, 0, 0],
-                isPaid: false
+                hours: [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+                isPaid: false,
+                workStart: [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
+                workEnd: [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', '']
             };
         }
     } catch (error) {
         console.error('Ошибка загрузки:', error);
         return {
             workDays: [true, true, true, true, true, false, false],
-            hours: [8, 8, 8, 8, 8, 0, 0],
-            isPaid: false
+            hours: [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+            isPaid: false,
+            workStart: [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
+            workEnd: [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', '']
         };
     }
 }
 
-async function saveWeekData(weekKey, workDays, hours) {
+async function saveWeekData(weekKey, workDays, hours, workStart, workEnd) {
     if (isSaving) return;
     isSaving = true;
-    
     try {
         const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
         const data = {
             employeeId: EMPLOYEE_ID,
             weekKey: weekKey,
             workDays: workDays,
-            hours: hours,
+            hours: hours.map(h => Math.round(h * 100) / 100),
             isPaid: currentData?.isPaid || false,
+            workStart: workStart,
+            workEnd: workEnd,
             updatedAt: new Date().toISOString()
         };
         if (employeeRoomId) {
             data.roomId = employeeRoomId;
         }
         await setDoc(docRef, data, { merge: true });
-        
         showSaveIndicator('✅ Сохранено');
     } catch (error) {
         console.error('Ошибка сохранения:', error);
@@ -259,18 +281,11 @@ async function saveWeekData(weekKey, workDays, hours) {
     }
 }
 
-// ============================================
-// ОЧИСТКА БУДУЩИХ НЕДЕЛЬ (УЛУЧШЕННАЯ)
-// ============================================
 async function clearFutureWeeks() {
     const dates = getWeekDates(0);
-    const currentWeekKey = getWeekKey(dates[0]);
-    
-    // Проверяем, есть ли будущие недели
     const weeksRef = collection(db, 'salaryWeeks');
     const q = query(weeksRef, where('employeeId', '==', EMPLOYEE_ID));
     const snapshot = await getDocs(q);
-    
     let futureWeeks = [];
     snapshot.forEach((doc) => {
         const week = { id: doc.id, ...doc.data() };
@@ -278,37 +293,27 @@ async function clearFutureWeeks() {
             futureWeeks.push(week);
         }
     });
-    
     if (futureWeeks.length === 0) {
         showSaveIndicator('✅ Нет будущих недель для очистки');
         return;
     }
-    
-    // Показываем список недель, которые будут удалены
     const weekList = futureWeeks.map(w => {
         const num = w.weekKey.match(/W(\d+)/)?.[1] || '?';
         return `Неделя ${num}`;
     }).join(', ');
-    
     if (!confirm(`Найдено ${futureWeeks.length} будущих недель:\n${weekList}\n\nОчистить их?`)) {
         return;
     }
-    
     let deletedCount = 0;
     for (const week of futureWeeks) {
         try {
-            const docRef = doc(db, 'salaryWeeks', week.id);
-            await deleteDoc(docRef);
+            await deleteDoc(doc(db, 'salaryWeeks', week.id));
             deletedCount++;
-            console.log(`🗑️ Удалена неделя: ${week.weekKey}`);
         } catch (error) {
-            console.error('Ошибка удаления недели:', week.weekKey, error);
+            console.error('Ошибка удаления:', error);
         }
     }
-    
     showSaveIndicator(`✅ Очищено ${deletedCount} будущих недель`);
-    
-    // 👇 ВАЖНО: Возвращаемся на текущую неделю и перезагружаем данные
     currentWeekOffset = 0;
     const newDates = getWeekDates(0);
     const newWeekKey = getWeekKey(newDates[0]);
@@ -317,22 +322,18 @@ async function clearFutureWeeks() {
     if (!currentData) {
         currentData = {
             workDays: [true, true, true, true, true, false, false],
-            hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
-            isPaid: false
+            hours: [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+            isPaid: false,
+            workStart: [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
+            workEnd: [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', '']
         };
     }
     update();
-    
-    // 👇 ВАЖНО: Обновляем статистику у админа (если она открыта)
-    // Отправляем событие, чтобы админская статистика обновилась
     try {
-        // Попытка обновить статистику через глобальную функцию
         if (window.updateStatsAfterClear) {
             await window.updateStatsAfterClear(EMPLOYEE_ID);
         }
-    } catch (e) {
-        console.log('Статистика не обновлена (возможно, не открыта)');
-    }
+    } catch (e) {}
 }
 
 // ============================================
@@ -365,37 +366,76 @@ function showSettingsSaved(message, isError = false) {
     }, 3000);
 }
 
+function formatHours(hours) {
+    return hours.toFixed(2).replace('.', ',');
+}
+
+function updateTimeInputs() {
+    if (!currentData) return;
+    const { workDays, workStart, workEnd } = currentData;
+    const items = document.querySelectorAll('.day-time-item');
+    items.forEach((item, i) => {
+        const startInput = item.querySelector('.time-start');
+        const endInput = item.querySelector('.time-end');
+        const hoursDisplay = item.querySelector('.time-hours strong');
+        if (workDays[i]) {
+            startInput.disabled = false;
+            endInput.disabled = false;
+            startInput.value = workStart[i] || getDefaultStartTime();
+            endInput.value = workEnd[i] || getDefaultEndTime();
+            const h = calculateHoursFromTime(startInput.value, endInput.value);
+            hoursDisplay.textContent = formatHours(h);
+        } else {
+            startInput.disabled = true;
+            endInput.disabled = true;
+            startInput.value = '';
+            endInput.value = '';
+            hoursDisplay.textContent = '0';
+        }
+    });
+}
+
 function update() {
     if (!currentData) return;
-    
-    const { workDays, hours } = currentData;
+    const { workDays, hours, workStart, workEnd } = currentData;
     const dates = getWeekDates(currentWeekOffset);
     const weekKey = getWeekKey(dates[0]);
-    
     const isFuture = isFutureWeek(weekKey);
-    
     const rD = settings.rDay;
     const rE = settings.rExtra;
     const r1 = settings.rOt1;
     const r2 = settings.rOt2;
-    const hpd = settings.hpd;
     const lim = settings.otLimit;
     
     const days = workDays.filter(Boolean).length;
     const totalHours = hours.reduce((a, b) => a + b, 0);
-    const norm = days * hpd;
-    const baseDays = Math.min(days, 5);
-    const extraDays = Math.max(0, days - 5);
+    const norm = days * NORMAL_HOURS_PER_DAY;
     const ot = Math.max(0, totalHours - norm);
     const ot1 = Math.min(ot, lim);
     const ot2 = Math.max(0, ot - lim);
     
-    const payBase = baseDays * rD;
-    const payExtra = extraDays * rE;
+    let payBase = 0;
+    let payExtra = 0;
+    
+    for (let i = 0; i < workDays.length; i++) {
+        if (!workDays[i]) continue;
+        const dayHours = hours[i] || 0;
+        const dayIndex = workDays.slice(0, i).filter(Boolean).length;
+        const isExtraDay = dayIndex >= 5;
+        const dayRate = isExtraDay ? rE : rD;
+        const dayPay = Math.min(dayRate, (dayHours / NORMAL_HOURS_PER_DAY) * dayRate);
+        if (isExtraDay) {
+            payExtra += dayPay;
+        } else {
+            payBase += dayPay;
+        }
+    }
+    
     const payOt1 = ot1 * r1;
     const payOt2 = ot2 * r2;
     const total = payBase + payExtra + payOt1 + payOt2;
     
+    // Обновляем дни
     document.querySelectorAll('#days .day').forEach((b, i) => {
         const on = workDays[i];
         b.classList.toggle('on', on);
@@ -406,45 +446,38 @@ function update() {
         b.querySelector('i').textContent = rate.toLocaleString() + ' ₽';
     });
     
-    document.querySelectorAll('#dayHours .dh-item input').forEach((inp, i) => {
-        inp.disabled = !workDays[i];
-        if (!workDays[i]) {
-            inp.value = 0;
-        } else if (parseFloat(inp.value) !== hours[i]) {
-            inp.value = hours[i];
-        }
-    });
+    // Обновляем время
+    updateTimeInputs();
     
     document.getElementById('dOut').textContent = days;
-    document.getElementById('normOut').textContent = `норма: ${norm} ч (${days} дн × ${hpd} ч)`;
+    document.getElementById('normOut').textContent = `норма: ${norm.toFixed(1).replace('.', ',')} ч (${days} дн × 8 ч)`;
     
     const otB = document.getElementById('otBadge');
     const uwB = document.getElementById('uwBadge');
-    
     if (ot > 0) {
         otB.hidden = false;
-        otB.textContent = `переработка +${ot} ч`;
+        otB.textContent = `переработка +${formatHours(ot)} ч`;
         otB.className = 'badge ' + (ot2 > 0 ? 'hot' : 'ot');
     } else {
         otB.hidden = true;
     }
-    
     if (days > 0 && totalHours < norm) {
         uwB.hidden = false;
-        uwB.textContent = `меньше нормы на ${norm - totalHours} ч — переработки нет`;
+        uwB.textContent = `меньше нормы на ${formatHours(norm - totalHours)} ч`;
     } else {
         uwB.hidden = true;
     }
     
-    document.getElementById('qBase').textContent = `${baseDays} × ${rD.toLocaleString()} ₽`;
+    document.getElementById('qBase').textContent = `${workDays.slice(0, 5).filter(Boolean).length} дн × ${rD.toLocaleString()} ₽ (пропорционально)`;
     document.getElementById('vBase').textContent = payBase.toLocaleString() + ' ₽';
     
     const rowExtra = document.getElementById('rowExtra');
-    if (extraDays === 0) {
+    const extraDaysCount = workDays.slice(5, 7).filter(Boolean).length;
+    if (extraDaysCount === 0) {
         rowExtra.classList.add('gone');
     } else {
         rowExtra.classList.remove('gone');
-        document.getElementById('qExtra').textContent = `${extraDays} × ${rE.toLocaleString()} ₽`;
+        document.getElementById('qExtra').textContent = `${extraDaysCount} дн × ${rE.toLocaleString()} ₽ (пропорционально)`;
         document.getElementById('vExtra').textContent = payExtra.toLocaleString() + ' ₽';
     }
     
@@ -453,7 +486,7 @@ function update() {
         rowOt1.classList.add('gone');
     } else {
         rowOt1.classList.remove('gone');
-        document.getElementById('qOt1').textContent = `${ot1} ч × ${r1.toLocaleString()} ₽`;
+        document.getElementById('qOt1').textContent = `${formatHours(ot1)} ч × ${r1.toLocaleString()} ₽`;
         document.getElementById('vOt1').textContent = payOt1.toLocaleString() + ' ₽';
     }
     
@@ -462,7 +495,7 @@ function update() {
         rowOt2.classList.add('gone');
     } else {
         rowOt2.classList.remove('gone');
-        document.getElementById('qOt2').textContent = `${ot2} ч × ${r2.toLocaleString()} ₽`;
+        document.getElementById('qOt2').textContent = `${formatHours(ot2)} ч × ${r2.toLocaleString()} ₽`;
         document.getElementById('vOt2').textContent = payOt2.toLocaleString() + ' ₽';
     }
     
@@ -470,10 +503,9 @@ function update() {
     document.getElementById('bNorm').style.width = (Math.min(totalHours, norm) / scale * 100) + '%';
     document.getElementById('bOt1').style.width = (ot1 / scale * 100) + '%';
     document.getElementById('bOt2').style.width = (ot2 / scale * 100) + '%';
-    document.getElementById('lNorm').textContent = Math.min(totalHours, norm) + ' ч';
-    document.getElementById('lOt1').textContent = ot1 + ' ч';
-    document.getElementById('lOt2').textContent = ot2 + ' ч';
-    
+    document.getElementById('lNorm').textContent = formatHours(Math.min(totalHours, norm)) + ' ч';
+    document.getElementById('lOt1').textContent = formatHours(ot1) + ' ч';
+    document.getElementById('lOt2').textContent = formatHours(ot2) + ' ч';
     document.getElementById('totalOut').textContent = total.toLocaleString();
     
     const stamp = document.getElementById('stamp');
@@ -482,15 +514,14 @@ function update() {
     stamp.classList.add('pop');
     
     const parts = [];
-    if (baseDays) parts.push(`<b class="f-n">${baseDays}×${rD.toLocaleString()}</b>`);
-    if (extraDays) parts.push(`<b class="f-n">${extraDays}×${rE.toLocaleString()}</b>`);
-    if (ot1) parts.push(`<b class="f-1">${ot1}×${r1.toLocaleString()}</b>`);
-    if (ot2) parts.push(`<b class="f-2">${ot2}×${r2.toLocaleString()}</b>`);
+    if (payBase > 0) parts.push(`<b class="f-n">${(payBase / (rD || 1)).toFixed(2)}×${rD.toLocaleString()}</b>`);
+    if (payExtra > 0) parts.push(`<b class="f-n">${(payExtra / (rE || 1)).toFixed(2)}×${rE.toLocaleString()}</b>`);
+    if (ot1 > 0) parts.push(`<b class="f-1">${formatHours(ot1)}×${r1.toLocaleString()}</b>`);
+    if (ot2 > 0) parts.push(`<b class="f-2">${formatHours(ot2)}×${r2.toLocaleString()}</b>`);
     document.getElementById('formula').innerHTML = parts.length ? parts.join(' + ') + ` = ${total.toLocaleString()} ₽` : '—';
     
     document.getElementById('metaLine').textContent =
-        `отработано ${totalHours} ч · норма ${norm} ч` +
-        (totalHours > 0 && total > 0 ? ` · ≈ ${Math.round(total/totalHours)} ₽/час` : '');
+        `отработано ${formatHours(totalHours)} ч · норма ${formatHours(norm)} ч`;
     
     document.getElementById('chip1').textContent = `1–5 день · ${rD.toLocaleString()} ₽`;
     document.getElementById('chip2').textContent = `6–7 день · ${rE.toLocaleString()} ₽`;
@@ -502,7 +533,6 @@ function update() {
     document.getElementById('eyebrow').textContent = `Табель · ${weekLabel}`;
     document.getElementById('wk').textContent = weekLabel;
     
-    // Показываем предупреждение, если неделя будущая
     const clearBtn = document.getElementById('clearFutureBtn');
     if (clearBtn) {
         if (isFuture) {
@@ -517,12 +547,9 @@ function update() {
 }
 
 function buildUI() {
+    // Дни
     const daysBox = document.getElementById('days');
-    const dhBox = document.getElementById('dayHours');
-    
     daysBox.innerHTML = '';
-    dhBox.innerHTML = '';
-    
     DAY_NAMES.forEach((n, i) => {
         const b = document.createElement('button');
         b.type = 'button';
@@ -533,47 +560,62 @@ function buildUI() {
             if (!currentData) return;
             currentData.workDays[i] = !currentData.workDays[i];
             if (currentData.workDays[i]) {
-                currentData.hours[i] = settings.hpd;
+                const hours = calculateHoursFromTime(
+                    currentData.workStart[i] || getDefaultStartTime(),
+                    currentData.workEnd[i] || getDefaultEndTime()
+                );
+                currentData.hours[i] = hours || NORMAL_HOURS_PER_DAY;
             } else {
                 currentData.hours[i] = 0;
             }
             update();
             const dates = getWeekDates(currentWeekOffset);
             const weekKey = getWeekKey(dates[0]);
-            await saveWeekData(weekKey, currentData.workDays, currentData.hours);
+            await saveWeekData(weekKey, currentData.workDays, currentData.hours, currentData.workStart, currentData.workEnd);
         });
         daysBox.appendChild(b);
-        
+    });
+    
+    // Время по дням
+    const timeGroup = document.getElementById('dayTimeGroup');
+    timeGroup.innerHTML = '';
+    DAY_NAMES.forEach((n, i) => {
         const div = document.createElement('div');
-        div.className = 'dh-item';
-        div.dataset.i = i;
+        div.className = 'day-time-item';
         div.innerHTML = `
-            <label>${n}</label>
-            <input type="number" min="0" max="24" step="1" value="0">
+            <span class="day-label">${n}</span>
+            <input type="time" class="time-start" value="">
+            <input type="time" class="time-end" value="">
+            <span class="time-hours">⏱ <strong>0</strong> ч</span>
         `;
-        const inp = div.querySelector('input');
-        inp.addEventListener('input', async (e) => {
+        const startInput = div.querySelector('.time-start');
+        const endInput = div.querySelector('.time-end');
+        
+        const onTimeChange = async () => {
             if (!currentData) return;
-            const v = parseFloat(e.target.value);
-            if (!isNaN(v) && v >= 0 && v <= 24) {
-                currentData.hours[i] = v;
-                update();
-                const dates = getWeekDates(currentWeekOffset);
-                const weekKey = getWeekKey(dates[0]);
-                await saveWeekData(weekKey, currentData.workDays, currentData.hours);
+            const i = parseInt(div.dataset.index || '0');
+            if (!currentData.workDays[i]) {
+                startInput.value = '';
+                endInput.value = '';
+                return;
             }
-        });
-        inp.addEventListener('blur', (e) => {
-            let v = parseFloat(e.target.value);
-            if (isNaN(v) || v < 0) v = 0;
-            if (v > 24) v = 24;
-            e.target.value = v;
-            if (currentData) {
-                currentData.hours[i] = v;
-                update();
-            }
-        });
-        dhBox.appendChild(div);
+            currentData.workStart[i] = startInput.value || '';
+            currentData.workEnd[i] = endInput.value || '';
+            const hours = calculateHoursFromTime(startInput.value, endInput.value);
+            currentData.hours[i] = hours || 0;
+            update();
+            const dates = getWeekDates(currentWeekOffset);
+            const weekKey = getWeekKey(dates[0]);
+            await saveWeekData(weekKey, currentData.workDays, currentData.hours, currentData.workStart, currentData.workEnd);
+        };
+        
+        startInput.addEventListener('change', onTimeChange);
+        endInput.addEventListener('change', onTimeChange);
+        startInput.addEventListener('blur', onTimeChange);
+        endInput.addEventListener('blur', onTimeChange);
+        
+        div.dataset.index = i;
+        timeGroup.appendChild(div);
     });
 }
 
@@ -584,7 +626,6 @@ function updateWeekLabel(dates) {
     const today = new Date();
     const todayWeek = getWeekKey(today);
     const isCurrent = weekKey === todayWeek;
-    
     document.getElementById('weekRange').textContent = `${formatDate(mon)} – ${formatDate(sun)}`;
     document.getElementById('weekSub').textContent = isCurrent ? 'текущая неделя' : weekKey;
 }
@@ -596,21 +637,19 @@ function updateWeekLabel(dates) {
 async function init() {
     await loadSettings();
     await loadEmployeeInfo();
-    
     buildUI();
-    
     const dates = getWeekDates(0);
     const weekKey = getWeekKey(dates[0]);
     currentData = await loadWeekData(weekKey);
-    
     if (!currentData) {
         currentData = {
             workDays: [true, true, true, true, true, false, false],
-            hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
-            isPaid: false
+            hours: [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+            isPaid: false,
+            workStart: [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
+            workEnd: [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', '']
         };
     }
-    
     updateWeekLabel(dates);
     update();
     
@@ -623,13 +662,14 @@ async function init() {
         if (!currentData) {
             currentData = {
                 workDays: [true, true, true, true, true, false, false],
-                hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
-                isPaid: false
+                hours: [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+                isPaid: false,
+                workStart: [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
+                workEnd: [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', '']
             };
         }
         update();
     });
-    
     document.getElementById('weekNext').addEventListener('click', async () => {
         currentWeekOffset++;
         const dates = getWeekDates(currentWeekOffset);
@@ -639,13 +679,14 @@ async function init() {
         if (!currentData) {
             currentData = {
                 workDays: [true, true, true, true, true, false, false],
-                hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
-                isPaid: false
+                hours: [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+                isPaid: false,
+                workStart: [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
+                workEnd: [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', '']
             };
         }
         update();
     });
-    
     document.getElementById('weekToday').addEventListener('click', async () => {
         currentWeekOffset = 0;
         const dates = getWeekDates(0);
@@ -655,8 +696,10 @@ async function init() {
         if (!currentData) {
             currentData = {
                 workDays: [true, true, true, true, true, false, false],
-                hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
-                isPaid: false
+                hours: [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+                isPaid: false,
+                workStart: [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
+                workEnd: [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', '']
             };
         }
         update();
@@ -668,28 +711,31 @@ async function init() {
         if (idx !== -1) {
             currentData.workDays[idx] = false;
             currentData.hours[idx] = 0;
+            currentData.workStart[idx] = '';
+            currentData.workEnd[idx] = '';
             update();
             const dates = getWeekDates(currentWeekOffset);
             const weekKey = getWeekKey(dates[0]);
-            await saveWeekData(weekKey, currentData.workDays, currentData.hours);
+            await saveWeekData(weekKey, currentData.workDays, currentData.hours, currentData.workStart, currentData.workEnd);
         }
     });
-    
     document.getElementById('dPlus').addEventListener('click', async () => {
         if (!currentData) return;
         const idx = currentData.workDays.indexOf(false);
         if (idx !== -1) {
             currentData.workDays[idx] = true;
-            currentData.hours[idx] = settings.hpd;
+            currentData.workStart[idx] = getDefaultStartTime();
+            currentData.workEnd[idx] = getDefaultEndTime();
+            const hours = calculateHoursFromTime(getDefaultStartTime(), getDefaultEndTime());
+            currentData.hours[idx] = hours;
             update();
             const dates = getWeekDates(currentWeekOffset);
             const weekKey = getWeekKey(dates[0]);
-            await saveWeekData(weekKey, currentData.workDays, currentData.hours);
+            await saveWeekData(weekKey, currentData.workDays, currentData.hours, currentData.workStart, currentData.workEnd);
         }
     });
     
-    // ===== ОБРАБОТЧИКИ ДЛЯ СТАВОК =====
-    const settingsFields = ['rDay', 'rExtra', 'rOt1', 'rOt2', 'hpd', 'otLimit'];
+    const settingsFields = ['rDay', 'rExtra', 'rOt1', 'rOt2', 'otLimit'];
     settingsFields.forEach(id => {
         const el = document.getElementById(id);
         if (el) {
@@ -708,14 +754,12 @@ async function init() {
         }
     });
     
-    // ===== КНОПКА ОЧИСТКИ БУДУЩИХ НЕДЕЛЬ =====
     const clearFutureBtn = document.createElement('button');
     clearFutureBtn.id = 'clearFutureBtn';
     clearFutureBtn.className = 'btn btn-ghost';
     clearFutureBtn.style.display = 'none';
     clearFutureBtn.textContent = '⚠️ Будущая неделя! Очистить всё';
     clearFutureBtn.addEventListener('click', clearFutureWeeks);
-    
     const actionsDiv = document.querySelector('.actions');
     if (actionsDiv) {
         actionsDiv.appendChild(clearFutureBtn);
@@ -727,11 +771,13 @@ async function init() {
         const weekKey = getWeekKey(dates[0]);
         currentData = {
             workDays: [true, true, true, true, true, false, false],
-            hours: [settings.hpd, settings.hpd, settings.hpd, settings.hpd, settings.hpd, 0, 0],
-            isPaid: false
+            hours: [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+            isPaid: false,
+            workStart: [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
+            workEnd: [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', '']
         };
         update();
-        await saveWeekData(weekKey, currentData.workDays, currentData.hours);
+        await saveWeekData(weekKey, currentData.workDays, currentData.hours, currentData.workStart, currentData.workEnd);
     });
     
     document.getElementById('copyBtn').addEventListener('click', async () => {
@@ -760,10 +806,6 @@ async function init() {
         }
     });
 }
-
-// ============================================
-// ДОБАВЛЯЕМ СТИЛИ
-// ============================================
 
 const style = document.createElement('style');
 style.textContent = `
@@ -816,10 +858,6 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
-
-// ============================================
-// ЗАПУСК
-// ============================================
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
