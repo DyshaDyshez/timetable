@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Моя статистика</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .user-badge {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 181, 46, 0.15);
+            border: 1px solid var(--amber);
+            color: var(--amber2);
+            padding: 6px 16px;
+            border-radius: 999px;
+            font-size: .78rem;
+            font-family: var(--mono);
+            z-index: 100;
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            transition: all .3s;
+        }
+        .user-badge:hover {
+            transform: scale(1.05);
+            background: rgba(255, 181, 46, 0.25);
+        }
+        .user-badge .avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--amber);
+            color: #241d10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: .7rem;
+        }
+        .user-badge .name {
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .user-badge .id-label {
+            color: var(--mut);
+            font-size: .6rem;
+            opacity: 0.7;
+        }
+        @media (max-width: 768px) {
+            .user-badge {
+                top: 12px;
+                right: 12px;
+                padding: 4px 12px;
+                font-size: .65rem;
+            }
+            .user-badge .avatar {
+                width: 20px;
+                height: 20px;
+                font-size: .6rem;
+            }
+            .user-badge .name {
+                max-width: 100px;
+            }
+        }
+        @media (max-width: 480px) {
+            .user-badge {
+                top: 8px;
+                right: 8px;
+                padding: 3px 10px;
+                font-size: .55rem;
+            }
+            .user-badge .avatar {
+                width: 16px;
+                height: 16px;
+                font-size: .5rem;
+            }
+            .user-badge .name {
+                max-width: 70px;
+            }
+            .user-badge .id-label {
+                display: none;
+            }
+        }
+
+        .stats-page {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px 16px 40px;
+        }
+        .stats-page .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .stats-page .header h1 {
+            font-family: var(--display);
+            font-weight: 400;
+            color: var(--amber);
+            font-size: clamp(1.6rem, 4vw, 2.4rem);
+        }
+        .stats-page .header .back-link {
+            color: var(--mut);
+            text-decoration: none;
+            font-size: .85rem;
+            padding: 8px 16px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            transition: .2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-height: 44px;
+        }
+        .stats-page .header .back-link:hover {
+            border-color: var(--amber);
+            color: var(--amber2);
+        }
+        .stats-page .header .back-link:active {
+            transform: scale(0.95);
+        }
+
+        /* Карточки статистики */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+        .stats-grid .stat-card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 12px 10px;
+            text-align: center;
+        }
+        .stats-grid .stat-card .label {
+            font-size: .6rem;
+            text-transform: uppercase;
+            color: var(--mut);
+            letter-spacing: .05em;
+        }
+        .stats-grid .stat-card .value {
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin-top: 2px;
+        }
+        .stats-grid .stat-card .value.amber {
+            color: var(--amber);
+        }
+        .stats-grid .stat-card .value.teal {
+            color: var(--teal);
+        }
+        .stats-grid .stat-card .value.red {
+            color: var(--red);
+        }
+        .stats-grid .stat-card .value.green {
+            color: #7bed9f;
+        }
+        .stats-grid .stat-card .value.mut {
+            color: var(--mut);
+        }
+
+        @media (max-width: 480px) {
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+            .stats-grid .stat-card .value {
+                font-size: 1rem;
+            }
+        }
+
+        /* Список недель */
+        .week-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .week-item {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 12px 14px;
+            transition: .2s;
+        }
+        .week-item:hover {
+            border-color: var(--amber);
+        }
+        .week-item .week-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .week-item .week-header .week-title {
+            font-weight: bold;
+            font-size: .95rem;
+        }
+        .week-item .week-header .week-date {
+            font-size: .7rem;
+            color: var(--mut);
+        }
+        .week-item .week-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+        }
+        .week-item .week-details .detail-item {
+            text-align: center;
+        }
+        .week-item .week-details .detail-item .dlabel {
+            font-size: .55rem;
+            color: var(--mut);
+            text-transform: uppercase;
+        }
+        .week-item .week-details .detail-item .dvalue {
+            font-size: .9rem;
+            font-weight: bold;
+        }
+        .week-item .week-details .detail-item .dvalue.paid {
+            color: var(--teal);
+        }
+        .week-item .week-details .detail-item .dvalue.unpaid {
+            color: var(--red);
+        }
+        .week-item .week-details .detail-item .dvalue.debt {
+            color: var(--amber);
+        }
+        .week-item .week-actions {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .week-item .week-actions .btn-small {
+            padding: 8px 14px;
+            border-radius: 6px;
+            border: none;
+            font-size: .8rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: .2s;
+            flex: 1;
+            min-width: 80px;
+            min-height: 40px;
+        }
+        .week-item .week-actions .btn-small.amber {
+            background: var(--amber);
+            color: #241d10;
+        }
+        .week-item .week-actions .btn-small.amber:hover {
+            filter: brightness(1.1);
+        }
+        .week-item .week-actions .btn-small.amber:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .week-item .week-actions .btn-small.ghost {
+            background: transparent;
+            color: var(--mut);
+            border: 1px solid var(--line);
+        }
+        .week-item .week-actions .btn-small.ghost:hover {
+            border-color: var(--mut);
+            color: var(--txt);
+        }
+        .week-item .week-actions .btn-small.teal {
+            background: var(--teal);
+            color: #0c1520;
+        }
+        .week-item .week-actions .btn-small.teal:hover {
+            filter: brightness(1.1);
+        }
+        .week-item .week-actions .btn-small.teal:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .week-item .week-actions .pay-input-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
+            min-width: 140px;
+        }
+        .week-item .week-actions .pay-input-group input {
+            padding: 8px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            background: var(--bg2);
+            color: var(--txt);
+            font-size: .85rem;
+            width: 90px;
+            text-align: center;
+            min-height: 40px;
+        }
+        .week-item .week-actions .pay-input-group input:focus {
+            border-color: var(--amber);
+            outline: none;
+        }
+        .week-item .week-actions .pay-input-group span {
+            font-size: .8rem;
+            color: var(--mut);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--mut);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--mut);
+        }
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+
+        .debt-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-size: .65rem;
+            font-weight: bold;
+            background: rgba(255,181,46,.15);
+            color: var(--amber2);
+            border: 1px solid rgba(255,181,46,.3);
+        }
+
+        /* Мобильная адаптация */
+        @media (max-width: 480px) {
+            .stats-page {
+                padding: 12px 10px 30px;
+            }
+            .stats-page .header {
+                gap: 8px;
+            }
+            .stats-page .header .back-link {
+                font-size: .75rem;
+                padding: 6px 12px;
+                min-height: 36px;
+                width: 100%;
+                justify-content: center;
+            }
+            .week-item {
+                padding: 10px 10px;
+            }
+            .week-item .week-details {
+                grid-template-columns: 1fr 1fr;
+                gap: 4px;
+            }
+            .week-item .week-actions {
+                flex-direction: column;
+                gap: 6px;
+            }
+            .week-item .week-actions .pay-input-group {
+                min-width: 100%;
+            }
+            .week-item .week-actions .pay-input-group input {
+                width: 100%;
+                font-size: .8rem;
+            }
+            .week-item .week-actions .btn-small {
+                min-height: 36px;
+                font-size: .75rem;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="user-badge" id="userBadge" style="display: none;">
+        <div class="avatar" id="userAvatar">?</div>
+        <span class="name" id="userName">Загрузка...</span>
+        <span class="id-label" id="userIdLabel">ID: —</span>
+    </div>
+
+    <div class="stripe" aria-hidden="true"></div>
+
+    <div class="stats-page">
+        <div class="header">
+            <div>
+                <h1>📊 Моя статистика</h1>
+                <div style="font-size:.8rem; color:var(--mut);" id="employeeNameHeader">Загрузка...</div>
+            </div>
+            <a href="employee.html?id=" class="back-link" id="backLink">← Назад к калькулятору</a>
+        </div>
+
+        <!-- Карточки общей статистики -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="label">Всего заработано</div>
+                <div class="value amber" id="totalEarned">0 ₽</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Получено</div>
+                <div class="value teal" id="totalReceived">0 ₽</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Активный долг</div>
+                <div class="value red" id="totalDebt">0 ₽</div>
+            </div>
+        </div>
+
+        <!-- Список недель -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <span style="font-weight:600; font-size:.9rem;">📋 История по неделям</span>
+            <span style="font-size:.7rem; color:var(--mut);" id="weeksCount">0 недель</span>
+        </div>
+        <div class="week-list" id="weekList">
+            <div class="loading">Загрузка...</div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { firebaseConfig } from './config.js';
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { 
+            getFirestore, 
+            doc, getDoc, setDoc, updateDoc, deleteDoc, 
+            collection, query, where, getDocs, addDoc 
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.db = db;
+        window.doc = doc;
+        window.getDoc = getDoc;
+        window.setDoc = setDoc;
+        window.updateDoc = updateDoc;
+        window.deleteDoc = deleteDoc;
+        window.collection = collection;
+        window.query = query;
+        window.where = where;
+        window.getDocs = getDocs;
+        window.addDoc = addDoc;
+    </script>
+    <script type="module" src="employee-stats.js"></script>
+</body>
+</html>

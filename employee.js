@@ -1,7 +1,7 @@
 // employee.js
 // Скрипт страницы сотрудника
 
-const { db, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs } = window;
+const { db, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs, addDoc } = window;
 
 const urlParams = new URLSearchParams(window.location.search);
 const EMPLOYEE_ID = urlParams.get('id');
@@ -44,16 +44,6 @@ function timeToMinutes(timeStr) {
     return parseInt(parts[0]) * 60 + parseInt(parts[1]);
 }
 
-function timeToHours(timeStr) {
-    return timeToMinutes(timeStr) / 60;
-}
-
-function minutesToTime(minutes) {
-    const h = Math.floor(minutes / 60);
-    const m = Math.floor(minutes % 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
 function calculateHoursFromTime(startTime, endTime) {
     if (!startTime || !endTime) return 0;
     const startMin = timeToMinutes(startTime);
@@ -71,6 +61,343 @@ function getDefaultStartTime() {
 function getDefaultEndTime() {
     return '17:00';
 }
+
+// ============================================
+// ФУНКЦИИ ФОРМАТИРОВАНИЯ
+// ============================================
+
+function formatDate(dateStr) {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatDateShort(d) {
+    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }).replace('.', '');
+}
+
+// ============================================
+// ФИНАНСОВЫЕ ФУНКЦИИ ДЛЯ СОТРУДНИКА
+// ============================================
+
+async function getEmployeeAdvances(employeeId) {
+    try {
+        const advancesRef = collection(db, 'salaryAdvances');
+        const q = query(advancesRef, where('employeeId', '==', employeeId));
+        const snapshot = await getDocs(q);
+        const advances = [];
+        snapshot.forEach((doc) => {
+            advances.push({ id: doc.id, ...doc.data() });
+        });
+        return advances.sort((a, b) => b.date.localeCompare(a.date));
+    } catch (error) {
+        console.error('Ошибка загрузки авансов:', error);
+        return [];
+    }
+}
+
+async function addEmployeeAdvance(employeeId, amount, comment) {
+    try {
+        const docRef = await addDoc(collection(db, 'salaryAdvances'), {
+            employeeId: employeeId,
+            amount: parseFloat(amount) || 0,
+            type: 'advance',
+            status: 'active',
+            date: new Date().toISOString(),
+            comment: comment || '',
+            repaidAt: null,
+            repaidFromWeek: null,
+            repaidAmount: null
+        });
+        return { success: true, id: docRef.id };
+    } catch (error) {
+        console.error('Ошибка добавления аванса:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function repayEmployeeAdvance(advanceId) {
+    try {
+        const advanceRef = doc(db, 'salaryAdvances', advanceId);
+        await updateDoc(advanceRef, {
+            status: 'repaid',
+            repaidAt: new Date().toISOString(),
+            repaidFromWeek: null,
+            repaidAmount: 0
+        });
+        return { success: true };
+    } catch (error) {
+        console.error('Ошибка погашения аванса:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function deleteEmployeeAdvance(advanceId) {
+    try {
+        await deleteDoc(doc(db, 'salaryAdvances', advanceId));
+        return { success: true };
+    } catch (error) {
+        console.error('Ошибка удаления аванса:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// ============================================
+// UI ДЛЯ ФИНАНСОВОГО БЛОКА (С АРХИВОМ)
+// ============================================
+
+async function renderEmployeeFinance() {
+    const container = document.getElementById('employeeFinanceContent');
+    if (!container) return;
+    
+    try {
+        const advances = await getEmployeeAdvances(EMPLOYEE_ID);
+        const activeAdvances = advances.filter(a => a.status === 'active');
+        const totalDebt = activeAdvances.reduce((sum, a) => sum + a.amount, 0);
+        
+        // Берем последние 4 аванса (включая погашенные)
+        const visibleAdvances = advances.slice(0, 4);
+        const archivedAdvances = advances.slice(4);
+        const hasArchived = archivedAdvances.length > 0;
+        
+        // Сохраняем состояние архива в DOM
+        let archiveVisible = false;
+        
+        container.innerHTML = `
+            <div class="debt-summary">
+                <div class="debt-item">
+                    <div class="label">Общий долг</div>
+                    <div class="value debt">${totalDebt.toLocaleString()} ₽</div>
+                </div>
+                <div class="debt-item">
+                    <div class="label">Активных авансов</div>
+                    <div class="value count">${activeAdvances.length}</div>
+                </div>
+            </div>
+            
+            <div class="advance-form">
+                <input type="number" id="advanceAmount" placeholder="Сумма аванса" min="0" step="100">
+                <input type="text" id="advanceComment" placeholder="Комментарий (необязательно)">
+                <button id="takeAdvanceBtn">📤 Взять аванс</button>
+                ${activeAdvances.length > 0 ? `
+                    <button id="repayAllBtn" class="repay-all-btn">✅ Погасить все</button>
+                ` : ''}
+            </div>
+            
+            <div id="advanceMessage" style="font-size:.8rem; margin-bottom:8px; min-height:20px;"></div>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-weight:600; font-size:.85rem;">📋 Последние операции</span>
+                <span style="font-size:.7rem; color:var(--mut);">${advances.length} записей</span>
+            </div>
+            <div class="advance-list" id="advanceList">
+                ${advances.length === 0 ? `
+                    <div class="no-advances">Нет авансов</div>
+                ` : `
+                    ${visibleAdvances.map(a => `
+                        <div class="advance-row ${a.status === 'active' ? 'active-row' : 'repaid-row'}">
+                            <div class="info">
+                                <div>
+                                    ${a.type === 'advance' ? '📤' : '📥'} 
+                                    ${a.status === 'active' ? 'Аванс' : 'Погашен'}
+                                    ${a.status === 'active' ? ' <span style="color:var(--red);font-size:.6rem;">(активен)</span>' : ''}
+                                </div>
+                                <div class="comment">${a.comment || 'Без комментария'} · ${formatDate(a.date)}</div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:12px;">
+                                <div class="amount ${a.status === 'active' ? 'active' : 'repaid'}">
+                                    ${a.amount.toLocaleString()} ₽
+                                </div>
+                                ${a.status === 'active' ? `
+                                    <div class="actions">
+                                        <button class="repay-btn" onclick="window.handleRepayAdvance('${a.id}')">✅</button>
+                                        <button class="delete-btn" onclick="window.handleDeleteAdvance('${a.id}')">🗑️</button>
+                                    </div>
+                                ` : `
+                                    <span style="font-size:.6rem; color:var(--mut);">погашен</span>
+                                `}
+                            </div>
+                        </div>
+                    `).join('')}
+                    
+                    ${hasArchived ? `
+                        <div style="margin-top:8px;">
+                            <button id="toggleArchiveBtn" 
+                                    style="background:rgba(255,255,255,.05); border:1px solid var(--line); 
+                                           color:var(--mut); padding:6px 12px; border-radius:6px; 
+                                           cursor:pointer; font-size:.7rem; width:100%; transition:.2s;">
+                                📂 Показать архив (${archivedAdvances.length})
+                            </button>
+                            <div id="archiveContainer" style="display:none; margin-top:4px; border-top:1px dashed var(--line); padding-top:4px;">
+                                ${archivedAdvances.map(a => `
+                                    <div class="advance-row ${a.status === 'active' ? 'active-row' : 'repaid-row'}" style="opacity:0.7;">
+                                        <div class="info">
+                                            <div>
+                                                ${a.type === 'advance' ? '📤' : '📥'} 
+                                                ${a.status === 'active' ? 'Аванс' : 'Погашен'}
+                                            </div>
+                                            <div class="comment">${a.comment || 'Без комментария'} · ${formatDate(a.date)}</div>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:12px;">
+                                            <div class="amount ${a.status === 'active' ? 'active' : 'repaid'}">
+                                                ${a.amount.toLocaleString()} ₽
+                                            </div>
+                                            ${a.status === 'active' ? `
+                                                <div class="actions">
+                                                    <button class="repay-btn" onclick="window.handleRepayAdvance('${a.id}')">✅</button>
+                                                    <button class="delete-btn" onclick="window.handleDeleteAdvance('${a.id}')">🗑️</button>
+                                                </div>
+                                            ` : `
+                                                <span style="font-size:.6rem; color:var(--mut);">погашен</span>
+                                            `}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                `}
+            </div>
+        `;
+        
+        // Обработчики
+        const takeBtn = document.getElementById('takeAdvanceBtn');
+        if (takeBtn) {
+            takeBtn.addEventListener('click', handleTakeAdvance);
+        }
+        
+        const repayAllBtn = document.getElementById('repayAllBtn');
+        if (repayAllBtn) {
+            repayAllBtn.addEventListener('click', handleRepayAll);
+        }
+        
+        const amountInput = document.getElementById('advanceAmount');
+        if (amountInput) {
+            amountInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') handleTakeAdvance();
+            });
+        }
+        
+        // Кнопка показа/скрытия архива
+        const toggleBtn = document.getElementById('toggleArchiveBtn');
+        const archiveContainer = document.getElementById('archiveContainer');
+        if (toggleBtn && archiveContainer) {
+            toggleBtn.addEventListener('click', () => {
+                const isHidden = archiveContainer.style.display === 'none';
+                archiveContainer.style.display = isHidden ? 'block' : 'none';
+                toggleBtn.textContent = isHidden 
+                    ? `📂 Скрыть архив (${archivedAdvances.length})` 
+                    : `📂 Показать архив (${archivedAdvances.length})`;
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка рендеринга финансов:', error);
+        container.innerHTML = `
+            <div style="text-align:center; padding: 20px; color: var(--red);">
+                ❌ Ошибка загрузки финансов
+            </div>
+        `;
+    }
+}
+
+// ============================================
+// ОБРАБОТЧИКИ ДЛЯ ФИНАНСОВ
+// ============================================
+
+async function handleTakeAdvance() {
+    const amountInput = document.getElementById('advanceAmount');
+    const commentInput = document.getElementById('advanceComment');
+    const messageEl = document.getElementById('advanceMessage');
+    
+    const amount = parseFloat(amountInput?.value);
+    const comment = commentInput?.value?.trim() || '';
+    
+    if (!amount || amount <= 0) {
+        if (messageEl) messageEl.textContent = '❌ Введите сумму';
+        return;
+    }
+    
+    const btn = document.getElementById('takeAdvanceBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ ...';
+    }
+    
+    try {
+        const result = await addEmployeeAdvance(EMPLOYEE_ID, amount, comment);
+        if (result.success) {
+            if (amountInput) amountInput.value = '';
+            if (commentInput) commentInput.value = '';
+            if (messageEl) messageEl.textContent = '✅ Аванс взят!';
+            await renderEmployeeFinance();
+        } else {
+            if (messageEl) messageEl.textContent = '❌ ' + result.error;
+        }
+    } catch (error) {
+        if (messageEl) messageEl.textContent = '❌ ' + error.message;
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '📤 Взять аванс';
+        }
+    }
+}
+
+async function handleRepayAll() {
+    if (!confirm('Погасить все активные авансы?')) return;
+    
+    try {
+        const advances = await getEmployeeAdvances(EMPLOYEE_ID);
+        const active = advances.filter(a => a.status === 'active');
+        let successCount = 0;
+        for (const a of active) {
+            const result = await repayEmployeeAdvance(a.id);
+            if (result.success) successCount++;
+        }
+        await renderEmployeeFinance();
+        const messageEl = document.getElementById('advanceMessage');
+        if (messageEl) messageEl.textContent = `✅ Погашено ${successCount} авансов`;
+    } catch (error) {
+        const messageEl = document.getElementById('advanceMessage');
+        if (messageEl) messageEl.textContent = '❌ ' + error.message;
+    }
+}
+
+window.handleRepayAdvance = async function(advanceId) {
+    if (!confirm('Погасить этот аванс?')) return;
+    try {
+        const result = await repayEmployeeAdvance(advanceId);
+        if (result.success) {
+            await renderEmployeeFinance();
+            const messageEl = document.getElementById('advanceMessage');
+            if (messageEl) messageEl.textContent = '✅ Аванс погашен';
+        } else {
+            const messageEl = document.getElementById('advanceMessage');
+            if (messageEl) messageEl.textContent = '❌ ' + result.error;
+        }
+    } catch (error) {
+        const messageEl = document.getElementById('advanceMessage');
+        if (messageEl) messageEl.textContent = '❌ ' + error.message;
+    }
+};
+
+window.handleDeleteAdvance = async function(advanceId) {
+    if (!confirm('Удалить аванс?')) return;
+    try {
+        const result = await deleteEmployeeAdvance(advanceId);
+        if (result.success) {
+            await renderEmployeeFinance();
+            const messageEl = document.getElementById('advanceMessage');
+            if (messageEl) messageEl.textContent = '🗑️ Аванс удалён';
+        } else {
+            const messageEl = document.getElementById('advanceMessage');
+            if (messageEl) messageEl.textContent = '❌ ' + result.error;
+        }
+    } catch (error) {
+        const messageEl = document.getElementById('advanceMessage');
+        if (messageEl) messageEl.textContent = '❌ ' + error.message;
+    }
+};
 
 // ============================================
 // ЗАГРУЗКА НАСТРОЕК
@@ -195,10 +522,6 @@ function getWeekDates(offset) {
         dates.push(d);
     }
     return dates;
-}
-
-function formatDate(d) {
-    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }).replace('.', '');
 }
 
 function isFutureWeek(weekKey) {
@@ -435,7 +758,6 @@ function update() {
     const payOt2 = ot2 * r2;
     const total = payBase + payExtra + payOt1 + payOt2;
     
-    // Обновляем дни
     document.querySelectorAll('#days .day').forEach((b, i) => {
         const on = workDays[i];
         b.classList.toggle('on', on);
@@ -446,7 +768,6 @@ function update() {
         b.querySelector('i').textContent = rate.toLocaleString() + ' ₽';
     });
     
-    // Обновляем время
     updateTimeInputs();
     
     document.getElementById('dOut').textContent = days;
@@ -529,7 +850,7 @@ function update() {
     
     const mon = dates[0];
     const sun = dates[6];
-    const weekLabel = `неделя №${weekKey.replace('W', '')} · ${formatDate(mon)} – ${formatDate(sun)}`;
+    const weekLabel = `неделя №${weekKey.replace('W', '')} · ${formatDateShort(mon)} – ${formatDateShort(sun)}`;
     document.getElementById('eyebrow').textContent = `Табель · ${weekLabel}`;
     document.getElementById('wk').textContent = weekLabel;
     
@@ -547,7 +868,6 @@ function update() {
 }
 
 function buildUI() {
-    // Дни
     const daysBox = document.getElementById('days');
     daysBox.innerHTML = '';
     DAY_NAMES.forEach((n, i) => {
@@ -576,7 +896,6 @@ function buildUI() {
         daysBox.appendChild(b);
     });
     
-    // Время по дням
     const timeGroup = document.getElementById('dayTimeGroup');
     timeGroup.innerHTML = '';
     DAY_NAMES.forEach((n, i) => {
@@ -626,7 +945,7 @@ function updateWeekLabel(dates) {
     const today = new Date();
     const todayWeek = getWeekKey(today);
     const isCurrent = weekKey === todayWeek;
-    document.getElementById('weekRange').textContent = `${formatDate(mon)} – ${formatDate(sun)}`;
+    document.getElementById('weekRange').textContent = `${formatDateShort(mon)} – ${formatDateShort(sun)}`;
     document.getElementById('weekSub').textContent = isCurrent ? 'текущая неделя' : weekKey;
 }
 
@@ -635,9 +954,12 @@ function updateWeekLabel(dates) {
 // ============================================
 
 async function init() {
+    console.log('🚀 Запуск init()...');
+    
     await loadSettings();
     await loadEmployeeInfo();
     buildUI();
+    
     const dates = getWeekDates(0);
     const weekKey = getWeekKey(dates[0]);
     currentData = await loadWeekData(weekKey);
@@ -652,6 +974,8 @@ async function init() {
     }
     updateWeekLabel(dates);
     update();
+    
+    await renderEmployeeFinance();
     
     document.getElementById('weekPrev').addEventListener('click', async () => {
         currentWeekOffset--;
@@ -785,7 +1109,7 @@ async function init() {
         const dates = getWeekDates(currentWeekOffset);
         const mon = dates[0];
         const sun = dates[6];
-        const text = `Зарплата за неделю ${formatDate(mon)}–${formatDate(sun)}: ${total} ₽`;
+        const text = `Зарплата за неделю ${formatDateShort(mon)}–${formatDateShort(sun)}: ${total} ₽`;
         try {
             await navigator.clipboard.writeText(text);
             const btn = document.getElementById('copyBtn');
@@ -805,7 +1129,10 @@ async function init() {
             setTimeout(() => btn.textContent = old, 1500);
         }
     });
+    
+    console.log('✅ init() завершён');
 }
+
 
 const style = document.createElement('style');
 style.textContent = `
@@ -863,4 +1190,15 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
     init();
+    // В employee.js, в функции init() или после загрузки EMPLOYEE_ID
+function updateStatsLink() {
+    const statsLink = document.getElementById('statsLink');
+    if (statsLink && EMPLOYEE_ID) {
+        statsLink.href = `employee-stats.html?id=${EMPLOYEE_ID}`;
+    }
+}
+
+// Вызовите эту функцию после того, как EMPLOYEE_ID известен
+// Например, в конце init():
+updateStatsLink();
 }

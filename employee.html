@@ -183,7 +183,6 @@
             transform: none !important;
         }
 
-        /* Стили для времени по дням */
         .day-time-group {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
@@ -256,6 +255,197 @@
             }
             .day-time-item .time-hours {
                 font-size: .4rem;
+            }
+        }
+
+        .finance-employee-block {
+            margin-top: 20px;
+            border-top: 2px solid var(--line);
+            padding-top: 20px;
+        }
+        .finance-employee-block h2 {
+            font-family: var(--display);
+            font-weight: 400;
+            color: var(--amber);
+            font-size: 1.05rem;
+            margin-bottom: 16px;
+        }
+        .finance-employee-block .debt-summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .finance-employee-block .debt-item {
+            background: rgba(255,255,255,.03);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid var(--line);
+        }
+        .finance-employee-block .debt-item .label {
+            font-size: .65rem;
+            color: var(--mut);
+        }
+        .finance-employee-block .debt-item .value {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .finance-employee-block .debt-item .value.debt {
+            color: var(--amber);
+        }
+        .finance-employee-block .debt-item .value.paid {
+            color: var(--teal);
+        }
+        .finance-employee-block .debt-item .value.count {
+            color: var(--red);
+        }
+        .finance-employee-block .advance-form {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+        .finance-employee-block .advance-form input {
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            background: var(--bg2);
+            color: var(--txt);
+            font-size: .9rem;
+            flex: 1;
+            min-width: 120px;
+        }
+        .finance-employee-block .advance-form button {
+            background: var(--amber);
+            color: #241d10;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: .9rem;
+        }
+        .finance-employee-block .advance-form button:hover {
+            filter: brightness(1.1);
+        }
+        .finance-employee-block .advance-form button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .finance-employee-block .advance-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .finance-employee-block .advance-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--line);
+            font-size: .85rem;
+        }
+        .finance-employee-block .advance-row .info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .finance-employee-block .advance-row .info .comment {
+            font-size: .7rem;
+            color: var(--mut);
+        }
+        .finance-employee-block .advance-row .amount {
+            font-weight: bold;
+        }
+        .finance-employee-block .advance-row .amount.active {
+            color: var(--amber);
+        }
+        .finance-employee-block .advance-row .amount.repaid {
+            color: var(--teal);
+        }
+        .finance-employee-block .advance-row .actions {
+            display: flex;
+            gap: 6px;
+        }
+        .finance-employee-block .advance-row .actions button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: .7rem;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: .2s;
+        }
+        .finance-employee-block .advance-row .actions .repay-btn {
+            background: var(--teal);
+            color: #0c1520;
+        }
+        .finance-employee-block .advance-row .actions .repay-btn:hover {
+            filter: brightness(1.1);
+        }
+        .finance-employee-block .advance-row .actions .delete-btn {
+            background: var(--red);
+            color: #fff;
+        }
+        .finance-employee-block .advance-row .actions .delete-btn:hover {
+            filter: brightness(1.1);
+        }
+        .no-advances {
+            text-align: center;
+            padding: 16px;
+            color: var(--mut);
+            font-size: .85rem;
+        }
+        .repay-all-btn {
+            background: var(--teal);
+            color: #0c1520;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: .8rem;
+            margin-left: 8px;
+        }
+        .repay-all-btn:hover {
+            filter: brightness(1.1);
+        }
+        .repay-all-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* Стиль для кнопки статистики */
+        .btn-stats-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            color: var(--mut);
+            border: 1px solid var(--line);
+            background: transparent;
+            padding: 13px 22px;
+            border-radius: 10px;
+            font-family: var(--body);
+            font-weight: 700;
+            font-size: .9rem;
+            cursor: pointer;
+            transition: transform .15s, box-shadow .15s, background .2s;
+        }
+        .btn-stats-link:hover {
+            color: var(--txt);
+            border-color: var(--mut);
+            transform: translateY(-2px);
+        }
+        .btn-stats-link:active {
+            transform: translateY(0) scale(.97);
+        }
+        @media (max-width: 480px) {
+            .btn-stats-link {
+                width: 100%;
+                padding: 12px 16px;
+                font-size: .8rem;
+                min-height: 48px;
             }
         }
     </style>
@@ -399,9 +589,19 @@
                 <div class="actions">
                     <button class="btn btn-amber" id="copyBtn">📋 Скопировать</button>
                     <button class="btn btn-ghost" id="resetBtn">Сбросить</button>
+                    <!-- ССЫЛКА НА СТАТИСТИКУ С ID СОТРУДНИКА -->
+                    <a href="employee-stats.html?id=ЗАМЕНИТЬ_НА_ID" class="btn-stats-link" id="statsLink">📊 Статистика</a>
                 </div>
             </div>
         </main>
+
+        <!-- ===== ФИНАНСОВЫЙ БЛОК ДЛЯ СОТРУДНИКА ===== -->
+        <div class="finance-employee-block" id="financeEmployeeBlock">
+            <h2>💰 Мои финансы</h2>
+            <div id="employeeFinanceContent">
+                <div style="text-align:center; padding: 20px; color: var(--mut);">Загрузка...</div>
+            </div>
+        </div>
 
         <section class="rules">
             <h2 class="reveal">Как это <em>считается</em></h2>
@@ -439,7 +639,11 @@
     <script type="module">
         import { firebaseConfig } from './config.js';
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { 
+            getFirestore, 
+            doc, getDoc, setDoc, updateDoc, deleteDoc, 
+            collection, query, where, getDocs, addDoc 
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -454,6 +658,7 @@
         window.query = query;
         window.where = where;
         window.getDocs = getDocs;
+        window.addDoc = addDoc;
         
         console.log('✅ Firebase инициализирован');
     </script>
