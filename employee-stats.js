@@ -1,6 +1,8 @@
 // employee-stats.js
 // Полная страница статистики сотрудника
 
+import { calculateWeekPay, getFinalPay } from './modules/calculator.js';
+
 const { db, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs, addDoc } = window;
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -22,9 +24,9 @@ let settings = {
     rExtra: 3500,
     rOt1: 400,
     rOt2: 800,
-    otLimit: 5
+    otLimit: 5,
+    hpd: 8
 };
-const NORMAL_HOURS_PER_DAY = 8;
 
 // ============================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -72,61 +74,6 @@ function formatDate(dateStr) {
 
 function formatHours(hours) {
     return hours.toFixed(2).replace('.', ',');
-}
-
-function calculateWeekPay(weekData, settings) {
-    const workDays = weekData.workDays || [true, true, true, true, true, false, false];
-    const hours = weekData.hours || [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0];
-    
-    const rD = settings.rDay || 3000;
-    const rE = settings.rExtra || 3500;
-    const r1 = settings.rOt1 || 400;
-    const r2 = settings.rOt2 || 800;
-    const lim = settings.otLimit || 5;
-    
-    const days = workDays.filter(Boolean).length;
-    const totalHours = hours.reduce((a, b) => a + b, 0);
-    const norm = days * NORMAL_HOURS_PER_DAY;
-    const ot = Math.max(0, totalHours - norm);
-    const ot1 = Math.min(ot, lim);
-    const ot2 = Math.max(0, ot - lim);
-    
-    let payBase = 0;
-    let payExtra = 0;
-    
-    for (let i = 0; i < workDays.length; i++) {
-        if (!workDays[i]) continue;
-        const dayHours = hours[i] || 0;
-        const dayIndex = workDays.slice(0, i).filter(Boolean).length;
-        const isExtraDay = dayIndex >= 5;
-        const dayRate = isExtraDay ? rE : rD;
-        const dayPay = Math.min(dayRate, (dayHours / NORMAL_HOURS_PER_DAY) * dayRate);
-        if (isExtraDay) {
-            payExtra += dayPay;
-        } else {
-            payBase += dayPay;
-        }
-    }
-    
-    const payOt1 = ot1 * r1;
-    const payOt2 = ot2 * r2;
-    const total = payBase + payExtra + payOt1 + payOt2;
-    
-    return {
-        days,
-        totalHours,
-        norm,
-        ot,
-        ot1,
-        ot2,
-        payBase,
-        payExtra,
-        payOt1,
-        payOt2,
-        total,
-        workDays,
-        hours
-    };
 }
 
 // ============================================
@@ -291,7 +238,7 @@ async function writeOffCompanyDebt(amount, comment) {
 }
 
 // ============================================
-// ОТМЕТКА О ПОЛУЧЕНИИ ЗАРПЛАТЫ
+// ОТМЕТКА О ПОЛУЧЕНИИ ЗАРПЛАТЫ (ИСПРАВЛЕННАЯ)
 // ============================================
 
 async function markWeekAsPaid(weekId, amount, weekKey) {
@@ -301,16 +248,20 @@ async function markWeekAsPaid(weekId, amount, weekKey) {
         if (!weekSnap.exists()) {
             return { success: false, error: 'Неделя не найдена' };
         }
-        
         const weekData = weekSnap.data();
-        const stats = calculateWeekPay(weekData, settings);
-        const fullAmount = stats.total;
-        const paidAmount = parseFloat(amount) || fullAmount;
         
+        // Используем getFinalPay для получения суммы, которую компания ДОЛЖНА выплатить
+        // (зарплата минус погашенные авансы)
+        const { finalPay } = getFinalPay(weekData, settings);
+        const paidAmount = parseFloat(amount) || finalPay;
+
         let companyDebtCreated = false;
         let debtAmount = 0;
-        if (paidAmount < fullAmount) {
-            debtAmount = fullAmount - paidAmount;
+        
+        // ⚠️ ВАЖНО: Долг компании считается ТОЛЬКО от finalPay
+        // Если заплатили меньше, чем должны были (с учётом погашенных авансов)
+        if (paidAmount < finalPay) {
+            debtAmount = finalPay - paidAmount;
             const debtResult = await addCompanyDebt(
                 debtAmount,
                 weekKey,
@@ -319,21 +270,21 @@ async function markWeekAsPaid(weekId, amount, weekKey) {
             );
             companyDebtCreated = debtResult.success;
         }
-        
+
         await updateDoc(weekRef, {
             isPaid: true,
             paidAmount: paidAmount,
             paidAt: new Date().toISOString(),
-            fullAmount: fullAmount,
-            companyDebt: fullAmount - paidAmount
+            fullAmount: finalPay,    // ← теперь это finalPay, а не stats.total
+            companyDebt: finalPay - paidAmount  // ← только если paidAmount < finalPay
         });
-        
-        return { 
-            success: true, 
+
+        return {
+            success: true,
             paidAmount,
-            fullAmount,
+            fullAmount: finalPay,
             companyDebtCreated,
-            companyDebtAmount: fullAmount - paidAmount
+            companyDebtAmount: debtAmount
         };
     } catch (error) {
         console.error('Ошибка отметки о выплате:', error);
@@ -342,7 +293,7 @@ async function markWeekAsPaid(weekId, amount, weekKey) {
 }
 
 // ============================================
-// РЕДАКТИРОВАНИЕ СУММЫ ВЫПЛАТЫ
+// РЕДАКТИРОВАНИЕ СУММЫ ВЫПЛАТЫ (ИСПРАВЛЕННОЕ)
 // ============================================
 
 async function updateWeekPayment(weekId, newAmount, weekKey) {
@@ -352,22 +303,22 @@ async function updateWeekPayment(weekId, newAmount, weekKey) {
         if (!weekSnap.exists()) {
             return { success: false, error: 'Неделя не найдена' };
         }
-        
         const weekData = weekSnap.data();
-        const stats = calculateWeekPay(weekData, settings);
-        const fullAmount = stats.total;
-        const paidAmount = parseFloat(newAmount) || 0;
         
+        // Используем getFinalPay
+        const { finalPay } = getFinalPay(weekData, settings);
+        const paidAmount = parseFloat(newAmount) || 0;
+
         await updateDoc(weekRef, {
             paidAmount: paidAmount,
             paidAt: new Date().toISOString(),
             isPaid: paidAmount > 0
         });
-        
+
         const oldPaid = weekData.paidAmount || 0;
         const oldCompanyDebt = weekData.companyDebt || 0;
-        const newCompanyDebt = Math.max(0, fullAmount - paidAmount);
-        
+        const newCompanyDebt = Math.max(0, finalPay - paidAmount);
+
         if (oldCompanyDebt !== newCompanyDebt) {
             const debtDiff = newCompanyDebt - oldCompanyDebt;
             if (debtDiff > 0) {
@@ -376,15 +327,16 @@ async function updateWeekPayment(weekId, newAmount, weekKey) {
                 await reduceCompanyDebt(Math.abs(debtDiff));
             }
         }
-        
+
         await updateDoc(weekRef, {
+            fullAmount: finalPay,
             companyDebt: newCompanyDebt
         });
-        
+
         return { 
             success: true, 
             paidAmount,
-            fullAmount,
+            fullAmount: finalPay,
             companyDebt: newCompanyDebt,
             isPaid: paidAmount > 0
         };
@@ -445,7 +397,8 @@ async function loadSettings() {
                 rExtra: data.rExtra || 3500,
                 rOt1: data.rOt1 || 400,
                 rOt2: data.rOt2 || 800,
-                otLimit: data.otLimit || 5
+                otLimit: data.otLimit || 5,
+                hpd: data.hpd || 8
             };
         }
     } catch (error) {
@@ -488,7 +441,6 @@ async function renderStats() {
         let totalReceived = 0;
         
         const sortedWeeks = weeks.sort((a, b) => b.weekKey.localeCompare(a.weekKey));
-        
         weeksCount.textContent = `${sortedWeeks.length} недель`;
         
         if (sortedWeeks.length === 0) {
@@ -546,7 +498,9 @@ async function renderStats() {
             const repaidAmount = week.repaidAmount || 0;
             const companyDebtAmount = week.companyDebt || 0;
             const fullAmount = stats.total;
-            const finalPay = fullAmount - (week.repaidAmount || 0);
+            
+            // Используем getFinalPay для корректного отображения
+            const { finalPay } = getFinalPay(week, settings);
             
             const totalActiveDebt = activeAdvances.reduce((sum, a) => sum + a.amount, 0);
             
@@ -554,8 +508,6 @@ async function renderStats() {
             let statusClass = isPaid ? 'paid' : 'unpaid';
             
             const hasCompanyDebt = companyDebtAmount > 0;
-            
-            // Определяем, сколько уже погашено авансов из этой недели
             const weekRepaidAmount = week.repaidAmount || 0;
             const hasRepaid = weekRepaidAmount > 0;
             
@@ -612,42 +564,49 @@ async function renderStats() {
                         ` : ''}
                     </div>
                     
+                    <!-- ===== БЛОК ПОГАШЕНИЯ АВАНСА ===== -->
                     ${!isPaid && totalActiveDebt > 0 ? `
-                        <div class="week-actions" style="border-top: 2px solid var(--amber);">
+                        <div class="week-actions" style="border-top: 2px solid var(--amber); margin-top:6px; padding-top:8px;">
                             <div style="width:100%; font-size:.75rem; color:var(--amber); margin-bottom:4px;">
                                 💰 Активных долгов: ${activeAdvances.length} (всего: ${totalActiveDebt.toLocaleString()} ₽)
                             </div>
-                            ${activeAdvances.map((advance, index) => `
-                                <div style="display:flex; align-items:center; gap:6px; width:100%; flex-wrap:wrap; padding:4px 0; border-top: ${index > 0 ? '1px solid var(--line)' : 'none'};">
-                                    <span style="font-size:.7rem; flex:1; min-width:80px;">
-                                        #${index + 1}: ${advance.amount.toLocaleString()} ₽
-                                        ${advance.comment ? `(${advance.comment})` : ''}
-                                    </span>
-                                    <div class="pay-input-group" style="flex:1; min-width:80px;">
-                                        <input type="number" id="repayAmount_${week.id}_${advance.id}" placeholder="Сумма" value="${Math.min(advance.amount, stats.total - (week.repaidAmount || 0))}" step="100" min="0" max="${advance.amount}">
-                                        <span style="font-size:.7rem; color:var(--mut);">₽</span>
+                            <div style="display:flex; flex-wrap:wrap; gap:6px; width:100%;">
+                                ${activeAdvances.map((advance, index) => `
+                                    <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:200px; padding:4px 0; border-top: ${index > 0 ? '1px solid var(--line)' : 'none'};">
+                                        <span style="font-size:.7rem; flex:1; min-width:60px;">
+                                            #${index + 1}: ${advance.amount.toLocaleString()} ₽
+                                            ${advance.comment ? `(${advance.comment})` : ''}
+                                        </span>
+                                        <div class="pay-input-group" style="flex:0;">
+                                            <input type="number" id="repayAmount_${week.id}_${advance.id}" placeholder="Сумма" value="${Math.min(advance.amount, stats.total)}" step="100" min="0" max="${advance.amount}" style="width:80px; padding:4px 6px; border-radius:4px; border:1px solid var(--line); background:var(--bg2); color:var(--txt); font-size:.75rem; text-align:center;">
+                                        </div>
+                                        <button class="btn-small amber" onclick="window.handleRepayAdvance('${week.id}', '${week.weekKey}', '${advance.id}', ${advance.amount})" style="flex:0; padding:4px 12px; min-width:44px; font-size:.7rem;">
+                                            💳
+                                        </button>
                                     </div>
-                                    <button class="btn-small amber" onclick="window.handleRepayAdvance('${week.id}', '${week.weekKey}', '${advance.id}', ${advance.amount})" style="flex:0; min-width:44px;">
-                                        💳
-                                    </button>
-                                </div>
-                            `).join('')}
+                                `).join('')}
+                            </div>
+                            <div style="font-size:.65rem; color:var(--mut); margin-top:4px;">
+                                💡 Погашение аванса уменьшит сумму к выплате
+                            </div>
                         </div>
                     ` : ''}
                     
-                    ${!isPaid && totalActiveDebt === 0 ? `
-                        <div class="week-actions">
+                    <!-- ===== БЛОК ПОЛУЧЕНИЯ ЗАРПЛАТЫ ===== -->
+                    ${!isPaid ? `
+                        <div class="week-actions" style="border-top: 1px solid var(--line); margin-top:6px; padding-top:8px;">
                             <div class="pay-input-group">
-                                <input type="number" id="payAmount_${week.id}" placeholder="Сумма" value="${stats.total - (week.repaidAmount || 0)}" step="100" min="0">
+                                <input type="number" id="payAmount_${week.id}" placeholder="Сумма" value="${hasRepaid ? finalPay : stats.total}" step="100" min="0">
                                 <span style="font-size:.7rem; color:var(--mut);">₽</span>
                             </div>
                             <button class="btn-small amber" onclick="window.handleMarkPaid('${week.id}', '${week.weekKey}')">
                                 ✅ Получено
                             </button>
+                            <div style="font-size:.65rem; color:var(--mut); width:100%; margin-top:2px;">
+                                💡 ${hasRepaid ? 'Сумма к выплате уменьшена на погашенный аванс' : 'Можно получить зарплату, не погашая аванс'}
+                            </div>
                         </div>
-                    ` : ''}
-                    
-                    ${isPaid ? `
+                    ` : `
                         <div class="week-actions">
                             <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; flex:1;">
                                 <span style="font-size:.7rem; color:var(--mut);">
@@ -658,11 +617,11 @@ async function renderStats() {
                                     <span style="font-size:.7rem; color:var(--amber);">🏢 Долг: ${week.companyDebt.toLocaleString()} ₽</span>
                                 ` : ''}
                             </div>
-                            <button class="btn-small ghost" onclick="window.handleEditPayment('${week.id}', ${paidAmount}, ${stats.total}, '${week.weekKey}')" style="flex:0;">
+                            <button class="btn-small ghost" onclick="window.handleEditPayment('${week.id}', ${paidAmount}, ${hasRepaid ? finalPay : stats.total}, '${week.weekKey}')" style="flex:0;">
                                 ✏️
                             </button>
                         </div>
-                    ` : ''}
+                    `}
                 </div>
             `;
         });
@@ -698,8 +657,9 @@ window.handleMarkPaid = async function(weekId, weekKey) {
     const weeks = await loadWeeks();
     const week = weeks.find(w => w.id === weekId);
     if (!week) return;
-    const stats = calculateWeekPay(week, settings);
-    const finalPay = stats.total - (week.repaidAmount || 0);
+    
+    // Используем getFinalPay для получения суммы к выплате
+    const { finalPay } = getFinalPay(week, settings);
     
     if (amount > finalPay) {
         if (!confirm(`Сумма (${amount.toLocaleString()} ₽) превышает сумму к выплате (${finalPay.toLocaleString()} ₽). Продолжить?`)) {
@@ -773,15 +733,13 @@ window.handleRepayAdvance = async function(weekId, weekKey, advanceId, advanceAm
         if (result.success) {
             const weekRef = doc(db, 'salaryWeeks', weekId);
             const newRepaidAmount = currentRepaid + amount;
-            const finalPay = stats.total - newRepaidAmount;
             
             await updateDoc(weekRef, {
                 debtRepaid: true,
-                repaidAmount: newRepaidAmount,
-                finalPay: finalPay
+                repaidAmount: newRepaidAmount
             });
             
-            alert(`✅ Аванс погашен!\nПогашено: ${result.repaidAmount.toLocaleString()} ₽\n${result.fullyRepaid ? '✅ Аванс полностью погашен' : '⏳ Остаток: ' + (advanceAmount - amount).toLocaleString() + ' ₽'}\n💰 К выплате: ${finalPay.toLocaleString()} ₽`);
+            alert(`✅ Аванс погашен!\nПогашено: ${result.repaidAmount.toLocaleString()} ₽\n${result.fullyRepaid ? '✅ Аванс полностью погашен' : '⏳ Остаток: ' + (advanceAmount - amount).toLocaleString() + ' ₽'}`);
             await renderStats();
         } else {
             alert('❌ Ошибка: ' + result.error);
@@ -813,7 +771,7 @@ window.handleEditPayment = function(weekId, currentAmount, fullAmount, weekKey) 
             <h3 style="font-family: var(--display); color: var(--amber); margin-bottom: 4px;">✏️ Редактировать выплату</h3>
             <div style="color: var(--mut); font-size: .85rem; margin-bottom: 16px;">Неделя ${weekKey}</div>
             <div style="margin-bottom: 12px;">
-                <label style="font-size: .75rem; color: var(--mut); display: block; margin-bottom: 4px;">Полная зарплата</label>
+                <label style="font-size: .75rem; color: var(--mut); display: block; margin-bottom: 4px;">Сумма к выплате</label>
                 <div style="font-size: 1.1rem; font-weight: bold; color: var(--amber);">${fullAmount.toLocaleString()} ₽</div>
             </div>
             <div style="margin-bottom: 12px;">

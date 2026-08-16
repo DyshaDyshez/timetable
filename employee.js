@@ -1,6 +1,8 @@
 // employee.js
 // Скрипт страницы сотрудника
 
+import { calculateWeekPay, getFinalPay } from './modules/calculator.js';
+
 const { db, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs, addDoc } = window;
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -29,7 +31,8 @@ let settings = {
     rExtra: 3500,
     rOt1: 400,
     rOt2: 800,
-    otLimit: 5
+    otLimit: 5,
+    hpd: 8
 };
 const NORMAL_HOURS_PER_DAY = 8;
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -73,6 +76,17 @@ function formatDate(dateStr) {
 
 function formatDateShort(d) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }).replace('.', '');
+}
+
+// ============================================
+// ОБНОВЛЕНИЕ ССЫЛКИ НА СТАТИСТИКУ
+// ============================================
+
+function updateStatsLink() {
+    const statsLink = document.getElementById('statsLink');
+    if (statsLink && EMPLOYEE_ID) {
+        statsLink.href = `employee-stats.html?id=${EMPLOYEE_ID}`;
+    }
 }
 
 // ============================================
@@ -159,13 +173,10 @@ async function renderEmployeeFinance() {
         const archivedAdvances = advances.slice(4);
         const hasArchived = archivedAdvances.length > 0;
         
-        // Сохраняем состояние архива в DOM
-        let archiveVisible = false;
-        
         container.innerHTML = `
             <div class="debt-summary">
                 <div class="debt-item">
-                    <div class="label">Общий долг</div>
+                    <div class="label">Аванс</div>
                     <div class="value debt">${totalDebt.toLocaleString()} ₽</div>
                 </div>
                 <div class="debt-item">
@@ -450,7 +461,8 @@ async function loadSettings() {
                 rExtra: data.rExtra || 3500,
                 rOt1: data.rOt1 || 400,
                 rOt2: data.rOt2 || 800,
-                otLimit: data.otLimit || 5
+                otLimit: data.otLimit || 5,
+                hpd: data.hpd || 8
             };
             console.log('⚙️ Настройки загружены:', settings);
             document.getElementById('rDay').value = settings.rDay;
@@ -458,6 +470,7 @@ async function loadSettings() {
             document.getElementById('rOt1').value = settings.rOt1;
             document.getElementById('rOt2').value = settings.rOt2;
             document.getElementById('otLimit').value = settings.otLimit;
+            // hpd не показываем в UI, но используем в расчётах
         } else {
             console.log('⚙️ Настройки не найдены, используем дефолтные');
             await saveSettings();
@@ -477,6 +490,7 @@ async function saveSettings() {
             rOt1: settings.rOt1,
             rOt2: settings.rOt2,
             otLimit: settings.otLimit,
+            hpd: settings.hpd,
             updatedAt: new Date().toISOString()
         };
         if (employeeRoomId) {
@@ -718,61 +732,50 @@ function updateTimeInputs() {
     });
 }
 
+// ===== ОСНОВНАЯ ФУНКЦИЯ ОБНОВЛЕНИЯ UI =====
 function update() {
     if (!currentData) return;
+    
     const { workDays, hours, workStart, workEnd } = currentData;
     const dates = getWeekDates(currentWeekOffset);
     const weekKey = getWeekKey(dates[0]);
     const isFuture = isFutureWeek(weekKey);
-    const rD = settings.rDay;
-    const rE = settings.rExtra;
-    const r1 = settings.rOt1;
-    const r2 = settings.rOt2;
-    const lim = settings.otLimit;
     
-    const days = workDays.filter(Boolean).length;
-    const totalHours = hours.reduce((a, b) => a + b, 0);
-    const norm = days * NORMAL_HOURS_PER_DAY;
-    const ot = Math.max(0, totalHours - norm);
-    const ot1 = Math.min(ot, lim);
-    const ot2 = Math.max(0, ot - lim);
+    // Используем модуль для расчёта зарплаты
+    const stats = calculateWeekPay(currentData, settings);
     
-    let payBase = 0;
-    let payExtra = 0;
+    // Извлекаем все нужные значения из stats
+    const days = stats.days;
+    const totalHours = stats.totalHours;
+    const norm = stats.norm;
+    const ot = stats.ot;
+    const ot1 = stats.ot1;
+    const ot2 = stats.ot2;
+    const payBase = stats.payBase;
+    const payExtra = stats.payExtra;
+    const payOt1 = stats.payOt1;
+    const payOt2 = stats.payOt2;
+    const total = stats.total;
     
-    for (let i = 0; i < workDays.length; i++) {
-        if (!workDays[i]) continue;
-        const dayHours = hours[i] || 0;
-        const dayIndex = workDays.slice(0, i).filter(Boolean).length;
-        const isExtraDay = dayIndex >= 5;
-        const dayRate = isExtraDay ? rE : rD;
-        const dayPay = Math.min(dayRate, (dayHours / NORMAL_HOURS_PER_DAY) * dayRate);
-        if (isExtraDay) {
-            payExtra += dayPay;
-        } else {
-            payBase += dayPay;
-        }
-    }
-    
-    const payOt1 = ot1 * r1;
-    const payOt2 = ot2 * r2;
-    const total = payBase + payExtra + payOt1 + payOt2;
-    
+    // Обновляем дни
     document.querySelectorAll('#days .day').forEach((b, i) => {
         const on = workDays[i];
         b.classList.toggle('on', on);
         const dayIndex = workDays.slice(0, i).filter(Boolean).length;
         const isExtra = on && dayIndex >= 5;
         b.classList.toggle('extra', isExtra);
-        const rate = isExtra ? rE : rD;
+        const rate = isExtra ? settings.rExtra : settings.rDay;
         b.querySelector('i').textContent = rate.toLocaleString() + ' ₽';
     });
     
+    // Обновляем время
     updateTimeInputs();
     
+    // Счетчики
     document.getElementById('dOut').textContent = days;
-    document.getElementById('normOut').textContent = `норма: ${norm.toFixed(1).replace('.', ',')} ч (${days} дн × 8 ч)`;
+    document.getElementById('normOut').textContent = `норма: ${norm.toFixed(1).replace('.', ',')} ч (${days} дн × ${settings.hpd} ч)`;
     
+    // Бейджи
     const otB = document.getElementById('otBadge');
     const uwB = document.getElementById('uwBadge');
     if (ot > 0) {
@@ -789,7 +792,8 @@ function update() {
         uwB.hidden = true;
     }
     
-    document.getElementById('qBase').textContent = `${workDays.slice(0, 5).filter(Boolean).length} дн × ${rD.toLocaleString()} ₽ (пропорционально)`;
+    // Строки расчета
+    document.getElementById('qBase').textContent = `${workDays.slice(0, 5).filter(Boolean).length} дн × ${settings.rDay.toLocaleString()} ₽ (пропорционально)`;
     document.getElementById('vBase').textContent = payBase.toLocaleString() + ' ₽';
     
     const rowExtra = document.getElementById('rowExtra');
@@ -798,7 +802,7 @@ function update() {
         rowExtra.classList.add('gone');
     } else {
         rowExtra.classList.remove('gone');
-        document.getElementById('qExtra').textContent = `${extraDaysCount} дн × ${rE.toLocaleString()} ₽ (пропорционально)`;
+        document.getElementById('qExtra').textContent = `${extraDaysCount} дн × ${settings.rExtra.toLocaleString()} ₽ (пропорционально)`;
         document.getElementById('vExtra').textContent = payExtra.toLocaleString() + ' ₽';
     }
     
@@ -807,7 +811,7 @@ function update() {
         rowOt1.classList.add('gone');
     } else {
         rowOt1.classList.remove('gone');
-        document.getElementById('qOt1').textContent = `${formatHours(ot1)} ч × ${r1.toLocaleString()} ₽`;
+        document.getElementById('qOt1').textContent = `${formatHours(ot1)} ч × ${settings.rOt1.toLocaleString()} ₽`;
         document.getElementById('vOt1').textContent = payOt1.toLocaleString() + ' ₽';
     }
     
@@ -816,10 +820,11 @@ function update() {
         rowOt2.classList.add('gone');
     } else {
         rowOt2.classList.remove('gone');
-        document.getElementById('qOt2').textContent = `${formatHours(ot2)} ч × ${r2.toLocaleString()} ₽`;
+        document.getElementById('qOt2').textContent = `${formatHours(ot2)} ч × ${settings.rOt2.toLocaleString()} ₽`;
         document.getElementById('vOt2').textContent = payOt2.toLocaleString() + ' ₽';
     }
     
+    // Бары
     const scale = Math.max(totalHours, norm, 1);
     document.getElementById('bNorm').style.width = (Math.min(totalHours, norm) / scale * 100) + '%';
     document.getElementById('bOt1').style.width = (ot1 / scale * 100) + '%';
@@ -827,33 +832,39 @@ function update() {
     document.getElementById('lNorm').textContent = formatHours(Math.min(totalHours, norm)) + ' ч';
     document.getElementById('lOt1').textContent = formatHours(ot1) + ' ч';
     document.getElementById('lOt2').textContent = formatHours(ot2) + ' ч';
-    document.getElementById('totalOut').textContent = total.toLocaleString();
     
+    // Итог
+    document.getElementById('totalOut').textContent = total.toLocaleString();
     const stamp = document.getElementById('stamp');
     stamp.classList.remove('pop');
     void stamp.offsetWidth;
     stamp.classList.add('pop');
     
+    // Формула
     const parts = [];
-    if (payBase > 0) parts.push(`<b class="f-n">${(payBase / (rD || 1)).toFixed(2)}×${rD.toLocaleString()}</b>`);
-    if (payExtra > 0) parts.push(`<b class="f-n">${(payExtra / (rE || 1)).toFixed(2)}×${rE.toLocaleString()}</b>`);
-    if (ot1 > 0) parts.push(`<b class="f-1">${formatHours(ot1)}×${r1.toLocaleString()}</b>`);
-    if (ot2 > 0) parts.push(`<b class="f-2">${formatHours(ot2)}×${r2.toLocaleString()}</b>`);
+    if (payBase > 0) parts.push(`<b class="f-n">${(payBase / (settings.rDay || 1)).toFixed(2)}×${settings.rDay.toLocaleString()}</b>`);
+    if (payExtra > 0) parts.push(`<b class="f-n">${(payExtra / (settings.rExtra || 1)).toFixed(2)}×${settings.rExtra.toLocaleString()}</b>`);
+    if (ot1 > 0) parts.push(`<b class="f-1">${formatHours(ot1)}×${settings.rOt1.toLocaleString()}</b>`);
+    if (ot2 > 0) parts.push(`<b class="f-2">${formatHours(ot2)}×${settings.rOt2.toLocaleString()}</b>`);
     document.getElementById('formula').innerHTML = parts.length ? parts.join(' + ') + ` = ${total.toLocaleString()} ₽` : '—';
     
+    // Мета
     document.getElementById('metaLine').textContent =
         `отработано ${formatHours(totalHours)} ч · норма ${formatHours(norm)} ч`;
     
-    document.getElementById('chip1').textContent = `1–5 день · ${rD.toLocaleString()} ₽`;
-    document.getElementById('chip2').textContent = `6–7 день · ${rE.toLocaleString()} ₽`;
-    document.getElementById('chip3').textContent = `переработка · ${r1.toLocaleString()} / ${r2.toLocaleString()} ₽/ч`;
+    // Чипсы
+    document.getElementById('chip1').textContent = `1–5 день · ${settings.rDay.toLocaleString()} ₽`;
+    document.getElementById('chip2').textContent = `6–7 день · ${settings.rExtra.toLocaleString()} ₽`;
+    document.getElementById('chip3').textContent = `переработка · ${settings.rOt1.toLocaleString()} / ${settings.rOt2.toLocaleString()} ₽/ч`;
     
+    // Заголовок недели
     const mon = dates[0];
     const sun = dates[6];
     const weekLabel = `неделя №${weekKey.replace('W', '')} · ${formatDateShort(mon)} – ${formatDateShort(sun)}`;
     document.getElementById('eyebrow').textContent = `Табель · ${weekLabel}`;
     document.getElementById('wk').textContent = weekLabel;
     
+    // Кнопка очистки будущих недель
     const clearBtn = document.getElementById('clearFutureBtn');
     if (clearBtn) {
         if (isFuture) {
@@ -866,6 +877,10 @@ function update() {
         }
     }
 }
+
+// ============================================
+// ПОСТРОЕНИЕ UI
+// ============================================
 
 function buildUI() {
     const daysBox = document.getElementById('days');
@@ -960,6 +975,9 @@ async function init() {
     await loadEmployeeInfo();
     buildUI();
     
+    // Обновляем ссылку на статистику
+    updateStatsLink();
+    
     const dates = getWeekDates(0);
     const weekKey = getWeekKey(dates[0]);
     currentData = await loadWeekData(weekKey);
@@ -977,6 +995,7 @@ async function init() {
     
     await renderEmployeeFinance();
     
+    // Обработчики навигации
     document.getElementById('weekPrev').addEventListener('click', async () => {
         currentWeekOffset--;
         const dates = getWeekDates(currentWeekOffset);
@@ -1059,6 +1078,7 @@ async function init() {
         }
     });
     
+    // Обработчики для ставок
     const settingsFields = ['rDay', 'rExtra', 'rOt1', 'rOt2', 'otLimit'];
     settingsFields.forEach(id => {
         const el = document.getElementById(id);
@@ -1078,6 +1098,7 @@ async function init() {
         }
     });
     
+    // Кнопка очистки будущих недель
     const clearFutureBtn = document.createElement('button');
     clearFutureBtn.id = 'clearFutureBtn';
     clearFutureBtn.className = 'btn btn-ghost';
@@ -1132,7 +1153,6 @@ async function init() {
     
     console.log('✅ init() завершён');
 }
-
 
 const style = document.createElement('style');
 style.textContent = `
@@ -1190,15 +1210,4 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
     init();
-    // В employee.js, в функции init() или после загрузки EMPLOYEE_ID
-function updateStatsLink() {
-    const statsLink = document.getElementById('statsLink');
-    if (statsLink && EMPLOYEE_ID) {
-        statsLink.href = `employee-stats.html?id=${EMPLOYEE_ID}`;
-    }
-}
-
-// Вызовите эту функцию после того, как EMPLOYEE_ID известен
-// Например, в конце init():
-updateStatsLink();
 }

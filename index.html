@@ -346,6 +346,47 @@
             font-size: .7rem;
             color: var(--mut);
         }
+        .btn-sync {
+            background: var(--amber);
+            color: #241d10;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: .2s;
+            font-size: .85rem;
+        }
+        .btn-sync:hover {
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+        }
+        .btn-sync:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .sync-status {
+            font-size: .75rem;
+            color: var(--mut);
+            padding: 4px 12px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.05);
+            border: 1px solid var(--line);
+            white-space: nowrap;
+        }
+        .sync-status.loading {
+            color: var(--amber);
+            border-color: var(--amber);
+        }
+        .sync-status.success {
+            color: var(--teal);
+            border-color: var(--teal);
+        }
+        .sync-status.error {
+            color: var(--red);
+            border-color: var(--red);
+        }
     </style>
 </head>
 <body>
@@ -369,6 +410,8 @@
                 <h1>👨‍💼 Админ-панель</h1>
                 <div class="admin-header-right">
                     <span style="color:var(--mut)" id="userEmail">Управление сотрудниками</span>
+                    <button id="syncGoogleBtn" class="btn-sync" title="Отправить все данные в Google Sheets">🔄 Синхронизировать</button>
+                    <span id="syncStatus" class="sync-status">Готово</span>
                     <button class="logout-btn" id="logoutBtn">Выйти</button>
                 </div>
             </div>
@@ -383,7 +426,7 @@
                 <div class="loading">Загрузка...</div>
             </div>
 
-            <!-- ===== ФИНАНСОВЫЙ МОДУЛЬ ===== -->
+            <!-- ФИНАНСОВЫЙ МОДУЛЬ -->
             <div class="finance-tab" id="financeTab">
                 <div class="finance-header">
                     <h2>💰 Финансы</h2>
@@ -399,6 +442,128 @@
     <div id="notification" class="notification"></div>
 
     <script type="module">
+        // ============================================
+        // API ДЛЯ АВТО-СИНХРОНИЗАЦИИ
+        // ============================================
+
+        // Проверяем, есть ли параметр ?api=sync
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('api') === 'sync') {
+            console.log('📡 Запрос API: синхронизация данных');
+            
+            // Импортируем Firebase
+            const { firebaseConfig } = await import('./config.js');
+            const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
+            const { 
+                getFirestore, 
+                collection, getDocs 
+            } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+            
+            // Инициализация Firebase
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            
+            try {
+                // Загружаем все данные
+                const [employeesSnap, weeksSnap, advancesSnap] = await Promise.all([
+                    getDocs(collection(db, 'salaryEmployees')),
+                    getDocs(collection(db, 'salaryWeeks')),
+                    getDocs(collection(db, 'salaryAdvances'))
+                ]);
+                
+                // Форматируем данные
+                const employees = [];
+                employeesSnap.forEach(doc => {
+                    const data = doc.data();
+                    employees.push({ 
+                        id: doc.id, 
+                        ...data,
+                        name: data.name || 'Без имени'
+                    });
+                });
+                
+                const weeks = [];
+                weeksSnap.forEach(doc => {
+                    const data = doc.data();
+                    const workDays = data.workDays || [];
+                    const hours = data.hours || [];
+                    const days = workDays.filter(Boolean).length;
+                    const totalHours = hours.reduce((a, b) => a + b, 0);
+                    
+                    // Рассчитываем переработку
+                    const hpd = 8;
+                    const norm = days * hpd;
+                    const ot = Math.max(0, Math.round((totalHours - norm) * 100) / 100);
+                    
+                    // Получаем сумму
+                    let total = data.calculatedPay || data.total || 0;
+                    
+                    if (total === 0 && days > 0) {
+                        const baseRate = 3000;
+                        const extraRate = 3500;
+                        const otRate = 400;
+                        
+                        let baseDays = Math.min(days, 5);
+                        let extraDays = Math.max(0, days - 5);
+                        total = baseDays * baseRate + extraDays * extraRate;
+                        if (ot > 0) {
+                            total += ot * otRate;
+                        }
+                    }
+                    
+                    weeks.push({
+                        id: doc.id,
+                        ...data,
+                        days: days,
+                        totalHours: totalHours,
+                        ot: ot,
+                        total: total,
+                        employeeId: data.employeeId || '',
+                        isPaid: data.isPaid || false,
+                        paidAmount: data.paidAmount || 0,
+                        paidAt: data.paidAt || '',
+                        companyDebt: data.companyDebt || 0
+                    });
+                });
+                
+                const advances = [];
+                advancesSnap.forEach(doc => {
+                    const data = doc.data();
+                    advances.push({ 
+                        id: doc.id, 
+                        ...data,
+                        employeeId: data.employeeId || '',
+                        amount: data.amount || 0,
+                        status: data.status || 'active',
+                        date: data.date || new Date().toISOString()
+                    });
+                });
+                
+                // Отправляем ответ
+                const responseData = {
+                    employees: employees,
+                    weeks: weeks,
+                    advances: advances
+                };
+                
+                document.body.textContent = JSON.stringify(responseData);
+                document.body.style.cssText = 'padding: 20px; font-family: monospace; color: #e9f0f7; background: #0c1520;';
+                
+            } catch (error) {
+                document.body.textContent = JSON.stringify({ 
+                    success: false,
+                    error: error.message 
+                });
+                document.body.style.cssText = 'padding: 20px; font-family: monospace; color: #e5484d; background: #0c1520;';
+            }
+            
+            // Останавливаем выполнение остального кода
+            throw new Error('API режим');
+        }
+
+        // ============================================
+        // ИМПОРТЫ (основной режим)
+        // ============================================
         import { firebaseConfig } from './config.js';
         
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -427,6 +592,9 @@
             formatDateTime
         } from './finance-module.js';
 
+        // ============================================
+        // НАСТРОЙКА FIREBASE
+        // ============================================
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
@@ -448,8 +616,14 @@
         window.signOut = signOut;
         window.showNotification = showNotification;
 
-        console.log('🚀 Админ-панель загружена');
+        // ============================================
+        // НАСТРОЙКА GOOGLE SHEETS
+        // ============================================
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw7l8rm1pKut-GYody5iLRJr50SggmNEfOcfqQnTJbtQN7koJT4dNYnryblodMiYA-Sbw/exec';
 
+        // ============================================
+        // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+        // ============================================
         function showNotification(message, isError = false) {
             const el = document.getElementById('notification');
             if (!el) return;
@@ -458,6 +632,13 @@
             if (isError) el.classList.add('error');
             clearTimeout(el._timer);
             el._timer = setTimeout(() => el.classList.remove('show'), 3000);
+        }
+
+        function setSyncStatus(message, type = '') {
+            const el = document.getElementById('syncStatus');
+            if (!el) return;
+            el.textContent = message;
+            el.className = 'sync-status' + (type ? ' ' + type : '');
         }
 
         function getBaseUrl() {
@@ -498,7 +679,177 @@
             }
         }
 
-        // Авторизация
+        // ============================================
+        // ЗАГРУЗКА ДАННЫХ ДЛЯ СИНХРОНИЗАЦИИ
+        // ============================================
+
+        async function loadAllEmployees() {
+            const snapshot = await getDocs(collection(db, 'salaryEmployees'));
+            const employees = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                employees.push({ 
+                    id: doc.id, 
+                    ...data,
+                    name: data.name || 'Без имени'
+                });
+            });
+            return employees;
+        }
+
+        async function loadAllWeeks() {
+            const snapshot = await getDocs(collection(db, 'salaryWeeks'));
+            const weeks = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const workDays = data.workDays || [];
+                const hours = data.hours || [];
+                const days = workDays.filter(Boolean).length;
+                const totalHours = hours.reduce((a, b) => a + b, 0);
+                
+                // Рассчитываем переработку
+                const hpd = 8;
+                const norm = days * hpd;
+                const ot = Math.max(0, Math.round((totalHours - norm) * 100) / 100);
+                
+                // Получаем сумму
+                let total = data.calculatedPay || data.total || 0;
+                
+                // Если суммы нет, рассчитываем приблизительно
+                if (total === 0 && days > 0) {
+                    const baseRate = 3000;
+                    const extraRate = 3500;
+                    const otRate = 400;
+                    
+                    let baseDays = Math.min(days, 5);
+                    let extraDays = Math.max(0, days - 5);
+                    total = baseDays * baseRate + extraDays * extraRate;
+                    if (ot > 0) {
+                        total += ot * otRate;
+                    }
+                }
+                
+                weeks.push({
+                    id: doc.id,
+                    ...data,
+                    days: days,
+                    totalHours: totalHours,
+                    ot: ot,
+                    total: total,
+                    employeeId: data.employeeId || '',
+                    isPaid: data.isPaid || false,
+                    paidAmount: data.paidAmount || 0,
+                    paidAt: data.paidAt || '',
+                    companyDebt: data.companyDebt || 0
+                });
+            });
+            return weeks;
+        }
+
+        async function loadAllAdvances() {
+            const snapshot = await getDocs(collection(db, 'salaryAdvances'));
+            const advances = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                advances.push({ 
+                    id: doc.id, 
+                    ...data,
+                    employeeId: data.employeeId || '',
+                    amount: data.amount || 0,
+                    status: data.status || 'active',
+                    date: data.date || new Date().toISOString()
+                });
+            });
+            return advances;
+        }
+
+        // ============================================
+        // СИНХРОНИЗАЦИЯ С GOOGLE SHEETS
+        // ============================================
+
+        async function syncToGoogle(data) {
+            try {
+                console.log('📤 Отправка данных в Google Sheets');
+                console.log('  - Сотрудников:', data.employees?.length || 0);
+                console.log('  - Недель:', data.weeks?.length || 0);
+                console.log('  - Авансов:', data.advances?.length || 0);
+                
+                if (data.weeks && data.weeks.length > 0) {
+                    console.log('  - Пример недели:', {
+                        weekKey: data.weeks[0].weekKey,
+                        days: data.weeks[0].days,
+                        totalHours: data.weeks[0].totalHours,
+                        ot: data.weeks[0].ot,
+                        total: data.weeks[0].total
+                    });
+                }
+                
+                await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                console.log('✅ Данные отправлены (mode: no-cors)');
+                return { success: true };
+                
+            } catch (error) {
+                console.error('❌ Ошибка отправки:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function performFullSync() {
+            const syncBtn = document.getElementById('syncGoogleBtn');
+            
+            if (!syncBtn) return;
+            
+            syncBtn.disabled = true;
+            syncBtn.textContent = '⏳ Отправка...';
+            setSyncStatus('Сбор данных...', 'loading');
+            
+            try {
+                setSyncStatus('Загрузка данных...', 'loading');
+                const [employees, weeks, advances] = await Promise.all([
+                    loadAllEmployees(),
+                    loadAllWeeks(),
+                    loadAllAdvances()
+                ]);
+                
+                setSyncStatus(`Отправка: ${employees.length} сотрудников, ${weeks.length} недель...`, 'loading');
+                
+                const syncData = {
+                    action: 'syncAll',
+                    employees: employees,
+                    weeks: weeks,
+                    advances: advances
+                };
+                
+                const result = await syncToGoogle(syncData);
+                
+                if (result.success) {
+                    setSyncStatus(`✅ Синхронизация завершена! (${new Date().toLocaleTimeString()})`, 'success');
+                    showNotification('✅ Данные отправлены в Google Sheets!');
+                } else {
+                    setSyncStatus('❌ Ошибка отправки', 'error');
+                    showNotification('❌ Ошибка: ' + (result.error || 'неизвестная'), true);
+                }
+            } catch (error) {
+                console.error('Ошибка синхронизации:', error);
+                setSyncStatus('❌ Ошибка: ' + error.message, 'error');
+                showNotification('❌ Ошибка синхронизации', true);
+            } finally {
+                syncBtn.disabled = false;
+                syncBtn.textContent = '🔄 Синхронизировать';
+            }
+        }
+
+        // ============================================
+        // АВТОРИЗАЦИЯ
+        // ============================================
         onAuthStateChanged(auth, (user) => {
             console.log('👤 Auth state:', user ? user.email : 'No user');
             const authScreen = document.getElementById('authScreen');
@@ -512,6 +863,7 @@
                 if (userEmail) userEmail.textContent = '👤 ' + user.email;
                 loadEmployees();
                 loadFinanceSummary();
+                setSyncStatus('Готово');
             } else {
                 authScreen.classList.add('active');
                 authScreen.style.display = 'block';
@@ -536,7 +888,14 @@
             signOut(auth);
         });
 
-        // Показ статистики через модуль
+        // ============================================
+        // КНОПКА СИНХРОНИЗАЦИИ
+        // ============================================
+        document.getElementById('syncGoogleBtn').addEventListener('click', performFullSync);
+
+        // ============================================
+        // ПОКАЗ СТАТИСТИКИ
+        // ============================================
         window.showStats = async (employeeId, employeeName) => {
             try {
                 await renderStats(employeeId, employeeName, db, collection, doc, query, where, getDocs, getDoc, showNotification);
@@ -573,8 +932,6 @@
                         <div class="actions">
                             <button class="btn-copy-link" data-link="${employeeLink}">📋 Ссылка</button>
                             <button class="btn-stats" onclick="window.showStats('${emp.id}', '${emp.name}')">📈 Статистика</button>
-                              <!--  <button class="btn-finance" onclick="window.showEmployeeFinance('${emp.id}', '${emp.name}')">💰 Финансы</button>   -->
-                          <!--  <button class="btn-delete" onclick="window.deleteEmployee('${emp.id}')">🗑️</button>   -->
                         </div>
                         <div class="link-hint" id="linkHint_${emp.id}">${employeeLink}</div>
                     `;
@@ -597,16 +954,8 @@
         }
 
         // ============================================
-        // ФИНАНСОВЫЙ МОДУЛЬ (ОСНОВНАЯ ЧАСТЬ)
+        // ФИНАНСОВЫЙ МОДУЛЬ
         // ============================================
-
-        let financeState = {
-            currentEmployee: null,
-            advances: [],
-            balance: null
-        };
-
-        // Загрузка сводки по финансам
         async function loadFinanceSummary() {
             try {
                 const employeesRef = collection(db, 'salaryEmployees');
@@ -662,16 +1011,10 @@
             }
         }
 
-        // Показать финансовую информацию сотрудника
         window.showEmployeeFinance = async function(employeeId, employeeName) {
             try {
-                financeState.currentEmployee = { id: employeeId, name: employeeName };
-                
                 const balance = await getEmployeeBalance(employeeId, db, collection, query, where, getDocs);
-                financeState.balance = balance;
-                
                 const advances = await getAllAdvances(employeeId, db, collection, query, where, getDocs);
-                financeState.advances = advances;
                 
                 const oldModal = document.getElementById('financeModal');
                 if (oldModal) oldModal.remove();
@@ -777,7 +1120,6 @@
             }
         }
 
-        // Форма добавления аванса
         function showAddAdvanceForm(employeeId, employeeName) {
             const overlay = document.createElement('div');
             overlay.style.cssText = `
@@ -848,18 +1190,17 @@
             });
         }
 
-        // Погасить аванс
         window.repayAdvanceFromUI = async function(advanceId, amount) {
             if (!confirm(`Погасить аванс на ${amount.toLocaleString()} ₽?`)) return;
-            
-            const statsData = window._statsData;
-            if (!statsData) return;
             
             try {
                 const result = await repayAdvance(advanceId, amount, null, db, doc, updateDoc);
                 if (result.success) {
                     showNotification('✅ Аванс погашен!');
-                    window.showEmployeeFinance(statsData.employeeId, statsData.employeeName);
+                    const statsData = window._statsData;
+                    if (statsData) {
+                        window.showEmployeeFinance(statsData.employeeId, statsData.employeeName);
+                    }
                     loadFinanceSummary();
                 } else {
                     showNotification('❌ ' + result.error, true);
@@ -869,7 +1210,6 @@
             }
         };
 
-        // Удалить аванс
         window.deleteAdvanceFromUI = async function(advanceId) {
             if (!confirm('🗑️ Удалить аванс?')) return;
             
@@ -890,7 +1230,6 @@
             }
         };
 
-        // Кнопка "Все долги"
         document.getElementById('showAllDebtsBtn').addEventListener('click', async () => {
             try {
                 const employeesRef = collection(db, 'salaryEmployees');
@@ -985,7 +1324,6 @@
         // ============================================
         // ДОБАВЛЕНИЕ СОТРУДНИКА
         // ============================================
-        
         const addBtn = document.getElementById('addBtn');
         const nameInput = document.getElementById('empName');
         const phoneInput = document.getElementById('empPhone');
@@ -1035,7 +1373,6 @@
             });
         }
 
-        // Удаление сотрудника
         window.deleteEmployee = async (id) => {
             if (!confirm('🗑️ Удалить сотрудника и все его данные?')) return;
             try {
@@ -1044,7 +1381,6 @@
                 for (const doc of snapshot.docs) {
                     await deleteDoc(doc.ref);
                 }
-                // Удаляем авансы
                 const advancesRef = collection(db, 'salaryAdvances');
                 const q2 = query(advancesRef, where('employeeId', '==', id));
                 const snapshot2 = await getDocs(q2);

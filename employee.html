@@ -414,8 +414,7 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
-        
-        /* Стиль для кнопки статистики */
+
         .btn-stats-link {
             display: inline-flex;
             align-items: center;
@@ -512,7 +511,8 @@
                 </div>
 
                 <div class="field" style="margin-bottom:6px">
-                    <details open>
+                    <!-- details без атрибута open → закрыт по умолчанию -->
+                    <details>
                         <summary>
                             Ставки и параметры
                             <span class="settings-saved" id="settingsSaved">✅ Сохранено</span>
@@ -589,8 +589,8 @@
                 <div class="actions">
                     <button class="btn btn-amber" id="copyBtn">📋 Скопировать</button>
                     <button class="btn btn-ghost" id="resetBtn">Сбросить</button>
-                    <!-- ССЫЛКА НА СТАТИСТИКУ С ID СОТРУДНИКА -->
-                    <a href="employee-stats.html?id=ЗАМЕНИТЬ_НА_ID" class="btn-stats-link" id="statsLink">📊 Статистика</a>
+                    <!-- Ссылка на страницу "Расчет зарплаты за неделю" (было "Статистика") -->
+                    <a href="employee-stats.html?id=ЗАМЕНИТЬ_НА_ID" class="btn-stats-link" id="statsLink">📊 Расчет зарплаты за неделю</a>
                 </div>
             </div>
         </main>

@@ -1,6 +1,8 @@
 // stats-module.js
 // Модуль статистики для админ-панели
 
+import { calculateWeekPay } from './modules/calculator.js';
+
 export async function getEmployeeSettings(employeeId, db, doc, getDoc) {
     try {
         const docRef = doc(db, 'salarySettings', employeeId);
@@ -29,66 +31,18 @@ export async function getEmployeeSettings(employeeId, db, doc, getDoc) {
     };
 }
 
-export function calculateWeekStats(weekData, settings) {
-    const workDays = weekData.workDays || [true, true, true, true, true, false, false];
-    const hours = weekData.hours || [8, 8, 8, 8, 8, 0, 0];
-    
-    const rD = settings.rDay || 3000;
-    const rE = settings.rExtra || 3500;
-    const r1 = settings.rOt1 || 400;
-    const r2 = settings.rOt2 || 800;
-    const hpd = settings.hpd || 8;
-    const lim = settings.otLimit || 5;
-    
-    const days = workDays.filter(Boolean).length;
-    const totalHours = hours.reduce((a, b) => a + b, 0);
-    const norm = days * hpd;
-    const baseDays = Math.min(days, 5);
-    const extraDays = Math.max(0, days - 5);
-    const ot = Math.max(0, totalHours - norm);
-    const ot1 = Math.min(ot, lim);
-    const ot2 = Math.max(0, ot - lim);
-    
-    const payBase = baseDays * rD;
-    const payExtra = extraDays * rE;
-    const payOt1 = ot1 * r1;
-    const payOt2 = ot2 * r2;
-    const total = payBase + payExtra + payOt1 + payOt2;
-    
-    return {
-        days,
-        totalHours,
-        norm,
-        baseDays,
-        extraDays,
-        ot,
-        ot1,
-        ot2,
-        payBase,
-        payExtra,
-        payOt1,
-        payOt2,
-        total,
-        workDays,
-        hours
-    };
-}
-
 export function getWeekNumber(weekKey) {
     const match = weekKey.match(/W(\d+)/);
     return match ? parseInt(match[1]) : weekKey;
 }
 
-// ===== ПРАВИЛЬНЫЙ РАСЧЁТ НЕДЕЛИ ПО ISO (ПОНЕДЕЛЬНИК → ВОСКРЕСЕНЬЕ) =====
 export function getWeekDateRange(weekKey) {
     const match = weekKey.match(/^(\d+)-W(\d+)/);
     if (!match) {
         return { startDate: new Date(), endDate: new Date() };
     }
-    
     const year = parseInt(match[1]);
     const weekNum = parseInt(match[2]);
-    
     const jan4 = new Date(year, 0, 4);
     const dayOfWeek = jan4.getDay();
     let daysToMonday;
@@ -97,16 +51,12 @@ export function getWeekDateRange(weekKey) {
     } else {
         daysToMonday = 1 - dayOfWeek;
     }
-    
     const firstMonday = new Date(jan4);
     firstMonday.setDate(jan4.getDate() + daysToMonday);
-    
     const startDate = new Date(firstMonday);
     startDate.setDate(firstMonday.getDate() + (weekNum - 1) * 7);
-    
     const endDate = new Date(startDate);
     endDate.setDate(startDate.getDate() + 6);
-    
     return { startDate, endDate };
 }
 
@@ -118,15 +68,13 @@ export function formatDateRange(weekKey) {
         const end = endDate.toLocaleDateString('ru-RU', options);
         return `${start} – ${end}`;
     } catch (error) {
-        console.warn('Ошибка форматирования даты для', weekKey, error);
         return weekKey;
     }
 }
 
-// ===== ПОЛУЧЕНИЕ МЕСЯЦА ИЗ НЕДЕЛИ =====
 export function getWeekMonth(weekKey) {
     const { startDate } = getWeekDateRange(weekKey);
-    const month = startDate.getMonth(); // 0-11
+    const month = startDate.getMonth();
     const year = startDate.getFullYear();
     return { month, year, label: startDate.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }) };
 }
@@ -144,7 +92,6 @@ export async function updatePaidAmount(weekId, amount, db, doc, updateDoc) {
     }
 }
 
-// ===== ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ УНИКАЛЬНЫХ МЕСЯЦЕВ =====
 function getUniqueMonths(weeks) {
     const months = new Map();
     weeks.forEach(week => {
@@ -161,12 +108,11 @@ function getUniqueMonths(weeks) {
     });
 }
 
-// ===== МОДАЛКА С ДЕТАЛЯМИ НЕДЕЛИ =====
 export function renderWeekDetailsModal(weekData, settings, employeeName, weekKey, weekId, db, doc, updateDoc, showNotification) {
     const oldModal = document.getElementById('weekDetailsModal');
     if (oldModal) oldModal.remove();
     
-    const stats = calculateWeekStats(weekData, settings);
+    const stats = calculateWeekPay(weekData, settings);
     const weekNum = getWeekNumber(weekKey);
     const dateRange = formatDateRange(weekKey);
     const paidAmount = weekData.paidAmount || 0;
@@ -249,10 +195,10 @@ export function renderWeekDetailsModal(weekData, settings, employeeName, weekKey
             </div>
             
             <div style="font-size: .7rem; color: var(--mut); border-top: 1px solid var(--line); padding-top: 12px;">
-                ${stats.baseDays > 0 ? `${stats.baseDays}×${settings.rDay.toLocaleString()} ₽` : ''}
-                ${stats.extraDays > 0 ? ` + ${stats.extraDays}×${settings.rExtra.toLocaleString()} ₽` : ''}
-                ${stats.ot1 > 0 ? ` + ${stats.ot1}×${settings.rOt1.toLocaleString()} ₽` : ''}
-                ${stats.ot2 > 0 ? ` + ${stats.ot2}×${settings.rOt2.toLocaleString()} ₽` : ''}
+                ${stats.payBase > 0 ? `${stats.payBase.toLocaleString()} ₽` : ''}
+                ${stats.payExtra > 0 ? ` + ${stats.payExtra.toLocaleString()} ₽` : ''}
+                ${stats.payOt1 > 0 ? ` + ${stats.payOt1.toLocaleString()} ₽` : ''}
+                ${stats.payOt2 > 0 ? ` + ${stats.payOt2.toLocaleString()} ₽` : ''}
             </div>
         </div>
     `;
@@ -315,9 +261,8 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
     
     window._statsData = { weeks: allWeeks, settings, employeeName, employeeId };
     
-    // Получаем уникальные месяцы для фильтров
     const uniqueMonths = getUniqueMonths(allWeeks);
-    let currentFilter = 'all'; // 'all' или месяц в формате '2024-10'
+    let currentFilter = 'all';
     
     const modal = document.createElement('div');
     modal.id = 'statsModal';
@@ -344,7 +289,6 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
                 <span style="margin-left: 16px;">⚙️ Ставка: ${settings.rDay.toLocaleString()}₽ / ${settings.rExtra.toLocaleString()}₽</span>
             </div>
             
-            <!-- ===== КНОПКИ ФИЛЬТРОВ ПО МЕСЯЦАМ ===== -->
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);">
                 <button class="filter-btn active" data-filter="all" 
                         style="background: var(--amber); color: #241d10; border: none; 
@@ -354,7 +298,7 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
                 </button>
     `;
     
-    uniqueMonths.forEach((monthData, index) => {
+    uniqueMonths.forEach((monthData) => {
         const filterKey = `${monthData.year}-${String(monthData.month + 1).padStart(2, '0')}`;
         const weeksCount = monthData.weeks.length;
         bodyHTML += `
@@ -389,20 +333,17 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
     modal.innerHTML = bodyHTML;
     document.body.appendChild(modal);
     
-    // ===== ОБРАБОТЧИКИ КНОПОК ФИЛЬТРОВ =====
     const filterButtons = modal.querySelectorAll('.filter-btn');
     const contentContainer = modal.querySelector('#statsContent');
     
     filterButtons.forEach(btn => {
         btn.addEventListener('click', () => {
-            // Убираем активный класс у всех кнопок
             filterButtons.forEach(b => {
                 b.style.background = 'rgba(255,255,255,.05)';
                 b.style.color = 'var(--txt)';
                 b.style.border = '1px solid var(--line)';
                 b.classList.remove('active');
             });
-            // Активируем нажатую кнопку
             btn.style.background = 'var(--amber)';
             btn.style.color = '#241d10';
             btn.style.border = 'none';
@@ -424,7 +365,6 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
             
             contentContainer.innerHTML = buildStatsTable(filteredWeeks, settings, false);
             
-            // Обновляем показ архива
             const archiveVisible = modal._archiveVisible || false;
             if (!archiveVisible) {
                 const rows = contentContainer.querySelectorAll('.archived-row');
@@ -435,7 +375,6 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
         });
     });
     
-    // ===== ОБРАБОТЧИК АРХИВА =====
     const toggleBtn = modal.querySelector('#toggleArchiveBtn');
     let archiveVisible = false;
     modal._archiveVisible = archiveVisible;
@@ -459,7 +398,6 @@ export async function renderStats(employeeId, employeeName, db, collection, doc,
     });
 }
 
-// ===== ПОСТРОЕНИЕ ТАБЛИЦЫ СТАТИСТИКИ =====
 function buildStatsTable(weeks, settings, showAll) {
     if (!weeks || weeks.length === 0) {
         return `
@@ -494,7 +432,7 @@ function buildStatsTable(weeks, settings, showAll) {
     `;
     
     weeks.forEach((week) => {
-        const stats = calculateWeekStats(week, settings);
+        const stats = calculateWeekPay(week, settings);
         const weekNum = getWeekNumber(week.weekKey);
         const dateRange = formatDateRange(week.weekKey);
         const paidAmount = week.paidAmount || 0;
@@ -519,9 +457,7 @@ function buildStatsTable(weeks, settings, showAll) {
                 <td>${stats.totalHours} ч</td>
                 <td>${stats.ot > 0 ? stats.ot + ' ч' : '—'}</td>
                 <td style="text-align:right;"><b>${stats.total.toLocaleString()} ₽</b></td>
-                <td style="text-align:right; color: ${paidAmount > 0 ? 'var(--teal)' : 'var(--mut)'};">
-                    ${paidAmount > 0 ? paidAmount.toLocaleString() + ' ₽' : '—'}
-                </td>
+                <td style="text-align:right; color: ${paidAmount > 0 ? 'var(--teal)' : 'var(--mut)'};">${paidAmount > 0 ? paidAmount.toLocaleString() + ' ₽' : '—'}</td>
                 <td style="text-align:center;">
                     <button onclick="window.showWeekDetails('${week.id}')" 
                             style="background: rgba(255,181,46,.15); border: 1px solid var(--amber); 
@@ -541,7 +477,6 @@ function buildStatsTable(weeks, settings, showAll) {
         `;
     });
     
-    // Итоговая строка
     tableHTML += `
                 <tr style="border-top: 2px solid var(--amber);">
                     <td><b style="color: var(--amber);">📊 ИТОГО</b></td>
@@ -574,7 +509,6 @@ window.toggleArchive = async function(weekId, currentStatus) {
         await updateDoc(doc(db, 'salaryWeeks', weekId), {
             isArchived: !currentStatus
         });
-        
         const statsData = window._statsData;
         if (statsData) {
             const weekIndex = statsData.weeks.findIndex(w => w.id === weekId);
@@ -612,14 +546,11 @@ window.showWeekDetails = function(weekId) {
     );
 };
 
-// ===== ФУНКЦИЯ ДЛЯ ОБНОВЛЕНИЯ СТАТИСТИКИ ПОСЛЕ ОЧИСТКИ =====
 window.updateStatsAfterClear = async function(employeeId) {
-    // Если статистика открыта, перезагружаем её
     const modal = document.getElementById('statsModal');
     if (modal && modal.classList.contains('active')) {
         const data = window._statsData;
         if (data && data.employeeId === employeeId) {
-            // Перезагружаем статистику
             await renderStats(
                 data.employeeId,
                 data.employeeName,
