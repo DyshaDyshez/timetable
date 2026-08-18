@@ -571,18 +571,19 @@
         // ============================================
         import { firebaseConfig } from './config.js';
         
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { 
-            getFirestore, 
-            collection, doc, getDocs, addDoc, updateDoc, deleteDoc, 
-            query, where, onSnapshot, getDoc 
-        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        import { 
-            getAuth, 
-            signInWithEmailAndPassword, 
-            onAuthStateChanged, 
-            signOut 
-        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        // Стало (быстрее):
+import { initializeApp } from "https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-app.js";
+import { 
+    getFirestore, 
+    collection, doc, getDocs, addDoc, updateDoc, deleteDoc, 
+    query, where, onSnapshot, getDoc 
+} from "https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-firestore.js";
+import { 
+    getAuth, 
+    signInWithEmailAndPassword, 
+    onAuthStateChanged, 
+    signOut 
+} from "https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-auth.js";
         
         import { renderStats } from './stats-module.js';
         import { 
