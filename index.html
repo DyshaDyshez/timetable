@@ -1,11 +1,6 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <link rel="dns-prefetch" href="https://www.gstatic.com">
-<link rel="dns-prefetch" href="https://firestore.googleapis.com">
-<link rel="preconnect" href="https://www.gstatic.com">
-<link rel="preconnect" href="https://firestore.googleapis.com">
-    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Админ-панель зарплаты</title>
@@ -571,19 +566,18 @@
         // ============================================
         import { firebaseConfig } from './config.js';
         
-        // Стало (быстрее):
-import { initializeApp } from "https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-app.js";
-import { 
-    getFirestore, 
-    collection, doc, getDocs, addDoc, updateDoc, deleteDoc, 
-    query, where, onSnapshot, getDoc 
-} from "https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-firestore.js";
-import { 
-    getAuth, 
-    signInWithEmailAndPassword, 
-    onAuthStateChanged, 
-    signOut 
-} from "https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-auth.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { 
+            getFirestore, 
+            collection, doc, getDocs, addDoc, updateDoc, deleteDoc, 
+            query, where, onSnapshot, getDoc 
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { 
+            getAuth, 
+            signInWithEmailAndPassword, 
+            onAuthStateChanged, 
+            signOut 
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         
         import { renderStats } from './stats-module.js';
         import { 
