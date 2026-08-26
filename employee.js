@@ -470,7 +470,6 @@ async function loadSettings() {
             document.getElementById('rOt1').value = settings.rOt1;
             document.getElementById('rOt2').value = settings.rOt2;
             document.getElementById('otLimit').value = settings.otLimit;
-            // hpd не показываем в UI, но используем в расчётах
         } else {
             console.log('⚙️ Настройки не найдены, используем дефолтные');
             await saveSettings();
@@ -793,11 +792,13 @@ function update() {
     }
     
     // Строки расчета
-    document.getElementById('qBase').textContent = `${workDays.slice(0, 5).filter(Boolean).length} дн × ${settings.rDay.toLocaleString()} ₽ (пропорционально)`;
+    document.getElementById('qBase').textContent = `${days} дн × ${settings.rDay.toLocaleString()} ₽ (пропорционально)`;
     document.getElementById('vBase').textContent = payBase.toLocaleString() + ' ₽';
     
     const rowExtra = document.getElementById('rowExtra');
-    const extraDaysCount = workDays.slice(5, 7).filter(Boolean).length;
+    // Нам нужно количество дней, оплаченных по повышенной ставке (6-й и 7-й)
+    // В stats нет отдельного счетчика, но мы можем посчитать: если days > 5, то extraDays = days - 5, но не более 2
+    const extraDaysCount = Math.max(0, Math.min(2, days - 5));
     if (extraDaysCount === 0) {
         rowExtra.classList.add('gone');
     } else {
@@ -842,8 +843,8 @@ function update() {
     
     // Формула
     const parts = [];
-    if (payBase > 0) parts.push(`<b class="f-n">${(payBase / (settings.rDay || 1)).toFixed(2)}×${settings.rDay.toLocaleString()}</b>`);
-    if (payExtra > 0) parts.push(`<b class="f-n">${(payExtra / (settings.rExtra || 1)).toFixed(2)}×${settings.rExtra.toLocaleString()}</b>`);
+    if (payBase > 0) parts.push(`<b class="f-n">${days}×${settings.rDay.toLocaleString()}</b>`);
+    if (payExtra > 0) parts.push(`<b class="f-n">${extraDaysCount}×${settings.rExtra.toLocaleString()}</b>`);
     if (ot1 > 0) parts.push(`<b class="f-1">${formatHours(ot1)}×${settings.rOt1.toLocaleString()}</b>`);
     if (ot2 > 0) parts.push(`<b class="f-2">${formatHours(ot2)}×${settings.rOt2.toLocaleString()}</b>`);
     document.getElementById('formula').innerHTML = parts.length ? parts.join(' + ') + ` = ${total.toLocaleString()} ₽` : '—';

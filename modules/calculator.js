@@ -18,36 +18,63 @@ export function calculateWeekPay(weekData, settings = {}) {
     const hpd = settings.hpd || 8;
     const lim = settings.otLimit || 5;
     
-    const days = workDays.filter(Boolean).length;
-    const totalHours = hours.reduce((a, b) => a + b, 0);
-    const norm = days * hpd;
-    const ot = Math.max(0, totalHours - norm);
-    const ot1 = Math.min(ot, lim);
-    const ot2 = Math.max(0, ot - lim);
-    
-    let payBase = 0;
-    let payExtra = 0;
-    
+    // Собираем рабочие дни (только где часы > 0)
+    const workingDays = [];
     for (let i = 0; i < workDays.length; i++) {
-        if (!workDays[i]) continue;
-        const dayHours = hours[i] || 0;
-        const dayIndex = workDays.slice(0, i).filter(Boolean).length;
-        const isExtraDay = dayIndex >= 5;
-        const dayRate = isExtraDay ? rE : rD;
-        const dayPay = Math.min(dayRate, (dayHours / hpd) * dayRate);
-        if (isExtraDay) {
-            payExtra += dayPay;
-        } else {
-            payBase += dayPay;
+        if (workDays[i] && hours[i] > 0) {
+            workingDays.push({ index: i, hours: hours[i] });
         }
     }
     
+    const daysCount = workingDays.length;
+    let totalHours = 0;
+    let payBase = 0;      // оплата за первые 5 дней (пропорционально)
+    let payExtra = 0;     // оплата за 6-й и 7-й дни (пропорционально)
+    let otHours = 0;      // сумма переработки (часы сверх 8)
+    
+    for (let i = 0; i < workingDays.length; i++) {
+        const day = workingDays[i];
+        const dayHours = day.hours;
+        totalHours += dayHours;
+        
+        // Определяем ставку для этого дня (первый параметр - номер дня по порядку)
+        const dayIndex = i; // 0-based
+        const isExtraDay = dayIndex >= 5;
+        const dayRate = isExtraDay ? rE : rD;
+        
+        if (dayHours <= hpd) {
+            // Оплата пропорционально отработанным часам
+            const pay = (dayHours / hpd) * dayRate;
+            if (isExtraDay) {
+                payExtra += pay;
+            } else {
+                payBase += pay;
+            }
+        } else {
+            // Оплата: полная ставка + переработка
+            const basePay = dayRate;
+            const otThisDay = dayHours - hpd;
+            otHours += otThisDay;
+            if (isExtraDay) {
+                payExtra += basePay;
+            } else {
+                payBase += basePay;
+            }
+        }
+    }
+    
+    // Разбиваем переработку на ot1 и ot2
+    const ot1 = Math.min(otHours, lim);
+    const ot2 = Math.max(0, otHours - lim);
     const payOt1 = ot1 * r1;
     const payOt2 = ot2 * r2;
+    
     const total = payBase + payExtra + payOt1 + payOt2;
+    const norm = daysCount * hpd;
+    const ot = otHours;
     
     return {
-        days,
+        days: daysCount,
         totalHours,
         norm,
         ot,
