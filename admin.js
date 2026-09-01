@@ -27,34 +27,62 @@ let currentUser = null;
 onAuthStateChanged(auth, (user) => {
     if (user) {
         currentUser = user;
-        document.getElementById('authScreen').classList.remove('active');
-        document.getElementById('authScreen').style.display = 'none';
-        document.getElementById('adminContent').style.display = 'block';
-        document.getElementById('userEmail').textContent = '👤 ' + user.email;
+        const authScreen = document.getElementById('authScreen');
+        const adminContent = document.getElementById('adminContent');
+        const userEmail = document.getElementById('userEmail');
+        
+        if (authScreen) {
+            authScreen.classList.remove('active');
+            authScreen.style.display = 'none';
+        }
+        if (adminContent) {
+            adminContent.style.display = 'block';
+        }
+        if (userEmail) {
+            userEmail.textContent = '👤 ' + user.email;
+        }
         loadEmployees();
     } else {
-        document.getElementById('authScreen').classList.add('active');
-        document.getElementById('authScreen').style.display = 'block';
-        document.getElementById('adminContent').style.display = 'none';
+        const authScreen = document.getElementById('authScreen');
+        const adminContent = document.getElementById('adminContent');
+        
+        if (authScreen) {
+            authScreen.classList.add('active');
+            authScreen.style.display = 'block';
+        }
+        if (adminContent) {
+            adminContent.style.display = 'none';
+        }
     }
 });
 
-document.getElementById('loginBtn').addEventListener('click', async () => {
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-    const errorEl = document.getElementById('loginError');
-    try {
-        await signInWithEmailAndPassword(auth, email, password);
-        errorEl.textContent = '';
-        showNotification('✅ Вход выполнен');
-    } catch (error) {
-        errorEl.textContent = '❌ ' + error.message;
-    }
-});
+// Логин
+const loginBtn = document.getElementById('loginBtn');
+if (loginBtn) {
+    loginBtn.addEventListener('click', async () => {
+        const email = document.getElementById('loginEmail');
+        const password = document.getElementById('loginPassword');
+        const errorEl = document.getElementById('loginError');
+        
+        if (!email || !password) return;
+        
+        try {
+            await signInWithEmailAndPassword(auth, email.value, password.value);
+            if (errorEl) errorEl.textContent = '';
+            showNotification('✅ Вход выполнен');
+        } catch (error) {
+            if (errorEl) errorEl.textContent = '❌ ' + error.message;
+        }
+    });
+}
 
-document.getElementById('logoutBtn').addEventListener('click', () => {
-    signOut(auth);
-});
+// Выход
+const logoutBtn = document.getElementById('logoutBtn');
+if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+        signOut(auth);
+    });
+}
 
 // ============================================
 // ЗАГРУЗКА СОТРУДНИКОВ
@@ -63,11 +91,14 @@ function loadEmployees() {
     const employeesRef = collection(db, 'salaryEmployees');
     onSnapshot(employeesRef, (snapshot) => {
         const container = document.getElementById('employeeList');
+        if (!container) return;
+        
         container.innerHTML = '';
         if (snapshot.empty) {
             container.innerHTML = '<div class="loading">Нет сотрудников. Добавьте первого!</div>';
             return;
         }
+        
         snapshot.forEach((doc) => {
             const emp = { id: doc.id, ...doc.data() };
             const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
@@ -104,43 +135,56 @@ function loadEmployees() {
             const display = card.querySelector(`#pinDisplay_${emp.id}`);
             const input = card.querySelector(`#pinEdit_${emp.id}`);
 
-            editBtn.addEventListener('click', () => {
-                display.style.display = 'none';
-                input.style.display = 'inline-block';
-                input.value = emp.pin || '';
-                input.focus();
-                editBtn.style.display = 'none';
-                saveBtn.style.display = 'inline-block';
-            });
+            if (editBtn) {
+                editBtn.addEventListener('click', () => {
+                    if (display) display.style.display = 'none';
+                    if (input) {
+                        input.style.display = 'inline-block';
+                        input.value = emp.pin || '';
+                        input.focus();
+                    }
+                    editBtn.style.display = 'none';
+                    if (saveBtn) saveBtn.style.display = 'inline-block';
+                });
+            }
 
-            generateBtn.addEventListener('click', async () => {
-                const newPin = generatePin();
-                await updateEmployeePin(emp.id, newPin);
-                display.textContent = newPin;
-                emp.pin = newPin;
-                showNotification('✅ PIN обновлён');
-            });
+            if (generateBtn) {
+                generateBtn.addEventListener('click', async () => {
+                    const newPin = generatePin();
+                    await updateEmployeePin(emp.id, newPin);
+                    if (display) display.textContent = newPin;
+                    emp.pin = newPin;
+                    showNotification('✅ PIN обновлён');
+                });
+            }
 
-            saveBtn.addEventListener('click', async () => {
-                const newPin = input.value.trim();
-                if (!newPin || newPin.length < 3) {
-                    showNotification('❌ PIN должен содержать минимум 3 символа', true);
-                    return;
-                }
-                await updateEmployeePin(emp.id, newPin);
-                display.textContent = newPin;
-                emp.pin = newPin;
-                display.style.display = 'inline-block';
-                input.style.display = 'none';
-                editBtn.style.display = 'inline-block';
-                saveBtn.style.display = 'none';
-                showNotification('✅ PIN сохранён');
-            });
+            if (saveBtn) {
+                saveBtn.addEventListener('click', async () => {
+                    if (!input) return;
+                    const newPin = input.value.trim();
+                    if (!newPin || newPin.length < 3) {
+                        showNotification('❌ PIN должен содержать минимум 3 символа', true);
+                        return;
+                    }
+                    await updateEmployeePin(emp.id, newPin);
+                    if (display) {
+                        display.textContent = newPin;
+                        display.style.display = 'inline-block';
+                    }
+                    emp.pin = newPin;
+                    input.style.display = 'none';
+                    if (editBtn) editBtn.style.display = 'inline-block';
+                    saveBtn.style.display = 'none';
+                    showNotification('✅ PIN сохранён');
+                });
+            }
 
             const copyBtn = card.querySelector('.btn-copy-link');
-            copyBtn.addEventListener('click', function() {
-                copyToClipboard(this.dataset.link, this);
-            });
+            if (copyBtn) {
+                copyBtn.addEventListener('click', function() {
+                    copyToClipboard(this.dataset.link, this);
+                });
+            }
         });
     });
 }
@@ -166,89 +210,101 @@ async function updateEmployeePin(employeeId, pin) {
 // ============================================
 // ГЕНЕРАЦИЯ PIN ДЛЯ ВСЕХ
 // ============================================
-document.getElementById('generateAllPinsBtn').addEventListener('click', async () => {
-    const btn = document.getElementById('generateAllPinsBtn');
-    btn.disabled = true;
-    btn.textContent = '⏳ ...';
+const generateAllPinsBtn = document.getElementById('generateAllPinsBtn');
+if (generateAllPinsBtn) {
+    generateAllPinsBtn.addEventListener('click', async () => {
+        const btn = document.getElementById('generateAllPinsBtn');
+        if (!btn) return;
+        
+        btn.disabled = true;
+        btn.textContent = '⏳ ...';
 
-    try {
-        const snapshot = await getDocs(collection(db, 'salaryEmployees'));
-        const missingPin = [];
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            if (!data.pin) {
-                missingPin.push({ id: doc.id, name: data.name });
+        try {
+            const snapshot = await getDocs(collection(db, 'salaryEmployees'));
+            const missingPin = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (!data.pin) {
+                    missingPin.push({ id: doc.id, name: data.name });
+                }
+            });
+
+            if (missingPin.length === 0) {
+                showNotification('✅ У всех сотрудников уже есть PIN');
+                btn.disabled = false;
+                btn.textContent = '🔢 PIN для всех';
+                return;
             }
-        });
 
-        if (missingPin.length === 0) {
-            showNotification('✅ У всех сотрудников уже есть PIN');
+            if (!confirm(`Найдено ${missingPin.length} сотрудников без PIN. Сгенерировать для них PIN?\n\n${missingPin.map(e => e.name).join(', ')}`)) {
+                btn.disabled = false;
+                btn.textContent = '🔢 PIN для всех';
+                return;
+            }
+
+            let updated = 0;
+            for (const emp of missingPin) {
+                await updateEmployeePin(emp.id, generatePin());
+                updated++;
+            }
+
+            showNotification(`✅ Сгенерировано PIN для ${updated} сотрудников`);
+        } catch (error) {
+            showNotification('❌ Ошибка: ' + error.message, true);
+        } finally {
             btn.disabled = false;
             btn.textContent = '🔢 PIN для всех';
-            return;
         }
-
-        if (!confirm(`Найдено ${missingPin.length} сотрудников без PIN. Сгенерировать для них PIN?\n\n${missingPin.map(e => e.name).join(', ')}`)) {
-            btn.disabled = false;
-            btn.textContent = '🔢 PIN для всех';
-            return;
-        }
-
-        let updated = 0;
-        for (const emp of missingPin) {
-            await updateEmployeePin(emp.id, generatePin());
-            updated++;
-        }
-
-        showNotification(`✅ Сгенерировано PIN для ${updated} сотрудников`);
-    } catch (error) {
-        showNotification('❌ Ошибка: ' + error.message, true);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = '🔢 PIN для всех';
-    }
-});
+    });
+}
 
 // ============================================
 // ДОБАВЛЕНИЕ СОТРУДНИКА
 // ============================================
-document.getElementById('addBtn').addEventListener('click', async () => {
-    const name = document.getElementById('empName').value.trim();
-    const phone = document.getElementById('empPhone').value.trim();
+const addBtn = document.getElementById('addBtn');
+if (addBtn) {
+    addBtn.addEventListener('click', async () => {
+        const nameInput = document.getElementById('empName');
+        const phoneInput = document.getElementById('empPhone');
+        
+        if (!nameInput || !phoneInput) return;
+        
+        const name = nameInput.value.trim();
+        const phone = phoneInput.value.trim();
 
-    if (!name || !phone) {
-        showNotification('❌ Заполните все поля!', true);
-        return;
-    }
-    if (!auth.currentUser) {
-        showNotification('❌ Вы не авторизованы!', true);
-        return;
-    }
+        if (!name || !phone) {
+            showNotification('❌ Заполните все поля!', true);
+            return;
+        }
+        if (!auth.currentUser) {
+            showNotification('❌ Вы не авторизованы!', true);
+            return;
+        }
 
-    const addBtn = document.getElementById('addBtn');
-    addBtn.disabled = true;
-    addBtn.textContent = '⏳ ...';
+        addBtn.disabled = true;
+        addBtn.textContent = '⏳ ...';
 
-    try {
-        const newPin = generatePin();
-        await addDoc(collection(db, 'salaryEmployees'), {
-            name: name,
-            phone: phone,
-            pin: newPin,
-            createdAt: new Date().toISOString(),
-            adminId: auth.currentUser.uid,
-            adminEmail: auth.currentUser.email
-        });
-        document.getElementById('empName').value = '';
-        document.getElementById('empPhone').value = '';
-        showNotification(`✅ Сотрудник добавлен! PIN: ${newPin}`);
-    } catch (error) {
-        showNotification('❌ Ошибка: ' + error.message, true);
-    } finally {
-        addBtn.disabled = false;
-        addBtn.textContent = '➕ Добавить';
-    }
-});
+        try {
+            const newPin = generatePin();
+            await addDoc(collection(db, 'salaryEmployees'), {
+                name: name,
+                phone: phone,
+                pin: newPin,
+                createdAt: new Date().toISOString(),
+                adminId: auth.currentUser.uid,
+                adminEmail: auth.currentUser.email
+            });
+            nameInput.value = '';
+            phoneInput.value = '';
+            showNotification(`✅ Сотрудник добавлен! PIN: ${newPin}`);
+        } catch (error) {
+            showNotification('❌ Ошибка: ' + error.message, true);
+        } finally {
+            addBtn.disabled = false;
+            addBtn.textContent = '➕ Добавить';
+        }
+    });
+}
 
 // ============================================
 // УДАЛЕНИЕ СОТРУДНИКА

@@ -33,6 +33,31 @@
             color: var(--mut);
             font-size: .85rem;
         }
+        .dashboard-header .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .btn-back {
+            background: rgba(255,255,255,.08);
+            color: var(--txt);
+            border: 1px solid var(--line);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: .85rem;
+            transition: .2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-back:hover {
+            border-color: var(--amber);
+            color: var(--amber);
+            background: rgba(255,181,46,.08);
+        }
         .logout-btn {
             background: var(--red);
             color: #fff;
@@ -420,6 +445,40 @@
             color: var(--mut);
             padding: 40px;
         }
+        .debug-btn {
+            background: rgba(255,181,46,.15);
+            color: var(--amber);
+            border: 1px solid var(--amber);
+            padding: 4px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: .7rem;
+            transition: .2s;
+        }
+        .debug-btn:hover {
+            background: rgba(255,181,46,.25);
+        }
+        .bitrix-btn {
+            background: var(--amber) !important;
+            color: #241d10 !important;
+            border: none !important;
+            padding: 8px 20px !important;
+            border-radius: 8px !important;
+            cursor: pointer !important;
+            font-weight: bold !important;
+            font-size: .85rem !important;
+            transition: all 0.2s !important;
+            margin-left: 8px !important;
+        }
+        .bitrix-btn:hover {
+            filter: brightness(1.1) !important;
+            transform: translateY(-2px) !important;
+        }
+        .bitrix-btn:disabled {
+            opacity: 0.6 !important;
+            cursor: not-allowed !important;
+            transform: none !important;
+        }
         @media (max-width: 768px) {
             .dashboard-header {
                 flex-direction: column;
@@ -475,7 +534,8 @@
 
         <header class="dashboard-header">
             <h1>👨‍💼 Админ-панель</h1>
-            <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+            <div class="header-actions">
+                <a href="index.html" class="btn-back">← Назад</a>
                 <span class="user-info" id="userEmail">Загрузка...</span>
                 <button class="logout-btn" id="logoutBtn">Выйти</button>
             </div>
@@ -492,7 +552,8 @@
                 <button id="salaryWeekPrev">◀</button>
                 <span class="week-label" id="salaryWeekLabel">Неделя</span>
                 <button id="salaryWeekNext">▶</button>
-                <button class="btn-sm amber" id="refreshSalaryBtn" style="padding:8px 20px;font-size:.85rem;margin-left:auto;">🔄 Обновить</button>
+                <button class="btn-sm amber" id="refreshSalaryBtn" style="padding:8px 20px;font-size:.85rem;">🔄 Обновить</button>
+                <button class="bitrix-btn" id="sendBitrixBtn">📤 Отправить в Битрикс24</button>
             </div>
             <div class="table-wrap" id="salaryTableWrap">
                 <div class="loading" id="salaryLoading">Загрузка...</div>
@@ -507,6 +568,7 @@
                 <button id="attWeekNext">▶</button>
                 <button id="attWeekToday" style="border-color:var(--amber);color:var(--amber);">Сегодня</button>
                 <button class="btn-sm teal" id="refreshAttBtn" style="padding:8px 20px;font-size:.85rem;margin-left:auto;">🔄 Обновить</button>
+                <button class="debug-btn" id="debugAttBtn" style="margin-left:8px;">🐞 Отладка</button>
             </div>
             <div id="attendanceContent">
                 <div class="loading">Загрузка...</div>
@@ -528,5 +590,19 @@
     </div>
 
     <script type="module" src="admin-dashboard.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const debugBtn = document.getElementById('debugAttBtn');
+            if (debugBtn) {
+                debugBtn.addEventListener('click', () => {
+                    if (window.debugAttendance) {
+                        window.debugAttendance();
+                    } else {
+                        console.log('⏳ Функция отладки еще не загружена');
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>

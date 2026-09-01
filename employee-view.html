@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Моя зарплата</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .user-badge {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 181, 46, 0.15);
+            border: 1px solid var(--amber);
+            color: var(--amber2);
+            padding: 6px 16px;
+            border-radius: 999px;
+            font-size: .78rem;
+            font-family: var(--mono);
+            z-index: 100;
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            transition: all .3s;
+        }
+        .user-badge:hover {
+            transform: scale(1.05);
+            background: rgba(255, 181, 46, 0.25);
+        }
+        .user-badge .avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--amber);
+            color: #241d10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: .7rem;
+        }
+        .user-badge .name {
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .user-badge .id-label {
+            color: var(--mut);
+            font-size: .6rem;
+            opacity: 0.7;
+        }
+        @media (max-width: 768px) {
+            .user-badge {
+                top: 12px;
+                right: 12px;
+                padding: 4px 12px;
+                font-size: .65rem;
+            }
+            .user-badge .avatar {
+                width: 20px;
+                height: 20px;
+                font-size: .6rem;
+            }
+            .user-badge .name {
+                max-width: 100px;
+            }
+        }
+        @media (max-width: 480px) {
+            .user-badge {
+                top: 8px;
+                right: 8px;
+                padding: 3px 10px;
+                font-size: .55rem;
+            }
+            .user-badge .avatar {
+                width: 16px;
+                height: 16px;
+                font-size: .5rem;
+            }
+            .user-badge .name {
+                max-width: 70px;
+            }
+            .user-badge .id-label {
+                display: none;
+            }
+        }
+
+        .settings-saved {
+            font-size: .7rem;
+            color: var(--teal);
+            margin-left: 8px;
+            opacity: 0;
+            transition: opacity .3s;
+        }
+        .settings-saved.show {
+            opacity: 1;
+        }
+        .settings-saved.error {
+            color: var(--red);
+        }
+
+        .rules {
+            margin-top: 70px;
+        }
+        .rules h2 {
+            font-family: var(--display);
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            font-size: clamp(1.5rem, 3vw, 2.1rem);
+            margin-bottom: 8px;
+        }
+        .rules h2 em {
+            font-style: normal;
+            color: var(--amber);
+        }
+        .rules-sub {
+            color: var(--mut);
+            margin-bottom: 28px;
+            font-size: .95rem;
+        }
+        .rule {
+            display: grid;
+            grid-template-columns: 110px 1fr;
+            gap: 22px;
+            padding: 26px 8px;
+            border-top: 1px dashed var(--line);
+            align-items: start;
+        }
+        .rule:last-child {
+            border-bottom: 1px dashed var(--line);
+        }
+        .rule .num {
+            font-family: var(--display);
+            font-size: 3.6rem;
+            line-height: 1;
+            color: transparent;
+            -webkit-text-stroke: 1.5px var(--amber);
+            text-stroke: 1.5px var(--amber);
+        }
+        @supports not (-webkit-text-stroke: 1px red) {
+            .rule .num {
+                color: var(--amber);
+            }
+        }
+        .rule h3 {
+            font-size: 1.08rem;
+            margin-bottom: 8px;
+        }
+        .rule p {
+            color: var(--mut);
+            font-size: .94rem;
+            max-width: 64ch;
+            line-height: 1.55;
+        }
+        .rule code {
+            display: inline-block;
+            margin-top: 12px;
+            font-family: var(--mono);
+            font-size: .8rem;
+            color: var(--amber2);
+            background: rgba(255, 181, 46, .08);
+            border: 1px solid rgba(255, 181, 46, .25);
+            padding: 6px 12px;
+            border-radius: 7px;
+        }
+        @media (max-width: 640px) {
+            .rule {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            .rule .num {
+                font-size: 2.6rem;
+            }
+        }
+
+        .reveal {
+            opacity: 1 !important;
+            transform: none !important;
+        }
+
+        .day-time-group {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            margin-bottom: 8px;
+        }
+        .day-time-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            padding: 4px 2px;
+            border-radius: 6px;
+            background: rgba(255,255,255,.03);
+            border: 1px solid var(--line);
+        }
+        .day-time-item .day-label {
+            font-size: .55rem;
+            color: var(--mut);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+        }
+        .day-time-item input[type="time"] {
+            width: 100%;
+            font-family: var(--mono);
+            font-size: .55rem;
+            color: var(--txt);
+            background: var(--bg2);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 2px 2px;
+            text-align: center;
+            transition: border-color .2s;
+        }
+        .day-time-item input[type="time"]:focus {
+            border-color: var(--amber);
+            outline: none;
+        }
+        .day-time-item input[type="time"]:disabled {
+            opacity: .3;
+            cursor: not-allowed;
+        }
+        .day-time-item .time-hours {
+            font-size: .5rem;
+            color: var(--mut);
+        }
+        .day-time-item .time-hours strong {
+            color: var(--amber2);
+        }
+        @media (max-width: 768px) {
+            .day-time-group {
+                grid-template-columns: repeat(7, 1fr);
+                gap: 3px;
+            }
+            .day-time-item input[type="time"] {
+                font-size: .5rem;
+                padding: 1px 1px;
+            }
+        }
+        @media (max-width: 480px) {
+            .day-time-group {
+                grid-template-columns: repeat(7, 1fr);
+                gap: 2px;
+            }
+            .day-time-item .day-label {
+                font-size: .45rem;
+            }
+            .day-time-item input[type="time"] {
+                font-size: .45rem;
+            }
+            .day-time-item .time-hours {
+                font-size: .4rem;
+            }
+        }
+
+        .finance-employee-block {
+            margin-top: 20px;
+            border-top: 2px solid var(--line);
+            padding-top: 20px;
+        }
+        .finance-employee-block h2 {
+            font-family: var(--display);
+            font-weight: 400;
+            color: var(--amber);
+            font-size: 1.05rem;
+            margin-bottom: 16px;
+        }
+        .finance-employee-block .debt-summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .finance-employee-block .debt-item {
+            background: rgba(255,255,255,.03);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid var(--line);
+        }
+        .finance-employee-block .debt-item .label {
+            font-size: .65rem;
+            color: var(--mut);
+        }
+        .finance-employee-block .debt-item .value {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .finance-employee-block .debt-item .value.debt {
+            color: var(--amber);
+        }
+        .finance-employee-block .debt-item .value.paid {
+            color: var(--teal);
+        }
+        .finance-employee-block .debt-item .value.count {
+            color: var(--red);
+        }
+        .finance-employee-block .advance-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .finance-employee-block .advance-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--line);
+            font-size: .85rem;
+        }
+        .finance-employee-block .advance-row .info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .finance-employee-block .advance-row .info .comment {
+            font-size: .7rem;
+            color: var(--mut);
+        }
+        .finance-employee-block .advance-row .amount {
+            font-weight: bold;
+        }
+        .finance-employee-block .advance-row .amount.active {
+            color: var(--amber);
+        }
+        .finance-employee-block .advance-row .amount.repaid {
+            color: var(--teal);
+        }
+        .no-advances {
+            text-align: center;
+            padding: 16px;
+            color: var(--mut);
+            font-size: .85rem;
+        }
+
+        .btn-stats-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            color: var(--mut);
+            border: 1px solid var(--line);
+            background: transparent;
+            padding: 13px 22px;
+            border-radius: 10px;
+            font-family: var(--body);
+            font-weight: 700;
+            font-size: .9rem;
+            cursor: pointer;
+            transition: transform .15s, box-shadow .15s, background .2s;
+        }
+        .btn-stats-link:hover {
+            color: var(--txt);
+            border-color: var(--mut);
+            transform: translateY(-2px);
+        }
+        .btn-stats-link:active {
+            transform: translateY(0) scale(.97);
+        }
+        @media (max-width: 480px) {
+            .btn-stats-link {
+                width: 100%;
+                padding: 12px 16px;
+                font-size: .8rem;
+                min-height: 48px;
+            }
+        }
+
+        .view-only-badge {
+            display: inline-block;
+            background: rgba(255,181,46,.15);
+            color: var(--amber2);
+            border: 1px solid var(--amber);
+            padding: 4px 14px;
+            border-radius: 999px;
+            font-size: .7rem;
+            font-family: var(--mono);
+            margin-left: 12px;
+        }
+
+        .day-time-item .time-from-attendance {
+            font-size: .45rem;
+            color: var(--teal);
+            font-family: var(--mono);
+            margin-top: 1px;
+        }
+
+        .day-time-item.work-day {
+            border-color: rgba(62,207,168,.3);
+            background: rgba(62,207,168,.05);
+        }
+        .day-time-item.extra-day {
+            border-color: var(--amber);
+            background: rgba(255,181,46,.08);
+        }
+        .day-time-item.work-day .day-label {
+            color: var(--teal);
+        }
+        .day-time-item.extra-day .day-label {
+            color: var(--amber);
+        }
+
+        @media (max-width: 480px) {
+            .finance-employee-block .debt-summary {
+                grid-template-columns: 1fr 1fr;
+            }
+            .day-time-item .time-from-attendance {
+                font-size: .4rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="user-badge" id="userBadge" style="display: none;">
+        <div class="avatar" id="userAvatar">?</div>
+        <span class="name" id="userName">Загрузка...</span>
+        <span class="id-label" id="userIdLabel">ID: —</span>
+    </div>
+
+    <div class="stripe" aria-hidden="true"></div>
+    <div class="wrap">
+        <header>
+            <div>
+                <div class="eyebrow" id="eyebrow">Табель · неделя</div>
+                <h1>Расчёт <em>зарплаты</em> за неделю</h1>
+                <p class="sub">
+                    📋 Ваши данные за неделю.
+                    <span style="color:var(--amber);">Все изменения вносятся администратором.</span>
+                    <span class="view-only-badge">🔒 Только просмотр</span>
+                </p>
+            </div>
+            <div class="chips">
+                <span class="chip"><i style="background:var(--teal)"></i><span id="chip1">1–5 день · 3 000 ₽</span></span>
+                <span class="chip"><i style="background:var(--amber)"></i><span id="chip2">6–7 день · 3 500 ₽</span></span>
+                <span class="chip"><i style="background:var(--red)"></i><span id="chip3">переработка · 400 / 800 ₽/ч</span></span>
+            </div>
+        </header>
+
+        <main class="grid">
+            <section class="panel" aria-label="Исходные данные">
+                <h2>Исходные данные</h2>
+
+                <div class="calendar-nav">
+                    <button id="weekPrev" aria-label="Предыдущая неделя">◀</button>
+                    <div class="week-label">
+                        <span id="weekRange">—</span>
+                        <small id="weekSub">текущая неделя</small>
+                    </div>
+                    <button id="weekNext" aria-label="Следующая неделя">▶</button>
+                    <button id="weekToday" style="font-size:.75rem;padding:4px 12px;border-color:var(--amber);color:var(--amber)">Сегодня</button>
+                </div>
+
+                <div class="field">
+                    <div class="f-head">
+                        <span class="f-label">Рабочие дни</span>
+                        <span class="f-hint">📊 данные из админ-панели</span>
+                    </div>
+                    <div class="days" id="days"></div>
+                    <div class="step-row">
+                        <button class="step" id="dMinus" disabled style="opacity:0.3;cursor:not-allowed;">−</button>
+                        <div class="step-val"><b id="dOut">0</b><span>дней</span></div>
+                        <button class="step" id="dPlus" disabled style="opacity:0.3;cursor:not-allowed;">+</button>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="f-head">
+                        <span class="f-label">Время смены</span>
+                        <span class="f-hint" id="normOut">норма: 8 ч/день</span>
+                    </div>
+                    <div class="day-time-group" id="dayTimeGroup"></div>
+                    <div class="badges">
+                        <span class="badge ot" id="otBadge" hidden></span>
+                        <span class="badge uw" id="uwBadge" hidden></span>
+                    </div>
+                </div>
+
+                <div class="field" style="margin-bottom:6px">
+                    <details>
+                        <summary>
+                            Ставки и параметры
+                            <span class="settings-saved" id="settingsSaved">✅ Загружено</span>
+                            <span class="arr"></span>
+                        </summary>
+                        <div class="rate-grid">
+                            <label>День 1–5 (базовая), ₽<input type="number" id="rDay" value="3000" min="0" step="100" disabled style="opacity:0.6;cursor:not-allowed;"></label>
+                            <label>День 6–7 (повышенная), ₽<input type="number" id="rExtra" value="3500" min="0" step="100" disabled style="opacity:0.6;cursor:not-allowed;"></label>
+                            <label>Перераб. ≤ лимита, ₽/ч<input type="number" id="rOt1" value="400" min="0" step="50" disabled style="opacity:0.6;cursor:not-allowed;"></label>
+                            <label>Перераб. сверх, ₽/ч<input type="number" id="rOt2" value="800" min="0" step="50" disabled style="opacity:0.6;cursor:not-allowed;"></label>
+                            <label>Лимит дешёвой перераб., ч<input type="number" id="otLimit" value="5" min="0" max="24" step="0.5" disabled style="opacity:0.6;cursor:not-allowed;"></label>
+                        </div>
+                    </details>
+                </div>
+            </section>
+
+            <div class="doc">
+                <section class="receipt" aria-label="Расчётная ведомость" aria-live="polite">
+                    <div class="holes l" aria-hidden="true"></div>
+                    <div class="holes r" aria-hidden="true"></div>
+
+                    <div class="r-head">
+                        <b>Расчётная ведомость</b>
+                        <span id="wk">неделя №— · —</span>
+                    </div>
+
+                    <div class="row" id="rowBase">
+                        <span class="lbl">Основные дни (1–5 рабочие)</span>
+                        <span class="qty" id="qBase"></span>
+                        <span class="dots"></span>
+                        <span class="val" id="vBase">0 ₽</span>
+                    </div>
+                    <div class="row gone" id="rowExtra">
+                        <span class="lbl">Дни 6–7 рабочие (повышенные)</span>
+                        <span class="qty" id="qExtra"></span>
+                        <span class="dots"></span>
+                        <span class="val" id="vExtra">0 ₽</span>
+                    </div>
+                    <div class="row gone" id="rowOt1">
+                        <span class="lbl">Переработка, первые часы</span>
+                        <span class="qty" id="qOt1"></span>
+                        <span class="dots"></span>
+                        <span class="val" id="vOt1">0 ₽</span>
+                    </div>
+                    <div class="row gone" id="rowOt2">
+                        <span class="lbl">Переработка, сверх лимита</span>
+                        <span class="qty" id="qOt2"></span>
+                        <span class="dots"></span>
+                        <span class="val" id="vOt2">0 ₽</span>
+                    </div>
+
+                    <div class="bar-wrap">
+                        <div class="bar"><i id="bNorm"></i><i id="bOt1"></i><i id="bOt2"></i></div>
+                        <div class="bar-legend">
+                            <span><i class="sw sw-n"></i>норма <b id="lNorm">—</b></span>
+                            <span><i class="sw sw-1"></i>перераб. ≤ лимита <b id="lOt1">—</b></span>
+                            <span><i class="sw sw-2"></i>сверх лимита <b id="lOt2">—</b></span>
+                        </div>
+                    </div>
+
+                    <div class="sep"></div>
+
+                    <div class="total-row">
+                        <div class="t-label">К выплате<br>за неделю</div>
+                        <div class="t-val"><span id="totalOut">0</span><span class="cur">₽</span></div>
+                        <div class="stamp" id="stamp">К выплате</div>
+                    </div>
+
+                    <div class="formula" id="formula">—</div>
+                    <div class="r-meta" id="metaLine"></div>
+                </section>
+                <div class="tear" aria-hidden="true"></div>
+
+                <div class="actions">
+                    <button class="btn btn-amber" id="copyBtn">📋 Скопировать</button>
+                    <a href="employee-stats.html?id=ЗАМЕНИТЬ_НА_ID" class="btn-stats-link" id="statsLink">📊 Моя статистика</a>
+                </div>
+            </div>
+        </main>
+
+        <!-- ===== ФИНАНСОВЫЙ БЛОК (ТОЛЬКО ПРОСМОТР) ===== -->
+        <div class="finance-employee-block" id="financeEmployeeBlock">
+            <h2>💰 Мои финансы</h2>
+            <div id="employeeFinanceContent">
+                <div style="text-align:center; padding: 20px; color: var(--mut);">Загрузка...</div>
+            </div>
+        </div>
+
+        <section class="rules">
+            <h2 class="reveal">Как это <em>считается</em></h2>
+            <p class="rules-sub reveal">Три правила, зашитые в калькулятор. Ставки выше можно поменять — логика сохраняется.</p>
+
+            <div class="rule reveal">
+                <span class="num">01</span>
+                <div>
+                    <h3>Первые 5 рабочих дней — по базовой ставке</h3>
+                    <p>Независимо от того, какие это дни недели, первые 5 отработанных дней оплачиваются по базовой ставке пропорционально отработанным часам.</p>
+                    <code>5 дней × 3000 ₽ (за 8ч) = 15 000 ₽</code>
+                </div>
+            </div>
+            <div class="rule reveal">
+                <span class="num">02</span>
+                <div>
+                    <h3>6-й и 7-й рабочий день — по повышенной ставке</h3>
+                    <p>Если отработано больше 5 дней, 6-й и 7-й по счёту рабочие дни оплачиваются по повышенной ставке.</p>
+                    <code>6 дней → 5 × 3000 + 1 × 3500 = 18 500 ₽</code>
+                </div>
+            </div>
+            <div class="rule reveal">
+                <span class="num">03</span>
+                <div>
+                    <h3>Переработка — от часов сверх нормы</h3>
+                    <p>Норма — 8 часов в день. Всё, что сверху, оплачивается по часам: первые 5 часов переработки — по 400 ₽/ч, каждый следующий час — по 800 ₽/ч.</p>
+                    <code>5 дней по 9ч → 5×3000 + 5×400 = 17 000 ₽</code>
+                </div>
+            </div>
+        </section>
+
+        <footer>один html-файл · без зависимостей · расчёт выполняется локально в браузере · 🔒 данные только для просмотра</footer>
+    </div>
+
+    <script type="module">
+        import { firebaseConfig } from './config.js';
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { 
+            getFirestore, 
+            doc, getDoc, setDoc, updateDoc, deleteDoc, 
+            collection, query, where, getDocs, addDoc 
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.db = db;
+        window.doc = doc;
+        window.getDoc = getDoc;
+        window.setDoc = setDoc;
+        window.updateDoc = updateDoc;
+        window.deleteDoc = deleteDoc;
+        window.collection = collection;
+        window.query = query;
+        window.where = where;
+        window.getDocs = getDocs;
+        window.addDoc = addDoc;
+        
+        console.log('✅ Firebase инициализирован');
+    </script>
+    <script type="module" src="employee-view.js"></script>
+</body>
+</html>

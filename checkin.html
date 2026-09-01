@@ -48,12 +48,11 @@
             font-weight: bold;
             transition: color .3s;
         }
-        /* ЦВЕТА СТАТУСА */
         .status.success { 
-            color: #3ecfa8;  /* ЗЕЛЁНЫЙ */
+            color: #3ecfa8;
         }
         .status.error { 
-            color: #e5484d;  /* КРАСНЫЙ */
+            color: #e5484d;
         }
         .status.loading { 
             color: var(--amber); 
@@ -143,6 +142,15 @@
             display: block;
             margin-bottom: 4px;
         }
+        .debug-info {
+            font-size: .6rem;
+            color: var(--mut);
+            margin-top: 16px;
+            padding: 8px;
+            border-top: 1px solid var(--line);
+            opacity: 0.5;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
@@ -164,7 +172,6 @@
                 <div class="name" id="employeeName">Имя</div>
                 <div class="id-label" id="employeeIdLabel">ID: —</div>
                 
-                <!-- СТАТУС С ЦВЕТОМ -->
                 <div class="status loading" id="statusText">
                     <span class="status-icon" id="statusIcon">⏳</span>
                     <span id="statusLabel">Обработка...</span>
@@ -173,6 +180,7 @@
                 <div class="time" id="timeText">--:--</div>
                 <div class="sub" id="subText"></div>
                 <button class="close-btn" id="closeBtn">✕ Закрыть</button>
+                <div class="debug-info" id="debugInfo"></div>
             </div>
         </div>
     </div>
@@ -203,6 +211,7 @@
         const timeText = document.getElementById('timeText');
         const subText = document.getElementById('subText');
         const closeBtn = document.getElementById('closeBtn');
+        const debugInfo = document.getElementById('debugInfo');
 
         let currentEmployeeId = null;
         let currentEmployeeName = '';
@@ -271,11 +280,7 @@
             return `${y}-W${String(week).padStart(2, '0')}`;
         }
 
-        // ============================================
-        // ФУНКЦИЯ ОБНОВЛЕНИЯ СТАТУСА С ЦВЕТОМ
-        // ============================================
         function setStatus(type, message, timeStr) {
-            // Убираем все классы
             statusText.classList.remove('success', 'error', 'loading');
             
             if (type === 'in') {
@@ -303,9 +308,9 @@
 
         async function performAttendance(employeeId) {
             setStatus('loading', 'Загрузка...');
+            debugInfo.textContent = '⏳ Проверка...';
 
             try {
-                // Получаем ВСЕ отметки за сегодня
                 const today = new Date().toISOString().slice(0, 10);
                 const q = query(
                     collection(db, 'attendance'),
@@ -325,7 +330,8 @@
                 const weekKey = getWeekKey(now);
                 const timestamp = now.toISOString();
 
-                await addDoc(collection(db, 'attendance'), {
+                // Сохраняем отметку
+                const docRef = await addDoc(collection(db, 'attendance'), {
                     employeeId: employeeId,
                     timestamp: timestamp,
                     type: type,
@@ -337,13 +343,12 @@
                 const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
                 const label = type === 'in' ? 'Пришёл' : 'Ушёл';
                 
-                // Устанавливаем статус с цветом
                 setStatus(type, label, timeStr);
-                
-                subText.textContent = 'Отметка сохранена.';
+                subText.textContent = '✅ Отметка сохранена.';
+                debugInfo.textContent = `📝 Сохранено: ${type} | ${dateStr} | ${weekKey} | ID: ${docRef.id}`;
+                console.log('✅ Отметка сохранена:', { employeeId, type, dateStr, weekKey, timestamp });
 
                 setTimeout(() => {
-                    window.close();
                     closeBtn.classList.add('show');
                     subText.textContent = 'Если страница не закрылась, нажмите кнопку ниже.';
                 }, 2000);
@@ -353,6 +358,7 @@
                 setStatus('error', 'Ошибка: ' + error.message);
                 closeBtn.classList.add('show');
                 subText.textContent = 'Попробуйте ещё раз.';
+                debugInfo.textContent = '❌ ' + error.message;
             }
         }
 
