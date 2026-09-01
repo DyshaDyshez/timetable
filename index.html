@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Админ-панель зарплаты</title>
@@ -23,6 +22,12 @@
         .admin-header h1 {
             font-family: var(--display);
             color: var(--amber);
+        }
+        .admin-header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
         }
         .add-form {
             display: flex;
@@ -63,7 +68,7 @@
         }
         .employee-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
             gap: 20px;
         }
         .employee-card {
@@ -74,7 +79,7 @@
             transition: .2s;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
         }
         .employee-card:hover {
             border-color: var(--amber);
@@ -88,23 +93,62 @@
             color: var(--mut);
             font-size: .9rem;
         }
-        .employee-card .emp-id {
-            color: var(--mut);
-            font-size: .7rem;
+        .employee-card .emp-pin {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             font-family: var(--mono);
-            background: rgba(255,255,255,.05);
-            padding: 2px 8px;
-            border-radius: 4px;
-            display: inline-block;
+            margin: 4px 0;
         }
-        .employee-card .actions {
+        .employee-card .emp-pin .pin-display {
+            font-weight: bold;
+            color: var(--amber2);
+            padding: 2px 10px;
+            background: rgba(255,181,46,.1);
+            border-radius: 4px;
+            border: 1px solid rgba(255,181,46,.3);
+            min-width: 40px;
+            text-align: center;
+        }
+        .employee-card .emp-pin .pin-edit-input {
+            width: 60px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--line);
+            background: var(--bg2);
+            color: var(--txt);
+            font-family: var(--mono);
+            text-align: center;
+            font-size: .9rem;
+        }
+        .employee-card .emp-pin .pin-btn {
+            background: none;
+            border: none;
+            color: var(--mut);
+            cursor: pointer;
+            font-size: .8rem;
+            padding: 0 4px;
+            transition: .2s;
+        }
+        .employee-card .emp-pin .pin-btn:hover {
+            color: var(--amber);
+        }
+        .employee-card .emp-pin .pin-btn.save {
+            color: var(--teal);
+        }
+        .employee-card .emp-pin .pin-btn.save:hover {
+            color: #4ae0b0;
+        }
+        .employee-card .emp-pin .pin-btn.generate {
+            color: var(--amber);
+        }
+        .employee-card .emp-actions {
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
             margin-top: 4px;
         }
-        .employee-card .actions a,
-        .employee-card .actions button {
+        .employee-card .emp-actions button {
             padding: 6px 14px;
             border-radius: 6px;
             border: none;
@@ -113,31 +157,6 @@
             font-size: .8rem;
             transition: .2s;
             white-space: nowrap;
-        }
-        .btn-link {
-            background: var(--amber2);
-            color: #241d10;
-        }
-        .btn-link:hover {
-            filter: brightness(1.1);
-        }
-        .btn-stats {
-            background: rgba(255, 255, 255, .1);
-            color: var(--txt);
-            border: 1px solid var(--line);
-        }
-        .btn-stats:hover {
-            background: var(--teal);
-            color: #0c1520;
-        }
-        .btn-delete {
-            background: rgba(255, 0, 8, 0.37);
-            color: var(--red);
-            border: 1px solid var(--red);
-        }
-        .btn-delete:hover {
-            background: var(--red);
-            color: #fff;
         }
         .btn-copy-link {
             background: rgba(62, 207, 168, .15);
@@ -148,23 +167,102 @@
             background: var(--teal);
             color: #0c1520;
         }
-        .btn-copy-link.copied {
+        .btn-stats {
+            background: rgba(255,255,255,.1);
+            color: var(--txt);
+            border: 1px solid var(--line);
+        }
+        .btn-stats:hover {
             background: var(--teal);
             color: #0c1520;
         }
-        .btn-finance {
-            background: rgba(255,181,46,.15);
-            color: var(--amber2);
-            border: 1px solid var(--amber);
-            padding: 6px 14px;
-            border-radius: 6px;
+        .btn-delete {
+            background: rgba(255,0,8,0.37);
+            color: var(--red);
+            border: 1px solid var(--red);
+        }
+        .btn-delete:hover {
+            background: var(--red);
+            color: #fff;
+        }
+        .btn-generate-all {
+            background: var(--amber);
+            color: #241d10;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
             cursor: pointer;
+            font-weight: bold;
             font-size: .8rem;
             transition: .2s;
         }
-        .btn-finance:hover {
-            background: rgba(255,181,46,.25);
-            transform: translateY(-2px);
+        .btn-generate-all:hover {
+            filter: brightness(1.1);
+        }
+        .btn-generate-all:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .logout-btn {
+            background: var(--red);
+            color: #fff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .logout-btn:hover {
+            filter: brightness(1.1);
+        }
+        .link-hint {
+            font-size: .6rem;
+            color: var(--mut);
+            word-break: break-all;
+            cursor: pointer;
+        }
+        .link-hint:hover {
+            color: var(--amber);
+        }
+        .auth-screen {
+            display: none;
+            text-align: center;
+            padding: 60px 20px;
+        }
+        .auth-screen.active {
+            display: block;
+        }
+        .auth-box {
+            max-width: 400px;
+            margin: 0 auto;
+            background: var(--card);
+            padding: 30px;
+            border-radius: 12px;
+        }
+        .auth-box input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            background: var(--bg2);
+            color: var(--txt);
+        }
+        .auth-box button {
+            width: 100%;
+            padding: 12px;
+            background: var(--amber);
+            color: #241d10;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .auth-box button:hover {
+            filter: brightness(1.1);
+        }
+        .auth-error {
+            color: var(--red);
+            margin-top: 10px;
         }
         .modal {
             display: none;
@@ -173,7 +271,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, .7);
+            background: rgba(0,0,0,.7);
             backdrop-filter: blur(4px);
             z-index: 1000;
             overflow-y: auto;
@@ -221,63 +319,23 @@
             color: var(--mut);
             padding: 40px;
         }
-        .auth-screen {
-            display: none;
-            text-align: center;
-            padding: 60px 20px;
+        .finance-tab {
+            margin-top: 40px;
+            border-top: 2px solid var(--line);
+            padding-top: 30px;
         }
-        .auth-screen.active {
-            display: block;
-        }
-        .auth-box {
-            max-width: 400px;
-            margin: 0 auto;
-            background: var(--card);
-            padding: 30px;
-            border-radius: 12px;
-        }
-        .auth-box input {
-            width: 100%;
-            padding: 12px;
-            margin-bottom: 12px;
-            border-radius: 8px;
-            border: 1px solid var(--line);
-            background: var(--bg2);
-            color: var(--txt);
-        }
-        .auth-box button {
-            width: 100%;
-            padding: 12px;
-            background: var(--amber);
-            color: #241d10;
-            border: none;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        .auth-box button:hover {
-            filter: brightness(1.1);
-        }
-        .auth-error {
-            color: var(--red);
-            margin-top: 10px;
-        }
-        .logout-btn {
-            background: var(--red);
-            color: #fff;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-        }
-        .logout-btn:hover {
-            filter: brightness(1.1);
-        }
-        .admin-header-right {
+        .finance-header {
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 15px;
             flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .finance-header h2 {
+            font-family: var(--display);
+            font-weight: 400;
+            color: var(--amber);
         }
         .notification {
             position: fixed;
@@ -300,93 +358,6 @@
         .notification.error {
             background: var(--red);
             color: #fff;
-        }
-        .link-hint {
-            font-size: .65rem;
-            color: var(--mut);
-            margin-top: 2px;
-            word-break: break-all;
-            cursor: pointer;
-        }
-        .link-hint:hover {
-            color: var(--amber);
-        }
-        .finance-tab {
-            margin-top: 40px;
-            border-top: 2px solid var(--line);
-            padding-top: 30px;
-        }
-        .finance-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-        .finance-header h2 {
-            font-family: var(--display);
-            font-weight: 400;
-            color: var(--amber);
-        }
-        .debt-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--line);
-        }
-        .debt-row .debt-name {
-            font-weight: bold;
-        }
-        .debt-row .debt-amount {
-            font-weight: bold;
-            color: var(--amber);
-        }
-        .debt-row .debt-count {
-            font-size: .7rem;
-            color: var(--mut);
-        }
-        .btn-sync {
-            background: var(--amber);
-            color: #241d10;
-            border: none;
-            padding: 8px 18px;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: .2s;
-            font-size: .85rem;
-        }
-        .btn-sync:hover {
-            filter: brightness(1.1);
-            transform: translateY(-2px);
-        }
-        .btn-sync:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-        .sync-status {
-            font-size: .75rem;
-            color: var(--mut);
-            padding: 4px 12px;
-            border-radius: 999px;
-            background: rgba(255,255,255,.05);
-            border: 1px solid var(--line);
-            white-space: nowrap;
-        }
-        .sync-status.loading {
-            color: var(--amber);
-            border-color: var(--amber);
-        }
-        .sync-status.success {
-            color: var(--teal);
-            border-color: var(--teal);
-        }
-        .sync-status.error {
-            color: var(--red);
-            border-color: var(--red);
         }
     </style>
 </head>
@@ -411,8 +382,8 @@
                 <h1>👨‍💼 Админ-панель</h1>
                 <div class="admin-header-right">
                     <span style="color:var(--mut)" id="userEmail">Управление сотрудниками</span>
-                    <button id="syncGoogleBtn" class="btn-sync" title="Отправить все данные в Google Sheets">🔄 Синхронизировать</button>
-                    <span id="syncStatus" class="sync-status">Готово</span>
+               <!--       <button id="generateAllPinsBtn" class="btn-generate-all">🔢 PIN для всех</button>  -->
+               <a href="admin-dashboard.html" class="btn btn-amber" style="padding:8px 20px;">📊 Расширенная панель</a>
                     <button class="logout-btn" id="logoutBtn">Выйти</button>
                 </div>
             </div>
@@ -427,7 +398,6 @@
                 <div class="loading">Загрузка...</div>
             </div>
 
-            <!-- ФИНАНСОВЫЙ МОДУЛЬ -->
             <div class="finance-tab" id="financeTab">
                 <div class="finance-header">
                     <h2>💰 Финансы</h2>
@@ -442,961 +412,6 @@
 
     <div id="notification" class="notification"></div>
 
-    <script type="module">
-        // ============================================
-        // API ДЛЯ АВТО-СИНХРОНИЗАЦИИ
-        // ============================================
-
-        // Проверяем, есть ли параметр ?api=sync
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('api') === 'sync') {
-            console.log('📡 Запрос API: синхронизация данных');
-            
-            // Импортируем Firebase
-            const { firebaseConfig } = await import('./config.js');
-            const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-            const { 
-                getFirestore, 
-                collection, getDocs 
-            } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-            
-            // Инициализация Firebase
-            const app = initializeApp(firebaseConfig);
-            const db = getFirestore(app);
-            
-            try {
-                // Загружаем все данные
-                const [employeesSnap, weeksSnap, advancesSnap] = await Promise.all([
-                    getDocs(collection(db, 'salaryEmployees')),
-                    getDocs(collection(db, 'salaryWeeks')),
-                    getDocs(collection(db, 'salaryAdvances'))
-                ]);
-                
-                // Форматируем данные
-                const employees = [];
-                employeesSnap.forEach(doc => {
-                    const data = doc.data();
-                    employees.push({ 
-                        id: doc.id, 
-                        ...data,
-                        name: data.name || 'Без имени'
-                    });
-                });
-                
-                const weeks = [];
-                weeksSnap.forEach(doc => {
-                    const data = doc.data();
-                    const workDays = data.workDays || [];
-                    const hours = data.hours || [];
-                    const days = workDays.filter(Boolean).length;
-                    const totalHours = hours.reduce((a, b) => a + b, 0);
-                    
-                    // Рассчитываем переработку
-                    const hpd = 8;
-                    const norm = days * hpd;
-                    const ot = Math.max(0, Math.round((totalHours - norm) * 100) / 100);
-                    
-                    // Получаем сумму
-                    let total = data.calculatedPay || data.total || 0;
-                    
-                    if (total === 0 && days > 0) {
-                        const baseRate = 3000;
-                        const extraRate = 3500;
-                        const otRate = 400;
-                        
-                        let baseDays = Math.min(days, 5);
-                        let extraDays = Math.max(0, days - 5);
-                        total = baseDays * baseRate + extraDays * extraRate;
-                        if (ot > 0) {
-                            total += ot * otRate;
-                        }
-                    }
-                    
-                    weeks.push({
-                        id: doc.id,
-                        ...data,
-                        days: days,
-                        totalHours: totalHours,
-                        ot: ot,
-                        total: total,
-                        employeeId: data.employeeId || '',
-                        isPaid: data.isPaid || false,
-                        paidAmount: data.paidAmount || 0,
-                        paidAt: data.paidAt || '',
-                        companyDebt: data.companyDebt || 0
-                    });
-                });
-                
-                const advances = [];
-                advancesSnap.forEach(doc => {
-                    const data = doc.data();
-                    advances.push({ 
-                        id: doc.id, 
-                        ...data,
-                        employeeId: data.employeeId || '',
-                        amount: data.amount || 0,
-                        status: data.status || 'active',
-                        date: data.date || new Date().toISOString()
-                    });
-                });
-                
-                // Отправляем ответ
-                const responseData = {
-                    employees: employees,
-                    weeks: weeks,
-                    advances: advances
-                };
-                
-                document.body.textContent = JSON.stringify(responseData);
-                document.body.style.cssText = 'padding: 20px; font-family: monospace; color: #e9f0f7; background: #0c1520;';
-                
-            } catch (error) {
-                document.body.textContent = JSON.stringify({ 
-                    success: false,
-                    error: error.message 
-                });
-                document.body.style.cssText = 'padding: 20px; font-family: monospace; color: #e5484d; background: #0c1520;';
-            }
-            
-            // Останавливаем выполнение остального кода
-            throw new Error('API режим');
-        }
-
-        // ============================================
-        // ИМПОРТЫ (основной режим)
-        // ============================================
-        import { firebaseConfig } from './config.js';
-        
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { 
-            getFirestore, 
-            collection, doc, getDocs, addDoc, updateDoc, deleteDoc, 
-            query, where, onSnapshot, getDoc 
-        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        import { 
-            getAuth, 
-            signInWithEmailAndPassword, 
-            onAuthStateChanged, 
-            signOut 
-        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        
-        import { renderStats } from './stats-module.js';
-        import { 
-            getActiveAdvances, 
-            getAllAdvances, 
-            addAdvance, 
-            repayAdvance, 
-            deleteAdvance,
-            getEmployeeBalance,
-            processSalaryWithDebt,
-            formatDate,
-            formatDateTime
-        } from './finance-module.js';
-
-        // ============================================
-        // НАСТРОЙКА FIREBASE
-        // ============================================
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-
-        window.db = db;
-        window.auth = auth;
-        window.collection = collection;
-        window.doc = doc;
-        window.getDocs = getDocs;
-        window.addDoc = addDoc;
-        window.updateDoc = updateDoc;
-        window.deleteDoc = deleteDoc;
-        window.query = query;
-        window.where = where;
-        window.onSnapshot = onSnapshot;
-        window.getDoc = getDoc;
-        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
-        window.onAuthStateChanged = onAuthStateChanged;
-        window.signOut = signOut;
-        window.showNotification = showNotification;
-
-        // ============================================
-        // НАСТРОЙКА GOOGLE SHEETS
-        // ============================================
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw7l8rm1pKut-GYody5iLRJr50SggmNEfOcfqQnTJbtQN7koJT4dNYnryblodMiYA-Sbw/exec';
-
-        // ============================================
-        // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-        // ============================================
-        function showNotification(message, isError = false) {
-            const el = document.getElementById('notification');
-            if (!el) return;
-            el.textContent = message;
-            el.className = 'notification show';
-            if (isError) el.classList.add('error');
-            clearTimeout(el._timer);
-            el._timer = setTimeout(() => el.classList.remove('show'), 3000);
-        }
-
-        function setSyncStatus(message, type = '') {
-            const el = document.getElementById('syncStatus');
-            if (!el) return;
-            el.textContent = message;
-            el.className = 'sync-status' + (type ? ' ' + type : '');
-        }
-
-        function getBaseUrl() {
-            const url = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
-            return url;
-        }
-
-        async function copyToClipboard(text, btnElement) {
-            try {
-                await navigator.clipboard.writeText(text);
-                const originalText = btnElement.textContent;
-                btnElement.textContent = '✅ Скопировано!';
-                btnElement.classList.add('copied');
-                setTimeout(() => {
-                    btnElement.textContent = originalText;
-                    btnElement.classList.remove('copied');
-                }, 2000);
-                showNotification('✅ Ссылка скопирована!');
-            } catch (error) {
-                const textarea = document.createElement('textarea');
-                textarea.value = text;
-                document.body.appendChild(textarea);
-                textarea.select();
-                try {
-                    document.execCommand('copy');
-                    const originalText = btnElement.textContent;
-                    btnElement.textContent = '✅ Скопировано!';
-                    btnElement.classList.add('copied');
-                    setTimeout(() => {
-                        btnElement.textContent = originalText;
-                        btnElement.classList.remove('copied');
-                    }, 2000);
-                    showNotification('✅ Ссылка скопирована!');
-                } catch (err) {
-                    showNotification('❌ Не удалось скопировать', true);
-                }
-                document.body.removeChild(textarea);
-            }
-        }
-
-        // ============================================
-        // ЗАГРУЗКА ДАННЫХ ДЛЯ СИНХРОНИЗАЦИИ
-        // ============================================
-
-        async function loadAllEmployees() {
-            const snapshot = await getDocs(collection(db, 'salaryEmployees'));
-            const employees = [];
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                employees.push({ 
-                    id: doc.id, 
-                    ...data,
-                    name: data.name || 'Без имени'
-                });
-            });
-            return employees;
-        }
-
-        async function loadAllWeeks() {
-            const snapshot = await getDocs(collection(db, 'salaryWeeks'));
-            const weeks = [];
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                const workDays = data.workDays || [];
-                const hours = data.hours || [];
-                const days = workDays.filter(Boolean).length;
-                const totalHours = hours.reduce((a, b) => a + b, 0);
-                
-                // Рассчитываем переработку
-                const hpd = 8;
-                const norm = days * hpd;
-                const ot = Math.max(0, Math.round((totalHours - norm) * 100) / 100);
-                
-                // Получаем сумму
-                let total = data.calculatedPay || data.total || 0;
-                
-                // Если суммы нет, рассчитываем приблизительно
-                if (total === 0 && days > 0) {
-                    const baseRate = 3000;
-                    const extraRate = 3500;
-                    const otRate = 400;
-                    
-                    let baseDays = Math.min(days, 5);
-                    let extraDays = Math.max(0, days - 5);
-                    total = baseDays * baseRate + extraDays * extraRate;
-                    if (ot > 0) {
-                        total += ot * otRate;
-                    }
-                }
-                
-                weeks.push({
-                    id: doc.id,
-                    ...data,
-                    days: days,
-                    totalHours: totalHours,
-                    ot: ot,
-                    total: total,
-                    employeeId: data.employeeId || '',
-                    isPaid: data.isPaid || false,
-                    paidAmount: data.paidAmount || 0,
-                    paidAt: data.paidAt || '',
-                    companyDebt: data.companyDebt || 0
-                });
-            });
-            return weeks;
-        }
-
-        async function loadAllAdvances() {
-            const snapshot = await getDocs(collection(db, 'salaryAdvances'));
-            const advances = [];
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                advances.push({ 
-                    id: doc.id, 
-                    ...data,
-                    employeeId: data.employeeId || '',
-                    amount: data.amount || 0,
-                    status: data.status || 'active',
-                    date: data.date || new Date().toISOString()
-                });
-            });
-            return advances;
-        }
-
-        // ============================================
-        // СИНХРОНИЗАЦИЯ С GOOGLE SHEETS
-        // ============================================
-
-        async function syncToGoogle(data) {
-            try {
-                console.log('📤 Отправка данных в Google Sheets');
-                console.log('  - Сотрудников:', data.employees?.length || 0);
-                console.log('  - Недель:', data.weeks?.length || 0);
-                console.log('  - Авансов:', data.advances?.length || 0);
-                
-                if (data.weeks && data.weeks.length > 0) {
-                    console.log('  - Пример недели:', {
-                        weekKey: data.weeks[0].weekKey,
-                        days: data.weeks[0].days,
-                        totalHours: data.weeks[0].totalHours,
-                        ot: data.weeks[0].ot,
-                        total: data.weeks[0].total
-                    });
-                }
-                
-                await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data)
-                });
-                
-                console.log('✅ Данные отправлены (mode: no-cors)');
-                return { success: true };
-                
-            } catch (error) {
-                console.error('❌ Ошибка отправки:', error);
-                return { success: false, error: error.message };
-            }
-        }
-
-        async function performFullSync() {
-            const syncBtn = document.getElementById('syncGoogleBtn');
-            
-            if (!syncBtn) return;
-            
-            syncBtn.disabled = true;
-            syncBtn.textContent = '⏳ Отправка...';
-            setSyncStatus('Сбор данных...', 'loading');
-            
-            try {
-                setSyncStatus('Загрузка данных...', 'loading');
-                const [employees, weeks, advances] = await Promise.all([
-                    loadAllEmployees(),
-                    loadAllWeeks(),
-                    loadAllAdvances()
-                ]);
-                
-                setSyncStatus(`Отправка: ${employees.length} сотрудников, ${weeks.length} недель...`, 'loading');
-                
-                const syncData = {
-                    action: 'syncAll',
-                    employees: employees,
-                    weeks: weeks,
-                    advances: advances
-                };
-                
-                const result = await syncToGoogle(syncData);
-                
-                if (result.success) {
-                    setSyncStatus(`✅ Синхронизация завершена! (${new Date().toLocaleTimeString()})`, 'success');
-                    showNotification('✅ Данные отправлены в Google Sheets!');
-                } else {
-                    setSyncStatus('❌ Ошибка отправки', 'error');
-                    showNotification('❌ Ошибка: ' + (result.error || 'неизвестная'), true);
-                }
-            } catch (error) {
-                console.error('Ошибка синхронизации:', error);
-                setSyncStatus('❌ Ошибка: ' + error.message, 'error');
-                showNotification('❌ Ошибка синхронизации', true);
-            } finally {
-                syncBtn.disabled = false;
-                syncBtn.textContent = '🔄 Синхронизировать';
-            }
-        }
-
-        // ============================================
-        // АВТОРИЗАЦИЯ
-        // ============================================
-        onAuthStateChanged(auth, (user) => {
-            console.log('👤 Auth state:', user ? user.email : 'No user');
-            const authScreen = document.getElementById('authScreen');
-            const adminContent = document.getElementById('adminContent');
-            const userEmail = document.getElementById('userEmail');
-            
-            if (user) {
-                authScreen.classList.remove('active');
-                authScreen.style.display = 'none';
-                adminContent.style.display = 'block';
-                if (userEmail) userEmail.textContent = '👤 ' + user.email;
-                loadEmployees();
-                loadFinanceSummary();
-                setSyncStatus('Готово');
-            } else {
-                authScreen.classList.add('active');
-                authScreen.style.display = 'block';
-                adminContent.style.display = 'none';
-            }
-        });
-
-        document.getElementById('loginBtn').addEventListener('click', async () => {
-            const email = document.getElementById('loginEmail').value;
-            const password = document.getElementById('loginPassword').value;
-            const errorEl = document.getElementById('loginError');
-            try {
-                await signInWithEmailAndPassword(auth, email, password);
-                errorEl.textContent = '';
-                showNotification('✅ Вход выполнен!');
-            } catch (error) {
-                errorEl.textContent = '❌ ' + error.message;
-            }
-        });
-
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-            signOut(auth);
-        });
-
-        // ============================================
-        // КНОПКА СИНХРОНИЗАЦИИ
-        // ============================================
-        document.getElementById('syncGoogleBtn').addEventListener('click', performFullSync);
-
-        // ============================================
-        // ПОКАЗ СТАТИСТИКИ
-        // ============================================
-        window.showStats = async (employeeId, employeeName) => {
-            try {
-                await renderStats(employeeId, employeeName, db, collection, doc, query, where, getDocs, getDoc, showNotification);
-            } catch (error) {
-                console.error('❌ Ошибка статистики:', error);
-                showNotification('❌ Ошибка загрузки статистики', true);
-            }
-        };
-
-        // ============================================
-        // ЗАГРУЗКА СОТРУДНИКОВ
-        // ============================================
-        function loadEmployees() {
-            const employeesRef = collection(db, 'salaryEmployees');
-            onSnapshot(employeesRef, (snapshot) => {
-                const container = document.getElementById('employeeList');
-                container.innerHTML = '';
-                if (snapshot.empty) {
-                    container.innerHTML = '<div class="loading">Нет сотрудников. Добавьте первого!</div>';
-                    return;
-                }
-                snapshot.forEach((doc) => {
-                    const emp = { id: doc.id, ...doc.data() };
-                    const baseUrl = getBaseUrl();
-                    const employeeLink = baseUrl + 'employee.html?id=' + emp.id;
-                    
-                    const card = document.createElement('div');
-                    card.className = 'employee-card';
-                    card.innerHTML = `
-                        <div>
-                            <div class="emp-name">${emp.name || 'Без имени'}</div>
-                            <div class="emp-phone">📱 ${emp.phone || 'Нет телефона'}</div>
-                        </div>
-                        <div class="actions">
-                            <button class="btn-copy-link" data-link="${employeeLink}">📋 Ссылка</button>
-                            <button class="btn-stats" onclick="window.showStats('${emp.id}', '${emp.name}')">📈 Статистика</button>
-                        </div>
-                        <div class="link-hint" id="linkHint_${emp.id}">${employeeLink}</div>
-                    `;
-                    container.appendChild(card);
-
-                    const copyBtn = card.querySelector('.btn-copy-link');
-                    copyBtn.addEventListener('click', function() {
-                        const link = this.dataset.link;
-                        copyToClipboard(link, this);
-                    });
-
-                    const hint = card.querySelector('.link-hint');
-                    hint.addEventListener('click', function() {
-                        const link = this.textContent;
-                        const btn = this.parentElement.querySelector('.btn-copy-link');
-                        copyToClipboard(link, btn);
-                    });
-                });
-            });
-        }
-
-        // ============================================
-        // ФИНАНСОВЫЙ МОДУЛЬ
-        // ============================================
-        async function loadFinanceSummary() {
-            try {
-                const employeesRef = collection(db, 'salaryEmployees');
-                const snapshot = await getDocs(employeesRef);
-                const employees = [];
-                snapshot.forEach((doc) => {
-                    employees.push({ id: doc.id, ...doc.data() });
-                });
-                
-                if (employees.length === 0) {
-                    document.getElementById('financeSummary').innerHTML = `
-                        <div style="text-align:center; padding: 20px; color: var(--mut); font-size: .85rem;">
-                            Нет сотрудников
-                        </div>
-                    `;
-                    return;
-                }
-                
-                let totalDebt = 0;
-                let totalEmployeesWithDebt = 0;
-                
-                for (const emp of employees) {
-                    const balance = await getEmployeeBalance(emp.id, db, collection, query, where, getDocs);
-                    if (balance.totalDebt > 0) {
-                        totalDebt += balance.totalDebt;
-                        totalEmployeesWithDebt++;
-                    }
-                }
-                
-                document.getElementById('financeSummary').innerHTML = `
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
-                        <div style="background: rgba(255,181,46,.08); padding: 12px; border-radius: 8px; border: 1px solid var(--amber); text-align: center;">
-                            <div style="color: var(--mut); font-size: .65rem;">Общий долг</div>
-                            <div style="font-size: 1.2rem; font-weight: bold; color: var(--amber);">${totalDebt.toLocaleString()} ₽</div>
-                        </div>
-                        <div style="background: rgba(229,72,77,.08); padding: 12px; border-radius: 8px; border: 1px solid var(--red); text-align: center;">
-                            <div style="color: var(--mut); font-size: .65rem;">Должников</div>
-                            <div style="font-size: 1.2rem; font-weight: bold; color: var(--red);">${totalEmployeesWithDebt}</div>
-                        </div>
-                        <div style="background: rgba(62,207,168,.08); padding: 12px; border-radius: 8px; border: 1px solid var(--teal); text-align: center;">
-                            <div style="color: var(--mut); font-size: .65rem;">Всего сотрудников</div>
-                            <div style="font-size: 1.2rem; font-weight: bold; color: var(--teal);">${employees.length}</div>
-                        </div>
-                    </div>
-                `;
-            } catch (error) {
-                console.error('Ошибка загрузки сводки:', error);
-                document.getElementById('financeSummary').innerHTML = `
-                    <div style="text-align:center; padding: 20px; color: var(--red); font-size: .85rem;">
-                        ❌ Ошибка загрузки
-                    </div>
-                `;
-            }
-        }
-
-        window.showEmployeeFinance = async function(employeeId, employeeName) {
-            try {
-                const balance = await getEmployeeBalance(employeeId, db, collection, query, where, getDocs);
-                const advances = await getAllAdvances(employeeId, db, collection, query, where, getDocs);
-                
-                const oldModal = document.getElementById('financeModal');
-                if (oldModal) oldModal.remove();
-                
-                const modal = document.createElement('div');
-                modal.id = 'financeModal';
-                modal.className = 'modal active';
-                modal.style.display = 'block';
-                modal.innerHTML = `
-                    <div class="modal-content" style="max-width: 700px;">
-                        <button class="modal-close" id="closeFinanceModal">&times;</button>
-                        <h2 style="font-family: var(--display); color: var(--amber); margin-bottom: 4px;">
-                            💰 ${employeeName}
-                        </h2>
-                        <div style="color: var(--mut); font-size: .85rem; margin-bottom: 20px;">
-                            Финансовое состояние
-                        </div>
-                        
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px;">
-                            <div style="background: rgba(255,181,46,.08); padding: 12px; border-radius: 8px; text-align: center; border: 1px solid var(--amber);">
-                                <div style="color: var(--mut); font-size: .65rem;">Выдано на Аванс</div>
-                                <div style="font-size: 1.4rem; font-weight: bold; color: var(--amber);">${balance.totalDebt.toLocaleString()} ₽</div>
-                            </div>
-                            <div style="background: rgba(62,207,168,.08); padding: 12px; border-radius: 8px; text-align: center; border: 1px solid var(--teal);">
-                                <div style="color: var(--mut); font-size: .65rem;">Всего выдано</div>
-                                <div style="font-size: 1.4rem; font-weight: bold; color: var(--teal);">${balance.totalAdvances.toLocaleString()} ₽</div>
-                            </div>
-                            <div style="background: rgba(229,72,77,.08); padding: 12px; border-radius: 8px; text-align: center; border: 1px solid var(--red);">
-                                <div style="color: var(--mut); font-size: .65rem;">Активных авансов</div>
-                                <div style="font-size: 1.4rem; font-weight: bold; color: var(--red);">${balance.activeAdvancesCount}</div>
-                            </div>
-                        </div>
-                        
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
-                            <button id="addAdvanceBtn" class="btn btn-amber" style="flex:1; min-width:100px;">➕ Аванс</button>
-                            <button id="refreshFinanceBtn" class="btn btn-ghost" style="flex:1; min-width:100px;">🔄 Обновить</button>
-                        </div>
-                        
-                        <div style="border-top: 1px solid var(--line); padding-top: 16px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                <span style="font-weight: 600;">📋 История операций</span>
-                                <span style="font-size: .7rem; color: var(--mut);">${advances.length} записей</span>
-                            </div>
-                            <div style="max-height: 300px; overflow-y: auto;">
-                                ${advances.length === 0 ? `
-                                    <div style="text-align:center; padding: 20px; color: var(--mut);">
-                                        Нет операций
-                                    </div>
-                                ` : `
-                                    ${advances.map(a => `
-                                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line);">
-                                            <div>
-                                                <div style="font-weight: ${a.status === 'active' ? 'bold' : 'normal'}; color: ${a.status === 'active' ? 'var(--amber)' : 'var(--mut)'};">
-                                                    ${a.type === 'advance' ? '📤 Аванс' : '📥 Погашение'}
-                                                    ${a.status === 'active' ? ' <span style="color:var(--red);font-size:.6rem;">(активен)</span>' : ' <span style="color:var(--teal);font-size:.6rem;">(погашен)</span>'}
-                                                </div>
-                                                <div style="font-size: .7rem; color: var(--mut);">
-                                                    ${a.comment || 'Без комментария'} · ${formatDate(a.date)}
-                                                </div>
-                                            </div>
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <div style="font-weight: bold; color: ${a.status === 'active' ? 'var(--amber)' : 'var(--teal)'};">
-                                                    ${a.amount.toLocaleString()} ₽
-                                                </div>
-                                                ${a.status === 'active' ? `
-                                                    <button onclick="window.repayAdvanceFromUI('${a.id}', ${a.amount})" 
-                                                            style="background: var(--teal); color: #0c1520; border: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: .65rem;">
-                                                        ✅ Погасить
-                                                    </button>
-                                                    <button onclick="window.deleteAdvanceFromUI('${a.id}')" 
-                                                            style="background: var(--red); color: #fff; border: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: .65rem;">
-                                                        🗑️
-                                                    </button>
-                                                ` : `
-                                                    <span style="font-size: .6rem; color: var(--mut);">погашен ${a.repaidAt ? formatDate(a.repaidAt) : ''}</span>
-                                                `}
-                                            </div>
-                                        </div>
-                                    `).join('')}
-                                `}
-                            </div>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(modal);
-                
-                modal.querySelector('#closeFinanceModal').addEventListener('click', () => modal.remove());
-                modal.addEventListener('click', (e) => {
-                    if (e.target === modal) modal.remove();
-                });
-                
-                modal.querySelector('#addAdvanceBtn').addEventListener('click', () => {
-                    showAddAdvanceForm(employeeId, employeeName);
-                });
-                
-                modal.querySelector('#refreshFinanceBtn').addEventListener('click', () => {
-                    window.showEmployeeFinance(employeeId, employeeName);
-                });
-                
-            } catch (error) {
-                console.error('Ошибка загрузки финансов:', error);
-                showNotification('❌ Ошибка загрузки финансов', true);
-            }
-        }
-
-        function showAddAdvanceForm(employeeId, employeeName) {
-            const overlay = document.createElement('div');
-            overlay.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0,0,0,.7);
-                backdrop-filter: blur(4px);
-                z-index: 1001;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                padding: 20px;
-            `;
-            overlay.innerHTML = `
-                <div style="background: var(--card); border-radius: 16px; padding: 24px; max-width: 400px; width: 100%; border: 1px solid var(--line);">
-                    <h3 style="font-family: var(--display); color: var(--amber); margin-bottom: 4px;">📤 Аванс</h3>
-                    <div style="color: var(--mut); font-size: .85rem; margin-bottom: 16px;">${employeeName}</div>
-                    <div style="margin-bottom: 12px;">
-                        <label style="font-size: .75rem; color: var(--mut); display: block; margin-bottom: 4px;">Сумма</label>
-                        <input type="number" id="advanceAmountInput" placeholder="Например: 5000" 
-                               style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--txt); font-size: 1rem;">
-                    </div>
-                    <div style="margin-bottom: 16px;">
-                        <label style="font-size: .75rem; color: var(--mut); display: block; margin-bottom: 4px;">Комментарий</label>
-                        <input type="text" id="advanceCommentInput" placeholder="На что?" 
-                               style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--txt); font-size: 1rem;">
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <button id="saveAdvanceConfirm" class="btn btn-amber" style="flex:1;">✅ Выдать</button>
-                        <button id="cancelAdvanceBtn" class="btn btn-ghost" style="flex:1;">Отмена</button>
-                    </div>
-                    <div id="advanceError" style="color: var(--red); margin-top: 10px; font-size: .8rem;"></div>
-                </div>
-            `;
-            document.body.appendChild(overlay);
-            
-            overlay.querySelector('#cancelAdvanceBtn').addEventListener('click', () => overlay.remove());
-            overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) overlay.remove();
-            });
-            
-            overlay.querySelector('#saveAdvanceConfirm').addEventListener('click', async () => {
-                const amount = parseFloat(overlay.querySelector('#advanceAmountInput').value);
-                const comment = overlay.querySelector('#advanceCommentInput').value.trim();
-                const errorEl = overlay.querySelector('#advanceError');
-                
-                if (!amount || amount <= 0) {
-                    errorEl.textContent = '❌ Введите сумму';
-                    return;
-                }
-                
-                try {
-                    const result = await addAdvance(employeeId, amount, comment, 'advance', db, addDoc, collection);
-                    if (result.success) {
-                        showNotification('✅ Аванс выдан!');
-                        overlay.remove();
-                        window.showEmployeeFinance(employeeId, employeeName);
-                        loadFinanceSummary();
-                    } else {
-                        errorEl.textContent = '❌ ' + result.error;
-                    }
-                } catch (error) {
-                    errorEl.textContent = '❌ ' + error.message;
-                }
-            });
-        }
-
-        window.repayAdvanceFromUI = async function(advanceId, amount) {
-            if (!confirm(`Погасить аванс на ${amount.toLocaleString()} ₽?`)) return;
-            
-            try {
-                const result = await repayAdvance(advanceId, amount, null, db, doc, updateDoc);
-                if (result.success) {
-                    showNotification('✅ Аванс погашен!');
-                    const statsData = window._statsData;
-                    if (statsData) {
-                        window.showEmployeeFinance(statsData.employeeId, statsData.employeeName);
-                    }
-                    loadFinanceSummary();
-                } else {
-                    showNotification('❌ ' + result.error, true);
-                }
-            } catch (error) {
-                showNotification('❌ ' + error.message, true);
-            }
-        };
-
-        window.deleteAdvanceFromUI = async function(advanceId) {
-            if (!confirm('🗑️ Удалить аванс?')) return;
-            
-            try {
-                const result = await deleteAdvance(advanceId, db, doc, deleteDoc);
-                if (result.success) {
-                    showNotification('🗑️ Аванс удалён');
-                    const statsData = window._statsData;
-                    if (statsData) {
-                        window.showEmployeeFinance(statsData.employeeId, statsData.employeeName);
-                    }
-                    loadFinanceSummary();
-                } else {
-                    showNotification('❌ ' + result.error, true);
-                }
-            } catch (error) {
-                showNotification('❌ ' + error.message, true);
-            }
-        };
-
-        document.getElementById('showAllDebtsBtn').addEventListener('click', async () => {
-            try {
-                const employeesRef = collection(db, 'salaryEmployees');
-                const snapshot = await getDocs(employeesRef);
-                const employees = [];
-                snapshot.forEach((doc) => {
-                    employees.push({ id: doc.id, ...doc.data() });
-                });
-                
-                if (employees.length === 0) {
-                    showNotification('Нет сотрудников', true);
-                    return;
-                }
-                
-                const debtsList = [];
-                for (const emp of employees) {
-                    const balance = await getEmployeeBalance(emp.id, db, collection, query, where, getDocs);
-                    if (balance.totalDebt > 0 || balance.activeAdvancesCount > 0) {
-                        debtsList.push({
-                            id: emp.id,
-                            name: emp.name,
-                            phone: emp.phone,
-                            ...balance
-                        });
-                    }
-                }
-                
-                debtsList.sort((a, b) => b.totalDebt - a.totalDebt);
-                
-                const modal = document.createElement('div');
-                modal.className = 'modal active';
-                modal.style.display = 'block';
-                modal.innerHTML = `
-                    <div class="modal-content" style="max-width: 800px;">
-                        <button class="modal-close" id="closeDebtsModal">&times;</button>
-                        <h2 style="font-family: var(--display); color: var(--amber); margin-bottom: 4px;">
-                            📊 Все долги
-                        </h2>
-                        <div style="color: var(--mut); font-size: .85rem; margin-bottom: 20px;">
-                            ${debtsList.length} сотрудников с долгами
-                        </div>
-                        ${debtsList.length === 0 ? `
-                            <div style="text-align:center; padding: 40px; color: var(--mut);">
-                                🎉 Все долги погашены!
-                            </div>
-                        ` : `
-                            <div style="overflow-x:auto;">
-                                <table class="stats-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Сотрудник</th>
-                                            <th>Долг</th>
-                                            <th>Активных</th>
-                                            <th>Всего выдано</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${debtsList.map(d => `
-                                            <tr>
-                                                <td><b>${d.name}</b></td>
-                                                <td style="font-weight: bold; color: ${d.totalDebt > 0 ? 'var(--amber)' : 'var(--teal)'};">${d.totalDebt.toLocaleString()} ₽</td>
-                                                <td>${d.activeAdvancesCount}</td>
-                                                <td>${d.totalAdvances.toLocaleString()} ₽</td>
-                                                <td>
-                                                    <button onclick="window.showEmployeeFinance('${d.id}', '${d.name}')" 
-                                                            style="background: rgba(255,181,46,.15); border: 1px solid var(--amber); color: var(--amber2); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: .7rem;">
-                                                        📊
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        `).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        `}
-                    </div>
-                `;
-                document.body.appendChild(modal);
-                
-                modal.querySelector('#closeDebtsModal').addEventListener('click', () => modal.remove());
-                modal.addEventListener('click', (e) => {
-                    if (e.target === modal) modal.remove();
-                });
-                
-            } catch (error) {
-                console.error('Ошибка загрузки долгов:', error);
-                showNotification('❌ Ошибка: ' + error.message, true);
-            }
-        });
-
-        // ============================================
-        // ДОБАВЛЕНИЕ СОТРУДНИКА
-        // ============================================
-        const addBtn = document.getElementById('addBtn');
-        const nameInput = document.getElementById('empName');
-        const phoneInput = document.getElementById('empPhone');
-
-        if (addBtn) {
-            addBtn.addEventListener('click', async () => {
-                const name = nameInput.value.trim();
-                const phone = phoneInput.value.trim();
-                
-                if (!name || !phone) {
-                    showNotification('❌ Заполните все поля!', true);
-                    return;
-                }
-
-                if (!auth.currentUser) {
-                    showNotification('❌ Вы не авторизованы!', true);
-                    return;
-                }
-
-                addBtn.disabled = true;
-                addBtn.textContent = '⏳ Сохранение...';
-
-                try {
-                    const docRef = await addDoc(collection(db, 'salaryEmployees'), {
-                        name: name,
-                        phone: phone,
-                        createdAt: new Date().toISOString(),
-                        adminId: auth.currentUser.uid,
-                        adminEmail: auth.currentUser.email
-                    });
-                    
-                    nameInput.value = '';
-                    phoneInput.value = '';
-                    
-                    const baseUrl = getBaseUrl();
-                    const link = baseUrl + 'employee.html?id=' + docRef.id;
-                    showNotification('✅ Сотрудник добавлен! Ссылка: ' + link);
-                    loadFinanceSummary();
-                    
-                } catch (error) {
-                    console.error('❌ ОШИБКА:', error);
-                    showNotification('❌ ' + error.message, true);
-                } finally {
-                    addBtn.disabled = false;
-                    addBtn.textContent = '➕ Добавить';
-                }
-            });
-        }
-
-        window.deleteEmployee = async (id) => {
-            if (!confirm('🗑️ Удалить сотрудника и все его данные?')) return;
-            try {
-                const q = query(collection(db, 'salaryWeeks'), where('employeeId', '==', id));
-                const snapshot = await getDocs(q);
-                for (const doc of snapshot.docs) {
-                    await deleteDoc(doc.ref);
-                }
-                const advancesRef = collection(db, 'salaryAdvances');
-                const q2 = query(advancesRef, where('employeeId', '==', id));
-                const snapshot2 = await getDocs(q2);
-                for (const doc of snapshot2.docs) {
-                    await deleteDoc(doc.ref);
-                }
-                await deleteDoc(doc(db, 'salaryEmployees', id));
-                showNotification('🗑️ Удалено');
-                loadFinanceSummary();
-            } catch (error) {
-                showNotification('❌ ' + error.message, true);
-            }
-        };
-
-        console.log('✅ Админ-панель готова к работе!');
-    </script>
+    <script type="module" src="admin.js"></script>
 </body>
 </html>

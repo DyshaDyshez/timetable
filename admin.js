@@ -1,34 +1,36 @@
 // admin.js
 
-import { calculateWeekPay } from './modules/calculator.js';
+import { firebaseConfig } from './config.js';
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { 
+    getFirestore, 
+    collection, doc, getDocs, addDoc, updateDoc, deleteDoc, 
+    query, where, onSnapshot, getDoc 
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { 
+    getAuth, 
+    signInWithEmailAndPassword, 
+    onAuthStateChanged, 
+    signOut 
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-const { 
-    db, collection, doc, getDocs, addDoc, updateDoc, deleteDoc, 
-    query, where, onSnapshot, getDoc, auth, 
-    signInWithEmailAndPassword, onAuthStateChanged, signOut 
-} = window;
+// Инициализация
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
 
-console.log('✅ admin.js загружен');
-
-const SETTINGS = {
-    rDay: 3000,
-    rExtra: 3500,
-    rOt1: 400,
-    rOt2: 800,
-    hpd: 8,
-    otLimit: 5
-};
+let currentUser = null;
 
 // ============================================
 // АВТОРИЗАЦИЯ
 // ============================================
-
 onAuthStateChanged(auth, (user) => {
-    console.log('👤 Auth state:', user ? user.email : 'No user');
     if (user) {
+        currentUser = user;
         document.getElementById('authScreen').classList.remove('active');
         document.getElementById('authScreen').style.display = 'none';
         document.getElementById('adminContent').style.display = 'block';
+        document.getElementById('userEmail').textContent = '👤 ' + user.email;
         loadEmployees();
     } else {
         document.getElementById('authScreen').classList.add('active');
@@ -44,8 +46,8 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
     try {
         await signInWithEmailAndPassword(auth, email, password);
         errorEl.textContent = '';
+        showNotification('✅ Вход выполнен');
     } catch (error) {
-        console.error('❌ Ошибка входа:', error);
         errorEl.textContent = '❌ ' + error.message;
     }
 });
@@ -55,15 +57,11 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
 });
 
 // ============================================
-// УПРАВЛЕНИЕ СОТРУДНИКАМИ
+// ЗАГРУЗКА СОТРУДНИКОВ
 // ============================================
-
 function loadEmployees() {
-    console.log('📋 Загрузка сотрудников...');
     const employeesRef = collection(db, 'salaryEmployees');
-    
     onSnapshot(employeesRef, (snapshot) => {
-        console.log('📋 Получено документов:', snapshot.size);
         const container = document.getElementById('employeeList');
         container.innerHTML = '';
         if (snapshot.empty) {
@@ -72,211 +70,250 @@ function loadEmployees() {
         }
         snapshot.forEach((doc) => {
             const emp = { id: doc.id, ...doc.data() };
-            console.log('👤 Сотрудник:', emp);
+            const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
+            const employeeLink = baseUrl + 'employee.html?id=' + emp.id;
+
             const card = document.createElement('div');
             card.className = 'employee-card';
             card.innerHTML = `
-                <h3>${emp.name || 'Без имени'}</h3>
-                <div class="tab">📱 ${emp.phone || 'Нет телефона'} · ID: ${emp.id}</div>
-                <div class="actions">
-                    <a href="/employee.html?id=${emp.id}" class="btn-link" target="_blank">📊 Калькулятор</a>
+                <div>
+                    <div class="emp-name">${emp.name || 'Без имени'}</div>
+                    <div class="emp-phone">📱 ${emp.phone || 'Нет телефона'}</div>
+                </div>
+                <div class="emp-pin">
+                    <span style="font-size:.7rem; color:var(--mut);">PIN:</span>
+                    <span class="pin-display" id="pinDisplay_${emp.id}">${emp.pin || '—'}</span>
+                    <input type="text" class="pin-edit-input" id="pinEdit_${emp.id}" value="${emp.pin || ''}" style="display:none;" maxlength="6" inputmode="numeric">
+                    <button class="pin-btn" id="pinEditBtn_${emp.id}" data-id="${emp.id}" title="Редактировать PIN">✏️</button>
+                    <button class="pin-btn generate" id="pinGenerateBtn_${emp.id}" data-id="${emp.id}" title="Сгенерировать PIN">🎲</button>
+                    <button class="pin-btn save" id="pinSaveBtn_${emp.id}" data-id="${emp.id}" style="display:none;" title="Сохранить">💾</button>
+                </div>
+                <div class="emp-actions">
+                    <button class="btn-copy-link" data-link="${employeeLink}">📋 Ссылка</button>
                     <button class="btn-stats" onclick="window.showStats('${emp.id}', '${emp.name}')">📈 Статистика</button>
                     <button class="btn-delete" onclick="window.deleteEmployee('${emp.id}')">🗑️</button>
                 </div>
+                <div class="link-hint">${employeeLink}</div>
             `;
             container.appendChild(card);
+
+            // Обработчики PIN
+            const editBtn = card.querySelector(`#pinEditBtn_${emp.id}`);
+            const generateBtn = card.querySelector(`#pinGenerateBtn_${emp.id}`);
+            const saveBtn = card.querySelector(`#pinSaveBtn_${emp.id}`);
+            const display = card.querySelector(`#pinDisplay_${emp.id}`);
+            const input = card.querySelector(`#pinEdit_${emp.id}`);
+
+            editBtn.addEventListener('click', () => {
+                display.style.display = 'none';
+                input.style.display = 'inline-block';
+                input.value = emp.pin || '';
+                input.focus();
+                editBtn.style.display = 'none';
+                saveBtn.style.display = 'inline-block';
+            });
+
+            generateBtn.addEventListener('click', async () => {
+                const newPin = generatePin();
+                await updateEmployeePin(emp.id, newPin);
+                display.textContent = newPin;
+                emp.pin = newPin;
+                showNotification('✅ PIN обновлён');
+            });
+
+            saveBtn.addEventListener('click', async () => {
+                const newPin = input.value.trim();
+                if (!newPin || newPin.length < 3) {
+                    showNotification('❌ PIN должен содержать минимум 3 символа', true);
+                    return;
+                }
+                await updateEmployeePin(emp.id, newPin);
+                display.textContent = newPin;
+                emp.pin = newPin;
+                display.style.display = 'inline-block';
+                input.style.display = 'none';
+                editBtn.style.display = 'inline-block';
+                saveBtn.style.display = 'none';
+                showNotification('✅ PIN сохранён');
+            });
+
+            const copyBtn = card.querySelector('.btn-copy-link');
+            copyBtn.addEventListener('click', function() {
+                copyToClipboard(this.dataset.link, this);
+            });
         });
-    }, (error) => {
-        console.error('❌ Ошибка загрузки:', error);
-        document.getElementById('employeeList').innerHTML = 
-            `<div class="loading" style="color:var(--red);">Ошибка: ${error.message}</div>`;
     });
 }
 
 // ============================================
-// ДОБАВЛЕНИЕ СОТРУДНИКА
+// PIN ФУНКЦИИ
 // ============================================
+function generatePin() {
+    return String(Math.floor(100 + Math.random() * 900));
+}
 
-document.getElementById('addEmployeeForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    console.log('📝 Попытка добавить сотрудника...');
-    
-    const name = document.getElementById('empName').value.trim();
-    const phone = document.getElementById('empPhone').value.trim();
-    
-    console.log('📝 Имя:', name);
-    console.log('📝 Телефон:', phone);
-    
-    if (!name || !phone) {
-        alert('❌ Заполните все поля!');
-        return;
-    }
-    if (phone.length < 5) {
-        alert('❌ Введите корректный номер телефона (минимум 5 символов)');
-        return;
-    }
+async function updateEmployeePin(employeeId, pin) {
     try {
-        if (!auth.currentUser) {
-            alert('❌ Вы не авторизованы!');
+        await updateDoc(doc(db, 'salaryEmployees', employeeId), { pin: pin });
+        return true;
+    } catch (error) {
+        console.error('Ошибка обновления PIN:', error);
+        showNotification('❌ Ошибка: ' + error.message, true);
+        return false;
+    }
+}
+
+// ============================================
+// ГЕНЕРАЦИЯ PIN ДЛЯ ВСЕХ
+// ============================================
+document.getElementById('generateAllPinsBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('generateAllPinsBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ ...';
+
+    try {
+        const snapshot = await getDocs(collection(db, 'salaryEmployees'));
+        const missingPin = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            if (!data.pin) {
+                missingPin.push({ id: doc.id, name: data.name });
+            }
+        });
+
+        if (missingPin.length === 0) {
+            showNotification('✅ У всех сотрудников уже есть PIN');
+            btn.disabled = false;
+            btn.textContent = '🔢 PIN для всех';
             return;
         }
-        console.log('👤 Текущий пользователь:', auth.currentUser.email);
-        const employeeData = {
+
+        if (!confirm(`Найдено ${missingPin.length} сотрудников без PIN. Сгенерировать для них PIN?\n\n${missingPin.map(e => e.name).join(', ')}`)) {
+            btn.disabled = false;
+            btn.textContent = '🔢 PIN для всех';
+            return;
+        }
+
+        let updated = 0;
+        for (const emp of missingPin) {
+            await updateEmployeePin(emp.id, generatePin());
+            updated++;
+        }
+
+        showNotification(`✅ Сгенерировано PIN для ${updated} сотрудников`);
+    } catch (error) {
+        showNotification('❌ Ошибка: ' + error.message, true);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔢 PIN для всех';
+    }
+});
+
+// ============================================
+// ДОБАВЛЕНИЕ СОТРУДНИКА
+// ============================================
+document.getElementById('addBtn').addEventListener('click', async () => {
+    const name = document.getElementById('empName').value.trim();
+    const phone = document.getElementById('empPhone').value.trim();
+
+    if (!name || !phone) {
+        showNotification('❌ Заполните все поля!', true);
+        return;
+    }
+    if (!auth.currentUser) {
+        showNotification('❌ Вы не авторизованы!', true);
+        return;
+    }
+
+    const addBtn = document.getElementById('addBtn');
+    addBtn.disabled = true;
+    addBtn.textContent = '⏳ ...';
+
+    try {
+        const newPin = generatePin();
+        await addDoc(collection(db, 'salaryEmployees'), {
             name: name,
             phone: phone,
+            pin: newPin,
             createdAt: new Date().toISOString(),
             adminId: auth.currentUser.uid,
             adminEmail: auth.currentUser.email
-        };
-        console.log('📤 Отправка данных:', employeeData);
-        const docRef = await addDoc(collection(db, 'salaryEmployees'), employeeData);
-        console.log('✅ Сотрудник добавлен! ID:', docRef.id);
+        });
         document.getElementById('empName').value = '';
         document.getElementById('empPhone').value = '';
-        showNotification('✅ Сотрудник добавлен! ID: ' + docRef.id);
+        showNotification(`✅ Сотрудник добавлен! PIN: ${newPin}`);
     } catch (error) {
-        console.error('❌ Ошибка при добавлении:', error);
-        let errorMessage = 'Ошибка при добавлении: ';
-        if (error.code === 'permission-denied') {
-            errorMessage += 'Нет прав на запись. Проверьте Security Rules в Firebase.';
-        } else if (error.code === 'unavailable') {
-            errorMessage += 'Сервер недоступен. Проверьте интернет.';
-        } else {
-            errorMessage += error.message;
-        }
-        alert('❌ ' + errorMessage);
-        console.log('🔍 Для проверки:');
-        console.log('1. Зайдите в Firebase Console → Firestore');
-        console.log('2. Проверьте коллекцию salaryEmployees');
-        console.log('3. Проверьте Security Rules');
+        showNotification('❌ Ошибка: ' + error.message, true);
+    } finally {
+        addBtn.disabled = false;
+        addBtn.textContent = '➕ Добавить';
     }
 });
 
 // ============================================
 // УДАЛЕНИЕ СОТРУДНИКА
 // ============================================
-
 window.deleteEmployee = async (id) => {
-    if (!confirm('🗑️ Удалить этого сотрудника и все его данные?')) return;
+    if (!confirm('🗑️ Удалить сотрудника и все его данные?')) return;
     try {
-        console.log('🗑️ Удаление сотрудника:', id);
-        const weeksRef = collection(db, 'salaryWeeks');
-        const q = query(weeksRef, where('employeeId', '==', id));
-        const snapshot = await getDocs(q);
-        const deletePromises = [];
-        snapshot.forEach((doc) => {
-            deletePromises.push(deleteDoc(doc.ref));
-        });
-        await Promise.all(deletePromises);
-        console.log(`🗑️ Удалено ${deletePromises.length} недель`);
+        const q = query(collection(db, 'salaryWeeks'), where('employeeId', '==', id));
+        const weeksSnap = await getDocs(q);
+        for (const doc of weeksSnap.docs) await deleteDoc(doc.ref);
+
+        const q2 = query(collection(db, 'salaryAdvances'), where('employeeId', '==', id));
+        const advSnap = await getDocs(q2);
+        for (const doc of advSnap.docs) await deleteDoc(doc.ref);
+
+        const q3 = query(collection(db, 'attendance'), where('employeeId', '==', id));
+        const attSnap = await getDocs(q3);
+        for (const doc of attSnap.docs) await deleteDoc(doc.ref);
+
         await deleteDoc(doc(db, 'salaryEmployees', id));
-        showNotification('🗑️ Сотрудник удален');
+        showNotification('🗑️ Удалено');
     } catch (error) {
-        console.error('❌ Ошибка при удалении:', error);
-        alert('❌ Ошибка: ' + error.message);
+        showNotification('❌ Ошибка: ' + error.message, true);
     }
 };
 
 // ============================================
 // СТАТИСТИКА
 // ============================================
-
-window.showStats = async (employeeId, employeeName) => {
-    console.log('📈 Загрузка статистики для:', employeeName);
-    document.getElementById('statsName').textContent = `📊 ${employeeName}`;
-    document.getElementById('statsModal').classList.add('active');
-    const tbody = document.getElementById('statsBody');
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--mut);">Загрузка...</td></tr>';
-    try {
-        const weeksRef = collection(db, 'salaryWeeks');
-        const q = query(weeksRef, where('employeeId', '==', employeeId));
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--mut);">Нет данных</td></tr>';
-            return;
-        }
-        const weeks = [];
-        snapshot.forEach((doc) => {
-            weeks.push({ id: doc.id, ...doc.data() });
-        });
-        weeks.sort((a, b) => b.weekKey.localeCompare(a.weekKey));
-        tbody.innerHTML = '';
-        weeks.forEach((week) => {
-            const stats = calculateWeekPay(week, SETTINGS);
-            const pay = stats.total;
-            const days = stats.days;
-            const totalHours = stats.totalHours;
-            const ot = stats.ot;
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td><b>${week.weekKey}</b></td>
-                <td>${days}</td>
-                <td>${totalHours} ч</td>
-                <td>${ot > 0 ? ot + ' ч' : '—'}</td>
-                <td><b>${pay.toLocaleString()} ₽</b></td>
-                <td class="${week.isPaid ? 'paid' : 'unpaid'}">${week.isPaid ? '✅ Выплачено' : '⏳ Не выплачено'}</td>
-                <td>
-                    <button onclick="window.togglePay('${week.id}', ${week.isPaid})" 
-                            style="background:${week.isPaid ? 'var(--red)' : 'var(--teal)'}; border:none; padding:4px 12px; border-radius:6px; color:#fff; cursor:pointer;">
-                        ${week.isPaid ? 'Отменить' : 'Оплатить'}
-                    </button>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-    } catch (error) {
-        console.error('❌ Ошибка загрузки статистики:', error);
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--red);">Ошибка: ${error.message}</td></tr>`;
-    }
+window.showStats = (employeeId, employeeName) => {
+    showNotification(`📊 Статистика для ${employeeName} (в разработке)`);
 };
 
-document.getElementById('closeModal').addEventListener('click', () => {
-    document.getElementById('statsModal').classList.remove('active');
-});
-window.addEventListener('click', (e) => {
-    if (e.target === document.getElementById('statsModal')) {
-        document.getElementById('statsModal').classList.remove('active');
-    }
-});
-
-window.togglePay = async (weekId, currentStatus) => {
-    try {
-        await updateDoc(doc(db, 'salaryWeeks', weekId), {
-            isPaid: !currentStatus
-        });
-        showNotification('✅ Статус обновлен');
-    } catch (error) {
-        console.error('❌ Ошибка:', error);
-        alert('❌ Ошибка: ' + error.message);
-    }
-};
-
-function showNotification(message) {
-    let el = document.getElementById('notification');
-    if (!el) {
-        el = document.createElement('div');
-        el.id = 'notification';
-        el.style.cssText = `
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background: var(--teal);
-            color: #0c1520;
-            padding: 15px 25px;
-            border-radius: 12px;
-            font-weight: bold;
-            opacity: 0;
-            transition: opacity 0.4s;
-            z-index: 9999;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            font-family: var(--mono);
-        `;
-        document.body.appendChild(el);
-    }
+// ============================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ============================================
+function showNotification(message, isError = false) {
+    const el = document.getElementById('notification');
+    if (!el) return;
     el.textContent = message;
-    el.style.opacity = '1';
+    el.className = 'notification show';
+    if (isError) el.classList.add('error');
     clearTimeout(el._timer);
-    el._timer = setTimeout(() => el.style.opacity = '0', 2500);
+    el._timer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
-console.log('✅ admin.js готов');
+async function copyToClipboard(text, btnElement) {
+    try {
+        await navigator.clipboard.writeText(text);
+        const original = btnElement.textContent;
+        btnElement.textContent = '✅ Скопировано!';
+        setTimeout(() => btnElement.textContent = original, 2000);
+        showNotification('✅ Ссылка скопирована');
+    } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        const original = btnElement.textContent;
+        btnElement.textContent = '✅ Скопировано!';
+        setTimeout(() => btnElement.textContent = original, 2000);
+        showNotification('✅ Ссылка скопирована');
+    }
+}
+
+console.log('✅ Админ-панель загружена');

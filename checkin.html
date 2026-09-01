@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Отметка</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(1100px 620px at 88% -10%, rgba(255,181,46,.13), transparent 60%),
+                        radial-gradient(900px 700px at -12% 108%, rgba(62,207,168,.10), transparent 60%),
+                        linear-gradient(180deg,var(--bg2),var(--bg) 60%);
+            font-family: var(--body);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 420px;
+            width: 100%;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            padding: 32px 24px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .name {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: var(--amber2);
+            margin-bottom: 4px;
+        }
+        .id-label {
+            font-size: .7rem;
+            color: var(--mut);
+            font-family: var(--mono);
+            margin-bottom: 16px;
+        }
+        .status {
+            font-size: 1.6rem;
+            margin: 16px 0 8px;
+            font-weight: bold;
+            transition: color .3s;
+        }
+        /* ЦВЕТА СТАТУСА */
+        .status.success { 
+            color: #3ecfa8;  /* ЗЕЛЁНЫЙ */
+        }
+        .status.error { 
+            color: #e5484d;  /* КРАСНЫЙ */
+        }
+        .status.loading { 
+            color: var(--amber); 
+        }
+        .time {
+            font-family: var(--mono);
+            font-size: 1.1rem;
+            color: var(--mut);
+        }
+        .pin-input {
+            margin: 20px 0 12px;
+        }
+        .pin-input input {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            background: var(--bg2);
+            color: var(--txt);
+            font-size: 1.4rem;
+            text-align: center;
+            letter-spacing: 8px;
+            font-family: var(--mono);
+            max-width: 200px;
+            margin: 0 auto;
+        }
+        .pin-input input:focus {
+            outline: 2px solid var(--amber);
+        }
+        .pin-input .hint {
+            font-size: .7rem;
+            color: var(--mut);
+            margin-top: 6px;
+        }
+        .btn-confirm {
+            background: var(--amber);
+            color: #241d10;
+            border: none;
+            padding: 14px 30px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: .2s;
+            width: 100%;
+            margin-top: 8px;
+        }
+        .btn-confirm:hover {
+            filter: brightness(1.1);
+        }
+        .btn-confirm:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .close-btn {
+            margin-top: 16px;
+            background: rgba(255,255,255,.05);
+            color: var(--mut);
+            border: 1px solid var(--line);
+            padding: 10px 24px;
+            border-radius: 12px;
+            font-size: .9rem;
+            cursor: pointer;
+            transition: .2s;
+            display: none;
+        }
+        .close-btn.show {
+            display: inline-block;
+        }
+        .close-btn:hover {
+            border-color: var(--mut);
+            color: var(--txt);
+        }
+        .sub {
+            font-size: .8rem;
+            color: var(--mut);
+            margin-top: 12px;
+        }
+        #pinError {
+            color: var(--red);
+            font-size: .8rem;
+            min-height: 20px;
+            margin-top: 6px;
+        }
+        .status-icon {
+            font-size: 2rem;
+            display: block;
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <!-- РЕЖИМ ВВОДА PIN -->
+            <div id="pinMode">
+                <div style="font-size:1.2rem; margin-bottom:4px;">🔐 Введите PIN-код</div>
+                <div class="pin-input">
+                    <input type="password" id="pinInput" maxlength="6" inputmode="numeric" autocomplete="off" placeholder="___">
+                    <div class="hint">Ваш персональный код (3-6 цифр)</div>
+                </div>
+                <div id="pinError"></div>
+                <button class="btn-confirm" id="pinConfirmBtn">✅ Подтвердить</button>
+            </div>
+
+            <!-- РЕЖИМ ОТМЕТКИ -->
+            <div id="mainMode" style="display: none;">
+                <div class="name" id="employeeName">Имя</div>
+                <div class="id-label" id="employeeIdLabel">ID: —</div>
+                
+                <!-- СТАТУС С ЦВЕТОМ -->
+                <div class="status loading" id="statusText">
+                    <span class="status-icon" id="statusIcon">⏳</span>
+                    <span id="statusLabel">Обработка...</span>
+                </div>
+                
+                <div class="time" id="timeText">--:--</div>
+                <div class="sub" id="subText"></div>
+                <button class="close-btn" id="closeBtn">✕ Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { firebaseConfig } from './config.js';
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { 
+            getFirestore, 
+            collection, addDoc, query, where, getDocs, 
+            doc, getDoc 
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // DOM элементы
+        const pinMode = document.getElementById('pinMode');
+        const mainMode = document.getElementById('mainMode');
+        const pinInput = document.getElementById('pinInput');
+        const pinConfirmBtn = document.getElementById('pinConfirmBtn');
+        const pinError = document.getElementById('pinError');
+        const employeeNameEl = document.getElementById('employeeName');
+        const employeeIdLabel = document.getElementById('employeeIdLabel');
+        const statusText = document.getElementById('statusText');
+        const statusIcon = document.getElementById('statusIcon');
+        const statusLabel = document.getElementById('statusLabel');
+        const timeText = document.getElementById('timeText');
+        const subText = document.getElementById('subText');
+        const closeBtn = document.getElementById('closeBtn');
+
+        let currentEmployeeId = null;
+        let currentEmployeeName = '';
+
+        // Проверяем сохранённый ID
+        const savedId = localStorage.getItem('selectedEmployeeId');
+        if (savedId) {
+            tryAuthorize(savedId);
+        } else {
+            pinMode.style.display = 'block';
+            pinInput.focus();
+        }
+
+        async function tryAuthorize(employeeId) {
+            try {
+                const docRef = doc(db, 'salaryEmployees', employeeId);
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    currentEmployeeId = employeeId;
+                    currentEmployeeName = data.name || 'Сотрудник';
+                    enterMainMode(employeeId);
+                    return true;
+                } else {
+                    localStorage.removeItem('selectedEmployeeId');
+                    pinMode.style.display = 'block';
+                    pinInput.focus();
+                    return false;
+                }
+            } catch (error) {
+                console.error('Ошибка проверки ID:', error);
+                pinMode.style.display = 'block';
+                pinInput.focus();
+                return false;
+            }
+        }
+
+        async function findEmployeeByPin(pin) {
+            try {
+                const q = query(collection(db, 'salaryEmployees'), where('pin', '==', pin));
+                const snapshot = await getDocs(q);
+                if (snapshot.empty) return null;
+                const doc = snapshot.docs[0];
+                return { id: doc.id, ...doc.data() };
+            } catch (error) {
+                console.error('Ошибка поиска по PIN:', error);
+                return null;
+            }
+        }
+
+        function enterMainMode(employeeId) {
+            localStorage.setItem('selectedEmployeeId', employeeId);
+            pinMode.style.display = 'none';
+            mainMode.style.display = 'block';
+            employeeNameEl.textContent = currentEmployeeName;
+            employeeIdLabel.textContent = `ID: ${employeeId.substring(0, 8)}...`;
+            performAttendance(employeeId);
+        }
+
+        function getWeekKey(date) {
+            const d = new Date(date);
+            const day = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - day);
+            const y = d.getUTCFullYear();
+            const week = Math.ceil(((d - Date.UTC(y, 0, 1)) / 864e5 + 1) / 7);
+            return `${y}-W${String(week).padStart(2, '0')}`;
+        }
+
+        // ============================================
+        // ФУНКЦИЯ ОБНОВЛЕНИЯ СТАТУСА С ЦВЕТОМ
+        // ============================================
+        function setStatus(type, message, timeStr) {
+            // Убираем все классы
+            statusText.classList.remove('success', 'error', 'loading');
+            
+            if (type === 'in') {
+                statusText.classList.add('success');
+                statusIcon.textContent = '✅';
+                statusLabel.textContent = message || 'Пришёл';
+            } else if (type === 'out') {
+                statusText.classList.add('error');
+                statusIcon.textContent = '🚪';
+                statusLabel.textContent = message || 'Ушёл';
+            } else if (type === 'loading') {
+                statusText.classList.add('loading');
+                statusIcon.textContent = '⏳';
+                statusLabel.textContent = message || 'Загрузка...';
+            } else if (type === 'error') {
+                statusText.classList.add('error');
+                statusIcon.textContent = '❌';
+                statusLabel.textContent = message || 'Ошибка';
+            }
+            
+            if (timeStr) {
+                timeText.textContent = `⏱ ${timeStr}`;
+            }
+        }
+
+        async function performAttendance(employeeId) {
+            setStatus('loading', 'Загрузка...');
+
+            try {
+                // Получаем ВСЕ отметки за сегодня
+                const today = new Date().toISOString().slice(0, 10);
+                const q = query(
+                    collection(db, 'attendance'),
+                    where('employeeId', '==', employeeId),
+                    where('date', '==', today)
+                );
+                const snapshot = await getDocs(q);
+                const logs = [];
+                snapshot.forEach(doc => logs.push(doc.data()));
+                logs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+                const last = logs.length > 0 ? logs[logs.length - 1] : null;
+                const type = (!last || last.type === 'in') ? 'out' : 'in';
+
+                const now = new Date();
+                const dateStr = now.toISOString().slice(0, 10);
+                const weekKey = getWeekKey(now);
+                const timestamp = now.toISOString();
+
+                await addDoc(collection(db, 'attendance'), {
+                    employeeId: employeeId,
+                    timestamp: timestamp,
+                    type: type,
+                    date: dateStr,
+                    weekKey: weekKey,
+                    source: 'nfc'
+                });
+
+                const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                const label = type === 'in' ? 'Пришёл' : 'Ушёл';
+                
+                // Устанавливаем статус с цветом
+                setStatus(type, label, timeStr);
+                
+                subText.textContent = 'Отметка сохранена.';
+
+                setTimeout(() => {
+                    window.close();
+                    closeBtn.classList.add('show');
+                    subText.textContent = 'Если страница не закрылась, нажмите кнопку ниже.';
+                }, 2000);
+
+            } catch (error) {
+                console.error('Ошибка:', error);
+                setStatus('error', 'Ошибка: ' + error.message);
+                closeBtn.classList.add('show');
+                subText.textContent = 'Попробуйте ещё раз.';
+            }
+        }
+
+        // ============================================
+        // ОБРАБОТЧИКИ
+        // ============================================
+        pinConfirmBtn.addEventListener('click', async () => {
+            const pin = pinInput.value.trim();
+            if (!pin || pin.length < 3) {
+                pinError.textContent = '❌ Введите 3-6 цифр';
+                return;
+            }
+
+            pinConfirmBtn.disabled = true;
+            pinConfirmBtn.textContent = '⏳ Проверка...';
+            pinError.textContent = '';
+
+            try {
+                const employee = await findEmployeeByPin(pin);
+                if (!employee) {
+                    pinError.textContent = '❌ Неверный PIN-код';
+                    pinConfirmBtn.disabled = false;
+                    pinConfirmBtn.textContent = '✅ Подтвердить';
+                    pinInput.value = '';
+                    pinInput.focus();
+                    return;
+                }
+
+                currentEmployeeId = employee.id;
+                currentEmployeeName = employee.name || 'Сотрудник';
+                enterMainMode(employee.id);
+
+            } catch (error) {
+                pinError.textContent = '❌ Ошибка: ' + error.message;
+                pinConfirmBtn.disabled = false;
+                pinConfirmBtn.textContent = '✅ Подтвердить';
+            }
+        });
+
+        pinInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') pinConfirmBtn.click();
+        });
+
+        closeBtn.addEventListener('click', () => {
+            window.close();
+            window.location.href = 'about:blank';
+        });
+
+        console.log('✅ Страница отметок загружена');
+    </script>
+</body>
+</html>
