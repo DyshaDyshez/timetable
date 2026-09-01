@@ -1,6 +1,7 @@
 // admin-dashboard.js
 // Полностью переписан с поддержкой всех отметок за день и расчётом часов
-// + АВТОСОЗДАНИЕ ДАННЫХ ИЗ ОТМЕТОК (ИДЕНТИЧНО КАЛЬКУЛЯТОРУ)
+// + АВТОСОЗДАНИЕ ДАННЫХ ИЗ ОТМЕТОК (ЕСЛИ НЕТ В salaryWeeks)
+// + ПРОСТАЯ ПЕРЕМЕННАЯ ДЛЯ ФИКСИРОВАННОЙ ЗП
 // + КНОПКА ОТПРАВКИ В BITRIX24
 
 import { firebaseConfig } from './config.js';
@@ -31,6 +32,11 @@ let allAttendance = {};
 let allSettings = {};
 let currentSalaryWeek = 0;
 let currentAttWeek = 0;
+
+// ============================================
+// ПРОСТАЯ ПЕРЕМЕННАЯ ДЛЯ ФИКСИРОВАННОЙ ЗП
+// ============================================
+window.FIXED_SALARY = window.FIXED_SALARY || {};
 
 // ============================================
 // АВТОРИЗАЦИЯ
@@ -206,7 +212,7 @@ function formatDateShort(d) {
 }
 
 // ============================================
-// РАСЧЁТ ОТРАБОТАННЫХ ЧАСОВ ИЗ ОТМЕТОК (ТОЧНО КАК В КАЛЬКУЛЯТОРЕ)
+// РАСЧЁТ ОТРАБОТАННЫХ ЧАСОВ ИЗ ОТМЕТОК (ИСПРАВЛЕННЫЙ!)
 // ============================================
 
 function calculateDayHoursFromLogs(logs) {
@@ -219,15 +225,22 @@ function calculateDayHoursFromLogs(logs) {
     
     for (let i = 0; i < sorted.length; i++) {
         const current = sorted[i];
-        const next = sorted[i + 1];
         
         if (current.type === 'in') {
             const startTime = new Date(current.timestamp);
             let endTime;
             let isOpen = false;
             
-            if (next && next.type === 'out') {
-                endTime = new Date(next.timestamp);
+            let nextOut = null;
+            for (let j = i + 1; j < sorted.length; j++) {
+                if (sorted[j].type === 'out') {
+                    nextOut = sorted[j];
+                    break;
+                }
+            }
+            
+            if (nextOut) {
+                endTime = new Date(nextOut.timestamp);
                 isOpen = false;
             } else {
                 endTime = now;
@@ -261,10 +274,10 @@ function calculateDayHoursFromLogs(logs) {
 }
 
 // ============================================
-// СОЗДАНИЕ ДАННЫХ ИЗ ОТМЕТОК (ИДЕНТИЧНО КАЛЬКУЛЯТОРУ)
+// СОЗДАНИЕ ДАННЫХ ИЗ ОТМЕТОК
 // ============================================
 
-function buildDataFromAttendanceForAdmin(employeeId, weekKey) {
+function buildDataFromAttendanceForAdmin(employeeId) {
     const dates = getWeekDates(currentSalaryWeek);
     const workDays = [false, false, false, false, false, false, false];
     const hours = [0, 0, 0, 0, 0, 0, 0];
@@ -281,10 +294,8 @@ function buildDataFromAttendanceForAdmin(employeeId, weekKey) {
             hasAnyData = true;
             workDays[index] = true;
             
-            // ИСПОЛЬЗУЕМ ТУ ЖЕ ФУНКЦИЮ, ЧТО В КАЛЬКУЛЯТОРЕ
             const dayInfo = calculateDayHoursFromLogs(logs);
             
-            // Заполняем время из первого in и последнего out
             const sorted = [...logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
             const firstIn = sorted.find(l => l.type === 'in');
             const lastOut = [...sorted].reverse().find(l => l.type === 'out');
@@ -301,7 +312,6 @@ function buildDataFromAttendanceForAdmin(employeeId, weekKey) {
                 workEnd[index] = now.toTimeString().slice(0, 5);
             }
             
-            // ЧАСЫ БЕРЁМ ИЗ dayInfo (ТОЧНО КАК В КАЛЬКУЛЯТОРЕ!)
             hours[index] = dayInfo.totalHoursDecimal;
         }
     });
@@ -355,7 +365,7 @@ function calculateHoursFromTime(startTime, endTime) {
 }
 
 // ============================================
-// РЕНДЕР ЗАРПЛАТЫ (С АВТОСОЗДАНИЕМ ИЗ ОТМЕТОК)
+// РЕНДЕР ЗАРПЛАТЫ (С ПРОСТОЙ ПЕРЕМЕННОЙ ДЛЯ ЗП)
 // ============================================
 function renderSalary() {
     const wrap = document.getElementById('salaryTableWrap');
@@ -383,7 +393,7 @@ function renderSalary() {
         let fromAttendance = false;
         
         if (!weekData) {
-            const attData = buildDataFromAttendanceForAdmin(emp.id, weekKey);
+            const attData = buildDataFromAttendanceForAdmin(emp.id);
             const hasAttendance = attData.workDays.some(d => d === true);
             if (hasAttendance) {
                 weekData = attData;
@@ -400,7 +410,33 @@ function renderSalary() {
         const settings = getEmployeeSettings(emp.id);
         const stats = calculateWeekPay(weekData, settings);
         const isPaid = weekData.isPaid || false;
-        totalPay += stats.total;
+        
+        // ===== ОСНОВНАЯ ЛОГИКА ЗП =====
+        // 1. Берём рассчитанную ЗП
+        let displaySalary = stats.total;
+        let displayHours = stats.totalHours;
+        let displayDays = stats.days;
+        let displayOt = stats.ot;
+        
+        // 2. Если есть фиксированная ЗП — используем её
+        const fixedKey = emp.id + '_' + weekKey;
+        if (window.FIXED_SALARY && window.FIXED_SALARY[fixedKey] !== undefined) {
+            displaySalary = window.FIXED_SALARY[fixedKey];
+            fromAttendance = true;
+            
+            // Дополнительные параметры (если зафиксированы)
+            if (window.FIXED_SALARY[fixedKey + '_hours'] !== undefined) {
+                displayHours = window.FIXED_SALARY[fixedKey + '_hours'];
+            }
+            if (window.FIXED_SALARY[fixedKey + '_days'] !== undefined) {
+                displayDays = window.FIXED_SALARY[fixedKey + '_days'];
+            }
+            if (window.FIXED_SALARY[fixedKey + '_ot'] !== undefined) {
+                displayOt = window.FIXED_SALARY[fixedKey + '_ot'];
+            }
+        }
+        
+        totalPay += displaySalary;
         totalCount++;
         if (isPaid) paidCount++;
 
@@ -408,10 +444,10 @@ function renderSalary() {
 
         html += `<tr>
             <td class="col-employee">${emp.name}${sourceIndicator}</td>
-            <td>${stats.days}</td>
-            <td>${stats.totalHours.toFixed(1)}</td>
-            <td>${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</td>
-            <td class="col-pay" style="text-align:right;">${stats.total.toLocaleString()} ₽</td>
+            <td>${displayDays}</td>
+            <td>${displayHours.toFixed(1)}</td>
+            <td>${displayOt > 0 ? displayOt.toFixed(1) + 'ч' : '—'}</td>
+            <td class="col-pay" style="text-align:right; font-weight:700; color:var(--amber); font-size:1.1rem;">${displaySalary.toLocaleString()} ₽</td>
             <td style="text-align:center;">${isPaid ? '<span class="status-badge paid">✅ Выплачено</span>' : '<span class="status-badge unpaid">⏳ Ожидает</span>'}</td>
             <td style="text-align:center;">
                 <button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')" title="Настройки">⚙️</button>
@@ -886,7 +922,7 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', async functi
             let fromAttendance = false;
             
             if (!weekData) {
-                const attData = buildDataFromAttendanceForAdmin(emp.id, weekKey);
+                const attData = buildDataFromAttendanceForAdmin(emp.id);
                 const hasAttendance = attData.workDays.some(d => d === true);
                 if (hasAttendance) {
                     weekData = attData;
@@ -899,6 +935,26 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', async functi
             const settings = getEmployeeSettings(emp.id);
             const stats = calculateWeekPay(weekData, settings);
             
+            let displaySalary = stats.total;
+            let displayHours = stats.totalHours;
+            let displayDays = stats.days;
+            let displayOt = stats.ot;
+            
+            const fixedKey = emp.id + '_' + weekKey;
+            if (window.FIXED_SALARY && window.FIXED_SALARY[fixedKey] !== undefined) {
+                displaySalary = window.FIXED_SALARY[fixedKey];
+                fromAttendance = true;
+                if (window.FIXED_SALARY[fixedKey + '_hours'] !== undefined) {
+                    displayHours = window.FIXED_SALARY[fixedKey + '_hours'];
+                }
+                if (window.FIXED_SALARY[fixedKey + '_days'] !== undefined) {
+                    displayDays = window.FIXED_SALARY[fixedKey + '_days'];
+                }
+                if (window.FIXED_SALARY[fixedKey + '_ot'] !== undefined) {
+                    displayOt = window.FIXED_SALARY[fixedKey + '_ot'];
+                }
+            }
+            
             const advancesRef = collection(db, 'salaryAdvances');
             const q = query(advancesRef, where('employeeId', '==', emp.id));
             const snapshot = await getDocs(q);
@@ -910,15 +966,15 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', async functi
             reportData.push({
                 name: emp.name || 'Без имени',
                 weekRange: dateRange,
-                days: stats.days,
-                totalHours: stats.totalHours,
-                overtime: stats.ot,
-                salary: stats.total,
+                days: displayDays,
+                totalHours: displayHours,
+                overtime: displayOt,
+                salary: displaySalary,
                 debt: totalDebtEmp,
                 fromAttendance: fromAttendance
             });
             
-            totalSalary += stats.total;
+            totalSalary += displaySalary;
             totalDebt += totalDebtEmp;
             totalEmployees++;
         }
@@ -988,4 +1044,19 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', async functi
     }
 });
 
+// ============================================
+// ПОДСКАЗКА ПО ИСПОЛЬЗОВАНИЮ FIXED_SALARY
+// ============================================
 console.log('✅ Админ-панель с дневным табелем и автосозданием из отметок загружена');
+console.log('📌 Для фиксации ЗП используйте:');
+console.log('  window.FIXED_SALARY["ID_сотрудника_неделя"] = СУММА;');
+console.log('  window.FIXED_SALARY["ID_сотрудника_неделя_hours"] = ЧАСЫ;');
+console.log('  window.FIXED_SALARY["ID_сотрудника_неделя_days"] = ДНИ;');
+console.log('  window.FIXED_SALARY["ID_сотрудника_неделя_ot"] = ПЕРЕРАБОТКА;');
+console.log('  renderSalary();');
+console.log('📌 Пример для Андрея:');
+console.log('  window.FIXED_SALARY["nbBjsOTTSRIO6aBsslAN_2026-W36"] = 4372;');
+console.log('  window.FIXED_SALARY["nbBjsOTTSRIO6aBsslAN_2026-W36_hours"] = 11.43;');
+console.log('  window.FIXED_SALARY["nbBjsOTTSRIO6aBsslAN_2026-W36_days"] = 1;');
+console.log('  window.FIXED_SALARY["nbBjsOTTSRIO6aBsslAN_2026-W36_ot"] = 3.43;');
+console.log('  renderSalary();');
