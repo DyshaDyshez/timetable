@@ -1,5 +1,6 @@
 // admin-dashboard.js
 // Полностью переписан с поддержкой всех отметок за день и расчётом часов
+// + АВТОСОЗДАНИЕ ДАННЫХ ИЗ ОТМЕТОК (ИДЕНТИЧНО КАЛЬКУЛЯТОРУ)
 // + КНОПКА ОТПРАВКИ В BITRIX24
 
 import { firebaseConfig } from './config.js';
@@ -133,20 +134,17 @@ function startListening() {
 // ОБЩИЙ РЕНДЕР
 // ============================================
 function renderAll() {
-    if (allEmployees.length === 0 || Object.keys(allAttendance).length === 0) {
-        if (allEmployees.length === 0) {
-            const attContainer = document.getElementById('attendanceContent');
-            if (attContainer) {
-                attContainer.innerHTML = `<div class="loading">⏳ Ожидание данных о сотрудниках...</div>`;
-            }
-        }
-        if (allEmployees.length > 0) {
-            renderSalary();
+    if (allEmployees.length === 0) {
+        const attContainer = document.getElementById('attendanceContent');
+        if (attContainer) {
+            attContainer.innerHTML = `<div class="loading">⏳ Ожидание данных о сотрудниках...</div>`;
         }
         return;
     }
     renderSalary();
-    renderAttendance();
+    if (Object.keys(allAttendance).length > 0) {
+        renderAttendance();
+    }
 }
 
 // ============================================
@@ -208,10 +206,11 @@ function formatDateShort(d) {
 }
 
 // ============================================
-// РАСЧЁТ ОТРАБОТАННЫХ ЧАСОВ ЗА ДЕНЬ
+// РАСЧЁТ ОТРАБОТАННЫХ ЧАСОВ ИЗ ОТМЕТОК (ТОЧНО КАК В КАЛЬКУЛЯТОРЕ)
 // ============================================
-function calculateDayHours(logs) {
-    if (!logs || logs.length === 0) return { totalMinutes: 0, totalHours: '0ч 0м', segments: [] };
+
+function calculateDayHoursFromLogs(logs) {
+    if (!logs || logs.length === 0) return { totalMinutes: 0, totalHours: '0ч 0м', totalHoursDecimal: 0, segments: [] };
     
     const sorted = [...logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     const segments = [];
@@ -262,6 +261,62 @@ function calculateDayHours(logs) {
 }
 
 // ============================================
+// СОЗДАНИЕ ДАННЫХ ИЗ ОТМЕТОК (ИДЕНТИЧНО КАЛЬКУЛЯТОРУ)
+// ============================================
+
+function buildDataFromAttendanceForAdmin(employeeId, weekKey) {
+    const dates = getWeekDates(currentSalaryWeek);
+    const workDays = [false, false, false, false, false, false, false];
+    const hours = [0, 0, 0, 0, 0, 0, 0];
+    const workStart = ['', '', '', '', '', '', ''];
+    const workEnd = ['', '', '', '', '', '', ''];
+    let hasAnyData = false;
+    
+    dates.forEach((dateObj, index) => {
+        const dateStr = dateObj.toISOString().slice(0, 10);
+        const key = employeeId + '_' + dateStr;
+        const logs = allAttendance[key] || [];
+        
+        if (logs.length > 0) {
+            hasAnyData = true;
+            workDays[index] = true;
+            
+            // ИСПОЛЬЗУЕМ ТУ ЖЕ ФУНКЦИЮ, ЧТО В КАЛЬКУЛЯТОРЕ
+            const dayInfo = calculateDayHoursFromLogs(logs);
+            
+            // Заполняем время из первого in и последнего out
+            const sorted = [...logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+            const firstIn = sorted.find(l => l.type === 'in');
+            const lastOut = [...sorted].reverse().find(l => l.type === 'out');
+            
+            if (firstIn) {
+                const time = new Date(firstIn.timestamp);
+                workStart[index] = time.toTimeString().slice(0, 5);
+            }
+            if (lastOut && lastOut.timestamp > firstIn?.timestamp) {
+                const time = new Date(lastOut.timestamp);
+                workEnd[index] = time.toTimeString().slice(0, 5);
+            } else if (firstIn) {
+                const now = new Date();
+                workEnd[index] = now.toTimeString().slice(0, 5);
+            }
+            
+            // ЧАСЫ БЕРЁМ ИЗ dayInfo (ТОЧНО КАК В КАЛЬКУЛЯТОРЕ!)
+            hours[index] = dayInfo.totalHoursDecimal;
+        }
+    });
+    
+    return {
+        workDays: workDays,
+        hours: hours,
+        workStart: workStart,
+        workEnd: workEnd,
+        isPaid: false,
+        fromAttendance: true
+    };
+}
+
+// ============================================
 // ФОРМАТИРОВАНИЕ ВРЕМЕНИ
 // ============================================
 function formatTime(date) {
@@ -283,8 +338,24 @@ function isToday(dateStr) {
     return dateStr === today;
 }
 
+function timeToMinutes(timeStr) {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+}
+
+function calculateHoursFromTime(startTime, endTime) {
+    if (!startTime || !endTime) return 0;
+    const startMin = timeToMinutes(startTime);
+    let endMin = timeToMinutes(endTime);
+    if (endMin <= startMin) {
+        endMin += 24 * 60;
+    }
+    return Math.round((endMin - startMin) / 60 * 100) / 100;
+}
+
 // ============================================
-// РЕНДЕР ЗАРПЛАТЫ
+// РЕНДЕР ЗАРПЛАТЫ (С АВТОСОЗДАНИЕМ ИЗ ОТМЕТОК)
 // ============================================
 function renderSalary() {
     const wrap = document.getElementById('salaryTableWrap');
@@ -308,12 +379,24 @@ function renderSalary() {
     let totalPay = 0, paidCount = 0, totalCount = 0;
 
     for (const emp of allEmployees) {
-        const weekData = allWeeks[emp.id + '_' + weekKey];
+        let weekData = allWeeks[emp.id + '_' + weekKey];
+        let fromAttendance = false;
+        
+        if (!weekData) {
+            const attData = buildDataFromAttendanceForAdmin(emp.id, weekKey);
+            const hasAttendance = attData.workDays.some(d => d === true);
+            if (hasAttendance) {
+                weekData = attData;
+                fromAttendance = true;
+            }
+        }
+        
         if (!weekData) {
             html += `<tr><td class="col-employee">${emp.name || 'Без имени'}</td>
                 <td colspan="6" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td></tr>`;
             continue;
         }
+        
         const settings = getEmployeeSettings(emp.id);
         const stats = calculateWeekPay(weekData, settings);
         const isPaid = weekData.isPaid || false;
@@ -321,8 +404,10 @@ function renderSalary() {
         totalCount++;
         if (isPaid) paidCount++;
 
+        const sourceIndicator = fromAttendance ? ' 📌' : '';
+
         html += `<tr>
-            <td class="col-employee">${emp.name}</td>
+            <td class="col-employee">${emp.name}${sourceIndicator}</td>
             <td>${stats.days}</td>
             <td>${stats.totalHours.toFixed(1)}</td>
             <td>${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</td>
@@ -368,13 +453,12 @@ function renderAttendance() {
             const key = emp.id + '_' + dateStr;
             const logs = allAttendance[key] || [];
             if (logs.length > 0) {
-                const sorted = [...logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-                const dayInfo = calculateDayHours(sorted);
+                const dayInfo = calculateDayHoursFromLogs(logs);
                 dayData.push({
                     employeeId: emp.id,
                     employeeName: emp.name || 'Без имени',
                     date: dateStr,
-                    logs: sorted,
+                    logs: logs,
                     totalMinutes: dayInfo.totalMinutes,
                     totalHours: dayInfo.totalHours,
                     totalHoursDecimal: dayInfo.totalHoursDecimal,
@@ -467,7 +551,7 @@ function renderAttendance() {
 
             let segmentsHtml = '';
             if (item.segments && item.segments.length > 0) {
-                segmentsHtml = item.segments.map((seg, idx) => {
+                segmentsHtml = item.segments.map((seg) => {
                     const startStr = formatTime(seg.start);
                     const endStr = seg.isOpen ? '... (сейчас)' : formatTime(seg.end);
                     const hours = Math.floor(seg.minutes / 60);
@@ -772,7 +856,6 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', async functi
     btn.style.cursor = 'not-allowed';
     
     try {
-        // Получаем вебхук из Firebase
         const docRef = doc(db, 'settings', 'bitrix24');
         const docSnap = await getDoc(docRef);
         
@@ -793,20 +876,29 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', async functi
         console.log('📤 Отправка в Битрикс24...');
         console.log('📌 Чат:', chatId);
         
-        // Собираем данные по всем сотрудникам
         const reportData = [];
         let totalSalary = 0;
         let totalDebt = 0;
         let totalEmployees = 0;
         
         for (const emp of allEmployees) {
-            const weekData = allWeeks[emp.id + '_' + weekKey];
+            let weekData = allWeeks[emp.id + '_' + weekKey];
+            let fromAttendance = false;
+            
+            if (!weekData) {
+                const attData = buildDataFromAttendanceForAdmin(emp.id, weekKey);
+                const hasAttendance = attData.workDays.some(d => d === true);
+                if (hasAttendance) {
+                    weekData = attData;
+                    fromAttendance = true;
+                }
+            }
+            
             if (!weekData) continue;
             
             const settings = getEmployeeSettings(emp.id);
             const stats = calculateWeekPay(weekData, settings);
             
-            // Получаем авансы
             const advancesRef = collection(db, 'salaryAdvances');
             const q = query(advancesRef, where('employeeId', '==', emp.id));
             const snapshot = await getDocs(q);
@@ -823,11 +915,7 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', async functi
                 overtime: stats.ot,
                 salary: stats.total,
                 debt: totalDebtEmp,
-                advances: {
-                    active: activeAdvances.length,
-                    total: advances.length,
-                    repaidThisWeek: weekData.repaidAmount || 0
-                }
+                fromAttendance: fromAttendance
             });
             
             totalSalary += stats.total;
@@ -840,13 +928,13 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', async functi
             return;
         }
         
-        // Формируем сообщение
         let message = `📊 **ОТЧЁТ ЗА НЕДЕЛЮ**\n`;
         message += `📅 ${dateRange}\n`;
         message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
         
         reportData.forEach((emp, index) => {
-            message += `👤 **${emp.name}**\n`;
+            const sourceLabel = emp.fromAttendance ? ' (из отметок)' : '';
+            message += `👤 **${emp.name}**${sourceLabel}\n`;
             message += `• Дней: ${emp.days}\n`;
             message += `• Часов: ${emp.totalHours.toFixed(2)} ч\n`;
             if (emp.overtime > 0) {
@@ -870,13 +958,10 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', async functi
         }
         message += `\n🔗 Отчёт сгенерирован автоматически`;
         
-        // Отправляем в Битрикс24
         const url = webhook + 'im.message.add';
         const response = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 DIALOG_ID: chatId,
                 MESSAGE: message
@@ -903,4 +988,4 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', async functi
     }
 });
 
-console.log('✅ Админ-панель с дневным табелем и кнопкой Bitrix24 загружена');
+console.log('✅ Админ-панель с дневным табелем и автосозданием из отметок загружена');
