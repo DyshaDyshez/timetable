@@ -130,6 +130,7 @@
             font-size: .8rem;
             color: var(--mut);
             margin-top: 12px;
+            min-height: 40px;
         }
         #pinError {
             color: var(--red);
@@ -150,6 +151,27 @@
             border-top: 1px solid var(--line);
             opacity: 0.5;
             word-break: break-all;
+        }
+        .history-list {
+            font-size: .65rem;
+            color: var(--mut);
+            margin-top: 8px;
+            padding: 6px 10px;
+            background: rgba(255,255,255,.03);
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            min-height: 24px;
+            text-align: left;
+        }
+        .history-list .entry {
+            display: inline-block;
+            margin: 0 4px;
+        }
+        .history-list .entry.in {
+            color: var(--teal);
+        }
+        .history-list .entry.out {
+            color: var(--red);
         }
     </style>
 </head>
@@ -179,6 +201,7 @@
                 
                 <div class="time" id="timeText">--:--</div>
                 <div class="sub" id="subText"></div>
+                <div class="history-list" id="historyList"></div>
                 <button class="close-btn" id="closeBtn">✕ Закрыть</button>
                 <div class="debug-info" id="debugInfo"></div>
             </div>
@@ -210,6 +233,7 @@
         const statusLabel = document.getElementById('statusLabel');
         const timeText = document.getElementById('timeText');
         const subText = document.getElementById('subText');
+        const historyList = document.getElementById('historyList');
         const closeBtn = document.getElementById('closeBtn');
         const debugInfo = document.getElementById('debugInfo');
 
@@ -306,26 +330,89 @@
             }
         }
 
+        function renderHistory(logs) {
+            if (!logs || logs.length === 0) {
+                historyList.innerHTML = 'Нет отметок за сегодня';
+                return;
+            }
+            const sorted = [...logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+            const html = sorted.map(l => {
+                const t = new Date(l.timestamp);
+                const time = t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                const icon = l.type === 'in' ? '✅' : '🚪';
+                const cls = l.type === 'in' ? 'in' : 'out';
+                return `<span class="entry ${cls}">${icon} ${time}</span>`;
+            }).join(' → ');
+            historyList.innerHTML = `📋 ${html}`;
+        }
+
         async function performAttendance(employeeId) {
             setStatus('loading', 'Загрузка...');
             debugInfo.textContent = '⏳ Проверка...';
+            historyList.innerHTML = '';
 
             try {
-                const today = new Date().toISOString().slice(0, 10);
+                const today = new Date();
+                const todayStr = today.toISOString().slice(0, 10);
+                
+                // Проверяем, не наступило ли 00:00 по местному времени
+                // Если сейчас 00:00 или позже, но отметок за сегодня нет — считаем что новый день
                 const q = query(
                     collection(db, 'attendance'),
                     where('employeeId', '==', employeeId),
-                    where('date', '==', today)
+                    where('date', '==', todayStr)
                 );
                 const snapshot = await getDocs(q);
                 const logs = [];
-                snapshot.forEach(doc => logs.push(doc.data()));
+                snapshot.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
                 logs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
-                const last = logs.length > 0 ? logs[logs.length - 1] : null;
-                const type = (!last || last.type === 'in') ? 'out' : 'in';
+                // Показываем историю
+                renderHistory(logs);
 
+                // ===== ОПРЕДЕЛЯЕМ ТИП ОТМЕТКИ =====
+                let type;
                 const now = new Date();
+                const hour = now.getHours();
+                const minute = now.getMinutes();
+                
+                if (logs.length === 0) {
+                    // Нет отметок → всегда "in"
+                    type = 'in';
+                } else {
+                    const last = logs[logs.length - 1];
+                    
+                    // Проверяем, не было ли отметки вчера (если сотрудник забыл отметиться)
+                    // Если последняя отметка была "in" и прошло больше 12 часов — считаем что был "out"
+                    const lastTime = new Date(last.timestamp);
+                    const hoursDiff = (now - lastTime) / (1000 * 60 * 60);
+                    
+                    if (last.type === 'in' && hoursDiff > 12) {
+                        // Сотрудник скорее всего забыл отметиться "out"
+                        // Ставим принудительный "out" и затем "in" (как новый день)
+                        console.log('⚠️ Прошло более 12 часов с последнего "in", создаём принудительный "out"');
+                        
+                        // Сохраняем принудительный "out"
+                        const outTimestamp = new Date(lastTime.getTime() + 8 * 60 * 60 * 1000).toISOString(); // +8 часов
+                        await addDoc(collection(db, 'attendance'), {
+                            employeeId: employeeId,
+                            timestamp: outTimestamp,
+                            type: 'out',
+                            date: lastTime.toISOString().slice(0, 10),
+                            weekKey: getWeekKey(lastTime),
+                            source: 'auto'
+                        });
+                        console.log('✅ Создан принудительный "out"');
+                        
+                        // Теперь ставим "in" для нового дня
+                        type = 'in';
+                    } else if (last.type === 'in') {
+                        type = 'out';
+                    } else {
+                        type = 'in';
+                    }
+                }
+
                 const dateStr = now.toISOString().slice(0, 10);
                 const weekKey = getWeekKey(now);
                 const timestamp = now.toISOString();
@@ -341,10 +428,15 @@
                 });
 
                 const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-                const label = type === 'in' ? 'Пришёл' : 'Ушёл';
+                const label = type === 'in' ? '✅ Пришёл' : '🚪 Ушёл';
                 
                 setStatus(type, label, timeStr);
-                subText.textContent = '✅ Отметка сохранена.';
+                subText.textContent = `✅ Отметка "${label}" сохранена.`;
+                
+                // Обновляем историю с новой отметкой
+                const updatedLogs = [...logs, { type, timestamp }];
+                renderHistory(updatedLogs);
+                
                 debugInfo.textContent = `📝 Сохранено: ${type} | ${dateStr} | ${weekKey} | ID: ${docRef.id}`;
                 console.log('✅ Отметка сохранена:', { employeeId, type, dateStr, weekKey, timestamp });
 

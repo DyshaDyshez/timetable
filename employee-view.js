@@ -1,8 +1,11 @@
 // employee-view.js
-// Скрипт страницы просмотра зарплаты для сотрудника (только чтение)
-// АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ДАННЫХ ИЗ ОТМЕТОК, ЕСЛИ НЕТ В salaryWeeks
+// Только чтение данных из БД (salaryWeeks).
+// Если данных нет — строит из отметок (запасной вариант).
+// Приоритет — данные из БД, установленные администратором.
+// Если день не отмечен как рабочий или часы = 0, показываем 0 часов.
 
 import { calculateWeekPay, getFinalPay } from './modules/calculator.js';
+import { calculateDayHoursFromLogs, buildWeekDataFromAttendance } from './modules/attendance.js';
 
 const { db, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs, addDoc } = window;
 
@@ -38,10 +41,6 @@ let settings = {
 const NORMAL_HOURS_PER_DAY = 8;
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
-// ============================================
-// ФУНКЦИИ ДЛЯ РАБОТЫ СО ВРЕМЕНЕМ
-// ============================================
-
 function timeToMinutes(timeStr) {
     if (!timeStr) return 0;
     const parts = timeStr.split(':');
@@ -58,17 +57,8 @@ function calculateHoursFromTime(startTime, endTime) {
     return Math.round((endMin - startMin) / 60 * 100) / 100;
 }
 
-function getDefaultStartTime() {
-    return '08:00';
-}
-
-function getDefaultEndTime() {
-    return '17:00';
-}
-
-// ============================================
-// ФУНКЦИИ РАБОТЫ С ДАТАМИ (ВСЕ В UTC - КАК В FIREBASE)
-// ============================================
+function getDefaultStartTime() { return '08:00'; }
+function getDefaultEndTime() { return '17:00'; }
 
 function getUTCDateStr(date) {
     const d = new Date(date);
@@ -102,18 +92,12 @@ function getWeekDatesUTC(offset) {
 function formatDateDisplay(d) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
 }
-
 function formatDateFull(d) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
 }
-
 function formatHours(hours) {
     return hours.toFixed(2).replace('.', ',');
 }
-
-// ============================================
-// ОБНОВЛЕНИЕ ССЫЛКИ НА СТАТИСТИКУ
-// ============================================
 
 function updateStatsLink() {
     const statsLink = document.getElementById('statsLink');
@@ -121,10 +105,6 @@ function updateStatsLink() {
         statsLink.href = `employee-stats.html?id=${EMPLOYEE_ID}`;
     }
 }
-
-// ============================================
-// ФИНАНСОВЫЕ ФУНКЦИИ (ТОЛЬКО ПРОСМОТР)
-// ============================================
 
 async function getEmployeeAdvances() {
     try {
@@ -145,7 +125,6 @@ async function getEmployeeAdvances() {
 async function renderEmployeeFinance() {
     const container = document.getElementById('employeeFinanceContent');
     if (!container) return;
-    
     try {
         const advances = await getEmployeeAdvances();
         const activeAdvances = advances.filter(a => a.status === 'active');
@@ -153,63 +132,35 @@ async function renderEmployeeFinance() {
         const totalRepaid = advances
             .filter(a => a.status === 'repaid')
             .reduce((sum, a) => sum + (a.repaidAmount || a.amount), 0);
-        
         container.innerHTML = `
             <div class="debt-summary">
-                <div class="debt-item">
-                    <div class="label">Активных авансов</div>
-                    <div class="value count">${activeAdvances.length}</div>
-                </div>
-                <div class="debt-item">
-                    <div class="label">Общий долг</div>
-                    <div class="value debt">${totalDebt.toLocaleString()} ₽</div>
-                </div>
-                <div class="debt-item">
-                    <div class="label">Погашено</div>
-                    <div class="value paid">${totalRepaid.toLocaleString()} ₽</div>
-                </div>
+                <div class="debt-item"><div class="label">Активных авансов</div><div class="value count">${activeAdvances.length}</div></div>
+                <div class="debt-item"><div class="label">Общий долг</div><div class="value debt">${totalDebt.toLocaleString()} ₽</div></div>
+                <div class="debt-item"><div class="label">Погашено</div><div class="value paid">${totalRepaid.toLocaleString()} ₽</div></div>
             </div>
-            
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                 <span style="font-weight:600; font-size:.85rem;">📋 История авансов</span>
                 <span style="font-size:.7rem; color:var(--mut);">${advances.length} записей</span>
             </div>
             <div class="advance-list">
-                ${advances.length === 0 ? `
-                    <div class="no-advances">Нет авансов</div>
-                ` : `
-                    ${advances.slice(0, 10).map(a => `
-                        <div class="advance-row">
-                            <div class="info">
-                                <div>
-                                    ${a.type === 'advance' ? '📤' : '📥'} 
-                                    ${a.status === 'active' ? 'Аванс' : 'Погашен'}
-                                    ${a.status === 'active' ? ' <span style="color:var(--red);font-size:.6rem;">(активен)</span>' : ''}
-                                </div>
-                                <div class="comment">${a.comment || 'Без комментария'} · ${formatDateFull(new Date(a.date))}</div>
-                            </div>
-                            <div class="amount ${a.status === 'active' ? 'active' : 'repaid'}">
-                                ${a.amount.toLocaleString()} ₽
-                            </div>
+                ${advances.length === 0 ? '<div class="no-advances">Нет авансов</div>' :
+                advances.slice(0, 10).map(a => `
+                    <div class="advance-row">
+                        <div class="info">
+                            <div>${a.type === 'advance' ? '📤' : '📥'} ${a.status === 'active' ? 'Аванс' : 'Погашен'} ${a.status === 'active' ? ' <span style="color:var(--red);font-size:.6rem;">(активен)</span>' : ''}</div>
+                            <div class="comment">${a.comment || 'Без комментария'} · ${formatDateFull(new Date(a.date))}</div>
                         </div>
-                    `).join('')}
-                    ${advances.length > 10 ? `<div style="text-align:center;font-size:.7rem;color:var(--mut);padding:4px;">... и ещё ${advances.length - 10} записей</div>` : ''}
-                `}
+                        <div class="amount ${a.status === 'active' ? 'active' : 'repaid'}">${a.amount.toLocaleString()} ₽</div>
+                    </div>
+                `).join('')}
+                ${advances.length > 10 ? `<div style="text-align:center;font-size:.7rem;color:var(--mut);padding:4px;">... и ещё ${advances.length - 10} записей</div>` : ''}
             </div>
         `;
     } catch (error) {
         console.error('Ошибка рендеринга финансов:', error);
-        container.innerHTML = `
-            <div style="text-align:center; padding: 20px; color: var(--red);">
-                ❌ Ошибка загрузки финансов
-            </div>
-        `;
+        container.innerHTML = `<div style="text-align:center; padding: 20px; color: var(--red);">❌ Ошибка загрузки финансов</div>`;
     }
 }
-
-// ============================================
-// ЗАГРУЗКА ДАННЫХ
-// ============================================
 
 async function loadEmployeeInfo() {
     try {
@@ -219,8 +170,6 @@ async function loadEmployeeInfo() {
             const data = docSnap.data();
             employeeName = data.name || 'Сотрудник';
             employeeRoomId = data.roomId || null;
-            console.log('👤 Имя сотрудника:', employeeName);
-            
             const badge = document.getElementById('userBadge');
             const nameEl = document.getElementById('userName');
             const avatarEl = document.getElementById('userAvatar');
@@ -261,7 +210,6 @@ async function loadSettings() {
                 otLimit: data.otLimit || 5,
                 hpd: data.hpd || 8
             };
-            console.log('⚙️ Настройки загружены:', settings);
             document.getElementById('rDay').value = settings.rDay;
             document.getElementById('rExtra').value = settings.rExtra;
             document.getElementById('rOt1').value = settings.rOt1;
@@ -290,7 +238,6 @@ async function loadAttendance() {
             allAttendance[date].push({ id: doc.id, ...data });
         });
         console.log('📋 Загружено отметок:', snapshot.size);
-        console.log('📋 allAttendance keys:', Object.keys(allAttendance));
         return allAttendance;
     } catch (error) {
         console.error('Ошибка загрузки отметок:', error);
@@ -304,13 +251,23 @@ async function loadWeekData(weekKey) {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
             const data = docSnap.data();
-            console.log('📅 Загружена неделя из salaryWeeks:', weekKey, data);
+            console.log('📅 Загружена неделя из БД:', weekKey);
             return {
-                workDays: data.workDays || [true, true, true, true, true, false, false],
-                hours: data.hours || [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+                workDays: data.workDays || [false, false, false, false, false, false, false],
+                hours: data.hours || [0, 0, 0, 0, 0, 0, 0],
                 isPaid: data.isPaid || false,
-                workStart: data.workStart || [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
-                workEnd: data.workEnd || [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', '']
+                workStart: data.workStart || ['', '', '', '', '', '', ''],
+                workEnd: data.workEnd || ['', '', '', '', '', '', ''],
+                calculatedPay: data.calculatedPay || null,
+                calculatedDays: data.calculatedDays || null,
+                calculatedHours: data.calculatedHours || null,
+                calculatedOt: data.calculatedOt || null,
+                fixedSalary: data.fixedSalary || null,
+                fixedHours: data.fixedHours || null,
+                fixedDays: data.fixedDays || null,
+                fixedOt: data.fixedOt || null,
+                fromDB: true,
+                docId: docRef.id
             };
         } else {
             console.log('📅 Нет данных в salaryWeeks для недели:', weekKey);
@@ -322,62 +279,6 @@ async function loadWeekData(weekKey) {
     }
 }
 
-// ============================================
-// СОЗДАНИЕ ДАННЫХ ИЗ ОТМЕТОК
-// ============================================
-
-function buildDataFromAttendance(weekDates) {
-    const workDays = [false, false, false, false, false, false, false];
-    const hours = [0, 0, 0, 0, 0, 0, 0];
-    const workStart = ['', '', '', '', '', '', ''];
-    const workEnd = ['', '', '', '', '', '', ''];
-    
-    let hasAnyData = false;
-    
-    weekDates.forEach((dateObj, index) => {
-        const dateStr = getUTCDateStr(dateObj);
-        const logs = allAttendance[dateStr] || [];
-        
-        if (logs.length > 0) {
-            hasAnyData = true;
-            workDays[index] = true;
-            
-            const sorted = [...logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-            
-            // Находим первый "in" и последний "out"
-            const firstIn = sorted.find(l => l.type === 'in');
-            const lastOut = [...sorted].reverse().find(l => l.type === 'out');
-            
-            if (firstIn) {
-                const time = new Date(firstIn.timestamp);
-                workStart[index] = time.toTimeString().slice(0, 5);
-            }
-            if (lastOut && lastOut.timestamp > firstIn?.timestamp) {
-                const time = new Date(lastOut.timestamp);
-                workEnd[index] = time.toTimeString().slice(0, 5);
-            } else if (firstIn) {
-                // Если нет выхода — ставим текущее время
-                const now = new Date();
-                workEnd[index] = now.toTimeString().slice(0, 5);
-            }
-            
-            // Рассчитываем часы
-            if (workStart[index] && workEnd[index]) {
-                hours[index] = calculateHoursFromTime(workStart[index], workEnd[index]);
-            }
-        }
-    });
-    
-    return {
-        workDays: workDays,
-        hours: hours,
-        workStart: workStart,
-        workEnd: workEnd,
-        isPaid: false,
-        fromAttendance: true
-    };
-}
-
 function getDayAttendance(dateStr) {
     const logs = allAttendance[dateStr] || [];
     if (logs.length === 0) return null;
@@ -385,9 +286,39 @@ function getDayAttendance(dateStr) {
     return sorted;
 }
 
-// ============================================
-// ПОСТРОЕНИЕ UI
-// ============================================
+async function saveCalculatedPay(weekKey, calculatedPay, days, totalHours, ot) {
+    try {
+        const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
+        // Проверяем, существует ли документ
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+            // Если документа нет — создаём через setDoc
+            await setDoc(docRef, {
+                employeeId: EMPLOYEE_ID,
+                weekKey: weekKey,
+                workDays: currentData.workDays || [false, false, false, false, false, false, false],
+                hours: currentData.hours || [0, 0, 0, 0, 0, 0, 0],
+                workStart: currentData.workStart || ['', '', '', '', '', '', ''],
+                workEnd: currentData.workEnd || ['', '', '', '', '', '', ''],
+                isPaid: false,
+                createdAt: new Date().toISOString()
+            }, { merge: true });
+            console.log('📄 Создан новый документ недели:', weekKey);
+        }
+        // Теперь обновляем calculatedPay
+        await updateDoc(docRef, {
+            calculatedPay: Math.round(calculatedPay * 100) / 100,
+            calculatedDays: days,
+            calculatedHours: Math.round(totalHours * 100) / 100,
+            calculatedOt: Math.round(ot * 100) / 100,
+            calculatedAt: new Date().toISOString()
+        });
+        return true;
+    } catch (error) {
+        console.error('Ошибка сохранения calculatedPay:', error);
+        return false;
+    }
+}
 
 function buildUI() {
     const daysBox = document.getElementById('days');
@@ -431,13 +362,9 @@ function updateWeekLabel(dates) {
     document.getElementById('weekSub').textContent = isCurrent ? 'текущая неделя' : weekKey;
 }
 
-// ============================================
-// ОБНОВЛЕНИЕ ВРЕМЕНИ
-// ============================================
-
 function updateTimeInputs() {
     if (!currentData) return;
-    const { workDays, workStart, workEnd } = currentData;
+    const { workDays, workStart, workEnd, hours } = currentData;
     const items = document.querySelectorAll('.day-time-item');
     const dates = getWeekDatesUTC(currentWeekOffset);
     
@@ -453,47 +380,56 @@ function updateTimeInputs() {
         const dateStr = getUTCDateStr(dateObj);
         const attLogs = getDayAttendance(dateStr);
         
+        // Есть отметки
         if (attLogs && attLogs.length > 0) {
-            const times = attLogs.map(l => {
+            const dayInfo = calculateDayHoursFromLogs(attLogs);
+            const sorted = [...attLogs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+            const filtered = [];
+            let lastType = null;
+            for (const log of sorted) {
+                if (log.type !== lastType) {
+                    filtered.push(log);
+                    lastType = log.type;
+                }
+            }
+            if (filtered.length > 0 && filtered[0].type === 'out') {
+                filtered.shift();
+            }
+            const times = filtered.map(l => {
                 const t = new Date(l.timestamp);
-                return t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                const icon = l.type === 'in' ? '✅' : '🚪';
+                const label = l.type === 'in' ? 'пришёл' : 'ушёл';
+                return `${icon} ${t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} (${label})`;
             });
             attendanceDisplay.textContent = `📌 ${times.join(' → ')}`;
             attendanceDisplay.style.display = 'block';
             attendanceDisplay.style.color = 'var(--teal)';
-        }
-        
-        if (workDays[i]) {
+            hoursDisplay.textContent = dayInfo.totalHours;
+            
+            const dayIndex = workDays.slice(0, i).filter(Boolean).length;
+            const isExtra = dayIndex >= 5;
+            item.classList.add('work-day');
+            if (isExtra) {
+                item.classList.add('extra-day');
+            }
             startInput.value = workStart[i] || getDefaultStartTime();
             endInput.value = workEnd[i] || getDefaultEndTime();
-            
-            // Если есть отметки, показываем часы из них, иначе из плана
-            if (attLogs && attLogs.length > 0) {
-                const firstIn = attLogs.find(l => l.type === 'in');
-                const lastOut = [...attLogs].reverse().find(l => l.type === 'out');
-                if (firstIn && lastOut && firstIn.timestamp < lastOut.timestamp) {
-                    const h = calculateHoursFromTime(
-                        new Date(firstIn.timestamp).toTimeString().slice(0, 5),
-                        new Date(lastOut.timestamp).toTimeString().slice(0, 5)
-                    );
-                    hoursDisplay.textContent = formatHours(h);
-                } else if (firstIn) {
-                    const now = new Date();
-                    const diffMs = now - new Date(firstIn.timestamp);
-                    const diffMinutes = Math.floor(diffMs / (1000 * 60));
-                    const h = Math.round(diffMinutes / 60 * 100) / 100;
-                    hoursDisplay.textContent = formatHours(h) + ' (в процессе)';
-                }
-            } else {
-                const h = calculateHoursFromTime(startInput.value, endInput.value);
-                hoursDisplay.textContent = formatHours(h);
-                if (!currentData.fromAttendance) {
-                    attendanceDisplay.textContent = '⏳ план';
-                    attendanceDisplay.style.display = 'block';
-                    attendanceDisplay.style.color = 'var(--mut)';
-                }
-            }
-            
+            return;
+        }
+        
+        // Нет отметок — показываем данные из БД
+        const plannedHrs = hours && hours[i] ? hours[i] : 0;
+        const isWorkDay = workDays[i] === true || plannedHrs > 0;
+        
+        if (isWorkDay && plannedHrs > 0) {
+            startInput.value = workStart[i] || getDefaultStartTime();
+            endInput.value = workEnd[i] || getDefaultEndTime();
+            const h = calculateHoursFromTime(startInput.value, endInput.value);
+            const displayHours = h > 0 ? h : plannedHrs;
+            hoursDisplay.textContent = formatHours(displayHours);
+            attendanceDisplay.textContent = '📋 план (из табеля)';
+            attendanceDisplay.style.display = 'block';
+            attendanceDisplay.style.color = 'var(--amber)';
             const dayIndex = workDays.slice(0, i).filter(Boolean).length;
             const isExtra = dayIndex >= 5;
             item.classList.add('work-day');
@@ -504,19 +440,14 @@ function updateTimeInputs() {
             startInput.value = '';
             endInput.value = '';
             hoursDisplay.textContent = '0';
-            if (!attLogs || attLogs.length === 0) {
-                attendanceDisplay.textContent = '';
-                attendanceDisplay.style.display = 'none';
-            }
+            attendanceDisplay.textContent = '🚫 выходной';
+            attendanceDisplay.style.display = 'block';
+            attendanceDisplay.style.color = 'var(--mut)';
         }
     });
 }
 
-// ============================================
-// ОСНОВНАЯ ФУНКЦИЯ ОБНОВЛЕНИЯ UI
-// ============================================
-
-function update() {
+async function update() {
     if (!currentData) {
         console.warn('⚠️ currentData is null, пропускаем update');
         return;
@@ -526,11 +457,16 @@ function update() {
     const dates = getWeekDatesUTC(currentWeekOffset);
     const weekKey = getWeekKeyUTC(dates[0]);
     
-    console.log('🔄 update() вызван, weekKey:', weekKey);
-    console.log('📊 currentData:', currentData);
-    
-    const stats = calculateWeekPay(currentData, settings);
-    console.log('📊 stats:', stats);
+    let stats = calculateWeekPay(currentData, settings);
+    if (currentData.fixedSalary !== undefined && currentData.fixedSalary !== null && currentData.fixedSalary > 0) {
+        stats = {
+            ...stats,
+            total: currentData.fixedSalary,
+            totalHours: currentData.fixedHours !== undefined && currentData.fixedHours !== null ? currentData.fixedHours : stats.totalHours,
+            days: currentData.fixedDays !== undefined && currentData.fixedDays !== null ? currentData.fixedDays : stats.days,
+            ot: currentData.fixedOt !== undefined && currentData.fixedOt !== null ? currentData.fixedOt : stats.ot
+        };
+    }
     
     const days = stats.days;
     const totalHours = stats.totalHours;
@@ -544,7 +480,8 @@ function update() {
     const payOt2 = stats.payOt2;
     const total = stats.total;
     
-    // Обновляем дни
+    await saveCalculatedPay(weekKey, total, days, totalHours, ot);
+    
     document.querySelectorAll('#days .day').forEach((b, i) => {
         const on = workDays[i];
         b.classList.toggle('on', on);
@@ -576,7 +513,6 @@ function update() {
         uwB.hidden = true;
     }
     
-    // СТРОКИ РАСЧЕТА
     document.getElementById('qBase').textContent = `${days} дн × ${settings.rDay.toLocaleString()} ₽ (пропорционально)`;
     document.getElementById('vBase').textContent = payBase.toLocaleString() + ' ₽';
     
@@ -643,43 +579,117 @@ function update() {
     document.getElementById('wk').textContent = weekLabel;
 }
 
-// ============================================
-// ИНИЦИАЛИЗАЦИЯ
-// ============================================
+async function refreshData() {
+    console.log('🔄 Принудительная перезагрузка данных из БД...');
+    const dates = getWeekDatesUTC(currentWeekOffset);
+    const weekKey = getWeekKeyUTC(dates[0]);
+    
+    let weekData = await loadWeekData(weekKey);
+    
+    if (!weekData) {
+        console.log('⚠️ Данных в БД нет, строим из отметок (запасной вариант)');
+        const attData = buildWeekDataFromAttendance(EMPLOYEE_ID, dates, allAttendance);
+        weekData = {
+            workDays: attData.workDays,
+            hours: attData.hours,
+            workStart: attData.workStart,
+            workEnd: attData.workEnd,
+            isPaid: false,
+            fromAttendance: true,
+            fromDB: false,
+            fixedSalary: null,
+            fixedHours: null,
+            fixedDays: null,
+            fixedOt: null
+        };
+        
+        // ===== ВАЖНО: Сразу создаём документ в БД =====
+        try {
+            const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
+            await setDoc(docRef, {
+                employeeId: EMPLOYEE_ID,
+                weekKey: weekKey,
+                workDays: weekData.workDays,
+                hours: weekData.hours,
+                workStart: weekData.workStart,
+                workEnd: weekData.workEnd,
+                isPaid: false,
+                fromAttendance: true,
+                createdAt: new Date().toISOString()
+            }, { merge: true });
+            weekData.fromDB = true;
+            console.log('📄 Создан документ недели из отметок в refreshData:', weekKey);
+        } catch (error) {
+            console.error('❌ Ошибка создания документа:', error);
+        }
+    } else {
+        weekData.fromDB = true;
+        weekData.fromAttendance = false;
+    }
+    
+    currentData = weekData;
+    await update();
+    console.log('✅ Данные обновлены');
+}
 
 async function init() {
-    console.log('🚀 Запуск employee-view (только просмотр)...');
+    console.log('🚀 Запуск employee-view (только просмотр)');
     console.log('📌 EMPLOYEE_ID:', EMPLOYEE_ID);
     
     await loadSettings();
     await loadEmployeeInfo();
     await loadAttendance();
     buildUI();
-    
     updateStatsLink();
     
     const dates = getWeekDatesUTC(0);
     const weekKey = getWeekKeyUTC(dates[0]);
     console.log('📅 Текущая неделя (UTC):', weekKey);
-    console.log('📅 Даты недели:', dates.map(d => getUTCDateStr(d)));
     
-    // Пытаемся загрузить данные из salaryWeeks
     let weekData = await loadWeekData(weekKey);
-    
     if (!weekData) {
         console.log('⚠️ Данных в salaryWeeks нет, создаём из отметок');
-        weekData = buildDataFromAttendance(dates);
-        weekData.fromAttendance = true;
-        
-        if (weekData.workDays.some(d => d === true)) {
-            console.log('✅ Созданы данные из отметок:', weekData);
+        const attData = buildWeekDataFromAttendance(EMPLOYEE_ID, dates, allAttendance);
+        weekData = {
+            workDays: attData.workDays,
+            hours: attData.hours,
+            workStart: attData.workStart,
+            workEnd: attData.workEnd,
+            isPaid: false,
+            fromAttendance: true,
+            fromDB: false,
+            fixedSalary: null,
+            fixedHours: null,
+            fixedDays: null,
+            fixedOt: null
+        };
+        if (attData.fromAttendance) {
+            try {
+                const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
+                await setDoc(docRef, {
+                    employeeId: EMPLOYEE_ID,
+                    weekKey: weekKey,
+                    workDays: weekData.workDays,
+                    hours: weekData.hours,
+                    workStart: weekData.workStart,
+                    workEnd: weekData.workEnd,
+                    isPaid: false,
+                    fromAttendance: true,
+                    createdAt: new Date().toISOString()
+                }, { merge: true });
+                weekData.fromDB = true;
+                console.log('📄 Создан документ недели из отметок в init:', weekKey);
+            } catch (error) {
+                console.error('❌ Ошибка создания документа:', error);
+            }
+        }
+        if (attData.fromAttendance) {
             document.querySelector('.sub').innerHTML = `
                 📋 Данные автоматически построены из отметок.
                 <span style="color:var(--amber);">Для точного расчёта обратитесь к администратору.</span>
                 <span class="view-only-badge">🔒 Только просмотр</span>
             `;
         } else {
-            console.log('⚠️ Нет отметок за эту неделю');
             document.querySelector('.sub').innerHTML = `
                 📋 Нет данных за эту неделю.
                 <span style="color:var(--amber);">Обратитесь к руководителю.</span>
@@ -687,64 +697,37 @@ async function init() {
             `;
         }
     } else {
+        weekData.fromDB = true;
         weekData.fromAttendance = false;
         console.log('✅ Загружены данные из salaryWeeks');
+        document.querySelector('.sub').innerHTML = `
+            📋 Данные из табеля.
+            <span style="color:var(--teal);">✅ Актуальные данные</span>
+            <span class="view-only-badge">🔒 Только просмотр</span>
+        `;
     }
     
     currentData = weekData;
     updateWeekLabel(dates);
-    update();
-    
+    await update();
     await renderEmployeeFinance();
     
-    // Обработчики навигации
     document.getElementById('weekPrev').addEventListener('click', async () => {
         console.log('◀️ Предыдущая неделя');
         currentWeekOffset--;
-        const dates = getWeekDatesUTC(currentWeekOffset);
-        const weekKey = getWeekKeyUTC(dates[0]);
-        updateWeekLabel(dates);
-        let weekData = await loadWeekData(weekKey);
-        if (!weekData) {
-            weekData = buildDataFromAttendance(dates);
-            weekData.fromAttendance = true;
-        } else {
-            weekData.fromAttendance = false;
-        }
-        currentData = weekData;
-        update();
+        await refreshData();
     });
+    
     document.getElementById('weekNext').addEventListener('click', async () => {
         console.log('▶️ Следующая неделя');
         currentWeekOffset++;
-        const dates = getWeekDatesUTC(currentWeekOffset);
-        const weekKey = getWeekKeyUTC(dates[0]);
-        updateWeekLabel(dates);
-        let weekData = await loadWeekData(weekKey);
-        if (!weekData) {
-            weekData = buildDataFromAttendance(dates);
-            weekData.fromAttendance = true;
-        } else {
-            weekData.fromAttendance = false;
-        }
-        currentData = weekData;
-        update();
+        await refreshData();
     });
+    
     document.getElementById('weekToday').addEventListener('click', async () => {
         console.log('📅 Сегодня');
         currentWeekOffset = 0;
-        const dates = getWeekDatesUTC(0);
-        const weekKey = getWeekKeyUTC(dates[0]);
-        updateWeekLabel(dates);
-        let weekData = await loadWeekData(weekKey);
-        if (!weekData) {
-            weekData = buildDataFromAttendance(dates);
-            weekData.fromAttendance = true;
-        } else {
-            weekData.fromAttendance = false;
-        }
-        currentData = weekData;
-        update();
+        await refreshData();
     });
     
     document.getElementById('copyBtn').addEventListener('click', async () => {
@@ -773,7 +756,7 @@ async function init() {
         }
     });
     
-    console.log('✅ employee-view инициализирован (только просмотр)');
+    console.log('✅ employee-view инициализирован');
 }
 
 const style = document.createElement('style');
@@ -802,7 +785,7 @@ style.textContent = `
 document.head.appendChild(style);
 
 if (document.readyState === 'loading') {
-    document.addEventListener('documentLoaded', init);
+    document.addEventListener('DOMContentLoaded', init);
 } else {
     init();
 }

@@ -1,5 +1,8 @@
-// employee-stats.js
-// Полная страница статистики сотрудника
+// employee-view.js
+// Скрипт страницы просмотра зарплаты для сотрудника (только чтение)
+// АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ДАННЫХ ИЗ ОТМЕТОК, ЕСЛИ НЕТ В salaryWeeks
+// СОХРАНЯЕТ РАСЧИТАННУЮ СУММУ В БД (calculatedPay)
+// ПОДДЕРЖИВАЕТ fixedSalary
 
 import { calculateWeekPay, getFinalPay } from './modules/calculator.js';
 
@@ -12,13 +15,20 @@ if (!EMPLOYEE_ID) {
     document.body.innerHTML = `
         <div style="padding:50px;text-align:center;color:var(--red);">
             <h1>❌ Ошибка!</h1>
-            <p>Не указан ID сотрудника.</p>
+            <p>Не указан ID сотрудника. Обратитесь к руководителю.</p>
+            <p style="font-size:0.8rem;color:var(--mut);margin-top:20px;">
+                Ссылка должна быть: employee-view.html?id=ВАШ_ID
+            </p>
         </div>
     `;
     throw new Error('No employee ID');
 }
 
+let currentWeekOffset = 0;
+let currentData = null;
 let employeeName = 'Сотрудник';
+let employeeRoomId = null;
+let allAttendance = {};
 let settings = {
     rDay: 3000,
     rExtra: 3500,
@@ -27,48 +37,75 @@ let settings = {
     otLimit: 5,
     hpd: 8
 };
+const NORMAL_HOURS_PER_DAY = 8;
+const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 // ============================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ФУНКЦИИ ДЛЯ РАБОТЫ СО ВРЕМЕНЕМ
 // ============================================
 
-function getWeekNumber(weekKey) {
-    const match = weekKey.match(/W(\d+)/);
-    return match ? parseInt(match[1]) : weekKey;
+function timeToMinutes(timeStr) {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
 }
 
-function formatDateRange(weekKey) {
-    try {
-        const match = weekKey.match(/^(\d+)-W(\d+)/);
-        if (!match) return weekKey;
-        const year = parseInt(match[1]);
-        const weekNum = parseInt(match[2]);
-        const jan4 = new Date(year, 0, 4);
-        const dayOfWeek = jan4.getDay();
-        let daysToMonday;
-        if (dayOfWeek === 0) {
-            daysToMonday = 1;
-        } else {
-            daysToMonday = 1 - dayOfWeek;
-        }
-        const firstMonday = new Date(jan4);
-        firstMonday.setDate(jan4.getDate() + daysToMonday);
-        const startDate = new Date(firstMonday);
-        startDate.setDate(firstMonday.getDate() + (weekNum - 1) * 7);
-        const endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + 6);
-        const options = { day: '2-digit', month: 'short' };
-        const start = startDate.toLocaleDateString('ru-RU', options);
-        const end = endDate.toLocaleDateString('ru-RU', options);
-        return `${start} – ${end}`;
-    } catch (error) {
-        return weekKey;
+function calculateHoursFromTime(startTime, endTime) {
+    if (!startTime || !endTime) return 0;
+    const startMin = timeToMinutes(startTime);
+    let endMin = timeToMinutes(endTime);
+    if (endMin <= startMin) {
+        endMin += 24 * 60;
     }
+    return Math.round((endMin - startMin) / 60 * 100) / 100;
 }
 
-function formatDate(dateStr) {
-    if (!dateStr) return '—';
-    const d = new Date(dateStr);
+function getDefaultStartTime() {
+    return '08:00';
+}
+
+function getDefaultEndTime() {
+    return '17:00';
+}
+
+// ============================================
+// ФУНКЦИИ РАБОТЫ С ДАТАМИ (ВСЕ В UTC - КАК В FIREBASE)
+// ============================================
+
+function getUTCDateStr(date) {
+    const d = new Date(date);
+    return d.toISOString().slice(0, 10);
+}
+
+function getWeekKeyUTC(date) {
+    const d = new Date(date);
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
+    const y = d.getUTCFullYear();
+    const week = Math.ceil(((d - Date.UTC(y, 0, 1)) / 864e5 + 1) / 7);
+    return `${y}-W${String(week).padStart(2, '0')}`;
+}
+
+function getWeekDatesUTC(offset) {
+    const today = new Date();
+    const utcToday = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const dayOfWeek = new Date(utcToday).getUTCDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const mondayUTC = new Date(utcToday - daysToMonday * 86400000 + offset * 7 * 86400000);
+    const dates = [];
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(mondayUTC);
+        d.setUTCDate(d.getUTCDate() + i);
+        dates.push(d);
+    }
+    return dates;
+}
+
+function formatDateDisplay(d) {
+    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
+}
+
+function formatDateFull(d) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
@@ -77,7 +114,18 @@ function formatHours(hours) {
 }
 
 // ============================================
-// РАБОТА С АВАНСАМИ
+// ОБНОВЛЕНИЕ ССЫЛКИ НА СТАТИСТИКУ
+// ============================================
+
+function updateStatsLink() {
+    const statsLink = document.getElementById('statsLink');
+    if (statsLink && EMPLOYEE_ID) {
+        statsLink.href = `employee-stats.html?id=${EMPLOYEE_ID}`;
+    }
+}
+
+// ============================================
+// ФИНАНСОВЫЕ ФУНКЦИИ (ТОЛЬКО ПРОСМОТР)
 // ============================================
 
 async function getEmployeeAdvances() {
@@ -89,260 +137,75 @@ async function getEmployeeAdvances() {
         snapshot.forEach((doc) => {
             advances.push({ id: doc.id, ...doc.data() });
         });
-        return advances.sort((a, b) => a.date.localeCompare(b.date));
+        return advances.sort((a, b) => b.date.localeCompare(a.date));
     } catch (error) {
         console.error('Ошибка загрузки авансов:', error);
         return [];
     }
 }
 
-async function getActiveAdvances() {
-    const all = await getEmployeeAdvances();
-    return all.filter(a => a.status === 'active');
-}
-
-async function repayAdvance(advanceId, amount, weekId, weekKey) {
+async function renderEmployeeFinance() {
+    const container = document.getElementById('employeeFinanceContent');
+    if (!container) return;
+    
     try {
-        const advanceRef = doc(db, 'salaryAdvances', advanceId);
-        const advanceSnap = await getDoc(advanceRef);
-        if (!advanceSnap.exists()) {
-            return { success: false, error: 'Аванс не найден' };
-        }
-        const advance = advanceSnap.data();
+        const advances = await getEmployeeAdvances();
+        const activeAdvances = advances.filter(a => a.status === 'active');
+        const totalDebt = activeAdvances.reduce((sum, a) => sum + a.amount, 0);
+        const totalRepaid = advances
+            .filter(a => a.status === 'repaid')
+            .reduce((sum, a) => sum + (a.repaidAmount || a.amount), 0);
         
-        if (amount >= advance.amount) {
-            await updateDoc(advanceRef, {
-                status: 'repaid',
-                repaidAt: new Date().toISOString(),
-                repaidFromWeek: weekId,
-                repaidAmount: advance.amount
-            });
-            return { success: true, repaidAmount: advance.amount, fullyRepaid: true };
-        } else {
-            await updateDoc(advanceRef, {
-                amount: advance.amount - amount,
-                repaidAt: new Date().toISOString(),
-                repaidFromWeek: weekId,
-                repaidAmount: amount,
-                partiallyRepaid: true,
-                originalAmount: advance.originalAmount || advance.amount
-            });
-            return { success: true, repaidAmount: amount, fullyRepaid: false };
-        }
+        container.innerHTML = `
+            <div class="debt-summary">
+                <div class="debt-item">
+                    <div class="label">Активных авансов</div>
+                    <div class="value count">${activeAdvances.length}</div>
+                </div>
+                <div class="debt-item">
+                    <div class="label">Общий долг</div>
+                    <div class="value debt">${totalDebt.toLocaleString()} ₽</div>
+                </div>
+                <div class="debt-item">
+                    <div class="label">Погашено</div>
+                    <div class="value paid">${totalRepaid.toLocaleString()} ₽</div>
+                </div>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-weight:600; font-size:.85rem;">📋 История авансов</span>
+                <span style="font-size:.7rem; color:var(--mut);">${advances.length} записей</span>
+            </div>
+            <div class="advance-list">
+                ${advances.length === 0 ? `
+                    <div class="no-advances">Нет авансов</div>
+                ` : `
+                    ${advances.slice(0, 10).map(a => `
+                        <div class="advance-row">
+                            <div class="info">
+                                <div>
+                                    ${a.type === 'advance' ? '📤' : '📥'} 
+                                    ${a.status === 'active' ? 'Аванс' : 'Погашен'}
+                                    ${a.status === 'active' ? ' <span style="color:var(--red);font-size:.6rem;">(активен)</span>' : ''}
+                                </div>
+                                <div class="comment">${a.comment || 'Без комментария'} · ${formatDateFull(new Date(a.date))}</div>
+                            </div>
+                            <div class="amount ${a.status === 'active' ? 'active' : 'repaid'}">
+                                ${a.amount.toLocaleString()} ₽
+                            </div>
+                        </div>
+                    `).join('')}
+                    ${advances.length > 10 ? `<div style="text-align:center;font-size:.7rem;color:var(--mut);padding:4px;">... и ещё ${advances.length - 10} записей</div>` : ''}
+                `}
+            </div>
+        `;
     } catch (error) {
-        return { success: false, error: error.message };
-    }
-}
-
-// ============================================
-// ДОЛГ КОМПАНИИ
-// ============================================
-
-async function getCompanyDebt() {
-    try {
-        const debtRef = doc(db, 'companyDebt', EMPLOYEE_ID);
-        const debtSnap = await getDoc(debtRef);
-        if (debtSnap.exists()) {
-            return debtSnap.data();
-        }
-        return { totalDebt: 0, history: [] };
-    } catch (error) {
-        console.error('Ошибка загрузки долга компании:', error);
-        return { totalDebt: 0, history: [] };
-    }
-}
-
-async function addCompanyDebt(amount, weekKey, weekId, comment) {
-    try {
-        const debtRef = doc(db, 'companyDebt', EMPLOYEE_ID);
-        const current = await getCompanyDebt();
-        
-        const newHistory = current.history || [];
-        newHistory.push({
-            amount: parseFloat(amount) || 0,
-            weekKey: weekKey,
-            weekId: weekId,
-            date: new Date().toISOString(),
-            comment: comment || 'Невыплаченная часть зарплаты'
-        });
-        
-        const totalDebt = (current.totalDebt || 0) + (parseFloat(amount) || 0);
-        
-        await setDoc(debtRef, {
-            employeeId: EMPLOYEE_ID,
-            totalDebt: totalDebt,
-            history: newHistory,
-            updatedAt: new Date().toISOString()
-        });
-        
-        return { success: true, totalDebt };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-}
-
-async function reduceCompanyDebt(amount) {
-    try {
-        const debtRef = doc(db, 'companyDebt', EMPLOYEE_ID);
-        const current = await getCompanyDebt();
-        const newTotal = Math.max(0, (current.totalDebt || 0) - (parseFloat(amount) || 0));
-        
-        const newHistory = current.history || [];
-        newHistory.push({
-            amount: -(parseFloat(amount) || 0),
-            date: new Date().toISOString(),
-            comment: 'Погашено компанией'
-        });
-        
-        await setDoc(debtRef, {
-            employeeId: EMPLOYEE_ID,
-            totalDebt: newTotal,
-            history: newHistory,
-            updatedAt: new Date().toISOString()
-        });
-        
-        return { success: true, totalDebt: newTotal };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-}
-
-async function writeOffCompanyDebt(amount, comment) {
-    try {
-        const debtRef = doc(db, 'companyDebt', EMPLOYEE_ID);
-        const current = await getCompanyDebt();
-        
-        if (current.totalDebt < amount) {
-            return { success: false, error: 'Сумма превышает долг компании' };
-        }
-        
-        const newTotal = current.totalDebt - amount;
-        const newHistory = current.history || [];
-        newHistory.push({
-            amount: -amount,
-            date: new Date().toISOString(),
-            comment: comment || 'Списано компанией'
-        });
-        
-        await setDoc(debtRef, {
-            employeeId: EMPLOYEE_ID,
-            totalDebt: newTotal,
-            history: newHistory,
-            updatedAt: new Date().toISOString()
-        });
-        
-        return { success: true, totalDebt: newTotal };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-}
-
-// ============================================
-// ОТМЕТКА О ПОЛУЧЕНИИ ЗАРПЛАТЫ (ИСПРАВЛЕННАЯ)
-// ============================================
-
-async function markWeekAsPaid(weekId, amount, weekKey) {
-    try {
-        const weekRef = doc(db, 'salaryWeeks', weekId);
-        const weekSnap = await getDoc(weekRef);
-        if (!weekSnap.exists()) {
-            return { success: false, error: 'Неделя не найдена' };
-        }
-        const weekData = weekSnap.data();
-        
-        // Используем getFinalPay для получения суммы, которую компания ДОЛЖНА выплатить
-        // (зарплата минус погашенные авансы)
-        const { finalPay } = getFinalPay(weekData, settings);
-        const paidAmount = parseFloat(amount) || finalPay;
-
-        let companyDebtCreated = false;
-        let debtAmount = 0;
-        
-        // ⚠️ ВАЖНО: Долг компании считается ТОЛЬКО от finalPay
-        // Если заплатили меньше, чем должны были (с учётом погашенных авансов)
-        if (paidAmount < finalPay) {
-            debtAmount = finalPay - paidAmount;
-            const debtResult = await addCompanyDebt(
-                debtAmount,
-                weekKey,
-                weekId,
-                `Невыплаченная часть зарплаты за неделю ${weekKey}`
-            );
-            companyDebtCreated = debtResult.success;
-        }
-
-        await updateDoc(weekRef, {
-            isPaid: true,
-            paidAmount: paidAmount,
-            paidAt: new Date().toISOString(),
-            fullAmount: finalPay,    // ← теперь это finalPay, а не stats.total
-            companyDebt: finalPay - paidAmount  // ← только если paidAmount < finalPay
-        });
-
-        return {
-            success: true,
-            paidAmount,
-            fullAmount: finalPay,
-            companyDebtCreated,
-            companyDebtAmount: debtAmount
-        };
-    } catch (error) {
-        console.error('Ошибка отметки о выплате:', error);
-        return { success: false, error: error.message };
-    }
-}
-
-// ============================================
-// РЕДАКТИРОВАНИЕ СУММЫ ВЫПЛАТЫ (ИСПРАВЛЕННОЕ)
-// ============================================
-
-async function updateWeekPayment(weekId, newAmount, weekKey) {
-    try {
-        const weekRef = doc(db, 'salaryWeeks', weekId);
-        const weekSnap = await getDoc(weekRef);
-        if (!weekSnap.exists()) {
-            return { success: false, error: 'Неделя не найдена' };
-        }
-        const weekData = weekSnap.data();
-        
-        // Используем getFinalPay
-        const { finalPay } = getFinalPay(weekData, settings);
-        const paidAmount = parseFloat(newAmount) || 0;
-
-        await updateDoc(weekRef, {
-            paidAmount: paidAmount,
-            paidAt: new Date().toISOString(),
-            isPaid: paidAmount > 0
-        });
-
-        const oldPaid = weekData.paidAmount || 0;
-        const oldCompanyDebt = weekData.companyDebt || 0;
-        const newCompanyDebt = Math.max(0, finalPay - paidAmount);
-
-        if (oldCompanyDebt !== newCompanyDebt) {
-            const debtDiff = newCompanyDebt - oldCompanyDebt;
-            if (debtDiff > 0) {
-                await addCompanyDebt(debtDiff, weekKey, weekId, 'Корректировка долга компании');
-            } else if (debtDiff < 0) {
-                await reduceCompanyDebt(Math.abs(debtDiff));
-            }
-        }
-
-        await updateDoc(weekRef, {
-            fullAmount: finalPay,
-            companyDebt: newCompanyDebt
-        });
-
-        return { 
-            success: true, 
-            paidAmount,
-            fullAmount: finalPay,
-            companyDebt: newCompanyDebt,
-            isPaid: paidAmount > 0
-        };
-    } catch (error) {
-        console.error('Ошибка обновления выплаты:', error);
-        return { success: false, error: error.message };
+        console.error('Ошибка рендеринга финансов:', error);
+        container.innerHTML = `
+            <div style="text-align:center; padding: 20px; color: var(--red);">
+                ❌ Ошибка загрузки финансов
+            </div>
+        `;
     }
 }
 
@@ -357,6 +220,8 @@ async function loadEmployeeInfo() {
         if (docSnap.exists()) {
             const data = docSnap.data();
             employeeName = data.name || 'Сотрудник';
+            employeeRoomId = data.roomId || null;
+            console.log('👤 Имя сотрудника:', employeeName);
             
             const badge = document.getElementById('userBadge');
             const nameEl = document.getElementById('userName');
@@ -369,10 +234,6 @@ async function loadEmployeeInfo() {
             if (nameEl) nameEl.textContent = employeeName;
             if (avatarEl) avatarEl.textContent = employeeName.charAt(0).toUpperCase();
             if (idLabelEl) idLabelEl.textContent = `ID: ${EMPLOYEE_ID.substring(0, 8)}...`;
-            
-            document.getElementById('employeeNameHeader').textContent = employeeName;
-            document.getElementById('backLink').href = `employee.html?id=${EMPLOYEE_ID}`;
-            
             return data;
         }
     } catch (error) {
@@ -382,6 +243,8 @@ async function loadEmployeeInfo() {
             badge.style.display = 'flex';
             badge.title = `ID: ${EMPLOYEE_ID}`;
         }
+        const idLabelEl = document.getElementById('userIdLabel');
+        if (idLabelEl) idLabelEl.textContent = `ID: ${EMPLOYEE_ID.substring(0, 8)}...`;
     }
     return null;
 }
@@ -400,547 +263,652 @@ async function loadSettings() {
                 otLimit: data.otLimit || 5,
                 hpd: data.hpd || 8
             };
+            console.log('⚙️ Настройки загружены:', settings);
+            document.getElementById('rDay').value = settings.rDay;
+            document.getElementById('rExtra').value = settings.rExtra;
+            document.getElementById('rOt1').value = settings.rOt1;
+            document.getElementById('rOt2').value = settings.rOt2;
+            document.getElementById('otLimit').value = settings.otLimit;
+        } else {
+            console.log('⚙️ Настройки не найдены, используем дефолтные');
         }
     } catch (error) {
         console.warn('Не удалось загрузить настройки:', error);
     }
 }
 
-async function loadWeeks() {
+async function loadAttendance() {
     try {
-        const weeksRef = collection(db, 'salaryWeeks');
-        const q = query(weeksRef, where('employeeId', '==', EMPLOYEE_ID));
+        const attRef = collection(db, 'attendance');
+        const q = query(attRef, where('employeeId', '==', EMPLOYEE_ID));
         const snapshot = await getDocs(q);
-        const weeks = [];
+        allAttendance = {};
         snapshot.forEach((doc) => {
-            weeks.push({ id: doc.id, ...doc.data() });
+            const data = doc.data();
+            const date = data.date || 'unknown';
+            if (!allAttendance[date]) {
+                allAttendance[date] = [];
+            }
+            allAttendance[date].push({ id: doc.id, ...data });
         });
-        return weeks.sort((a, b) => b.weekKey.localeCompare(a.weekKey));
+        console.log('📋 Загружено отметок:', snapshot.size);
+        console.log('📋 allAttendance keys:', Object.keys(allAttendance));
+        return allAttendance;
     } catch (error) {
-        console.error('Ошибка загрузки недель:', error);
-        return [];
+        console.error('Ошибка загрузки отметок:', error);
+        return {};
+    }
+}
+
+async function loadWeekData(weekKey) {
+    try {
+        const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            console.log('📅 Загружена неделя из salaryWeeks:', weekKey, data);
+            return {
+                workDays: data.workDays || [true, true, true, true, true, false, false],
+                hours: data.hours || [NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, NORMAL_HOURS_PER_DAY, 0, 0],
+                isPaid: data.isPaid || false,
+                workStart: data.workStart || [getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), getDefaultStartTime(), '', ''],
+                workEnd: data.workEnd || [getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), getDefaultEndTime(), '', ''],
+                // ===== ЗАГРУЖАЕМ ВСЕ ПОЛЯ ДЛЯ КОРРЕКТНОГО ОТОБРАЖЕНИЯ =====
+                calculatedPay: data.calculatedPay || null,
+                calculatedDays: data.calculatedDays || null,
+                calculatedHours: data.calculatedHours || null,
+                calculatedOt: data.calculatedOt || null,
+                // ===== ЗАГРУЖАЕМ FIXED SALARY =====
+                fixedSalary: data.fixedSalary || null,
+                fixedHours: data.fixedHours || null,
+                fixedDays: data.fixedDays || null,
+                fixedOt: data.fixedOt || null
+            };
+        } else {
+            console.log('📅 Нет данных в salaryWeeks для недели:', weekKey);
+            return null;
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки:', error);
+        return null;
     }
 }
 
 // ============================================
-// РЕНДЕРИНГ
+// СОЗДАНИЕ ДАННЫХ ИЗ ОТМЕТОК
 // ============================================
 
-async function renderStats() {
-    const weekList = document.getElementById('weekList');
-    const weeksCount = document.getElementById('weeksCount');
+function buildDataFromAttendance(weekDates) {
+    const workDays = [false, false, false, false, false, false, false];
+    const hours = [0, 0, 0, 0, 0, 0, 0];
+    const workStart = ['', '', '', '', '', '', ''];
+    const workEnd = ['', '', '', '', '', '', ''];
     
-    try {
-        const weeks = await loadWeeks();
-        const allAdvances = await getEmployeeAdvances();
-        const activeAdvances = allAdvances.filter(a => a.status === 'active');
-        const companyDebt = await getCompanyDebt();
-        const totalDebt = activeAdvances.reduce((sum, a) => sum + a.amount, 0);
+    let hasAnyData = false;
+    
+    weekDates.forEach((dateObj, index) => {
+        const dateStr = getUTCDateStr(dateObj);
+        const logs = allAttendance[dateStr] || [];
         
-        let totalEarned = 0;
-        let totalReceived = 0;
-        
-        const sortedWeeks = weeks.sort((a, b) => b.weekKey.localeCompare(a.weekKey));
-        weeksCount.textContent = `${sortedWeeks.length} недель`;
-        
-        if (sortedWeeks.length === 0) {
-            weekList.innerHTML = `
-                <div class="empty-state">
-                    <div class="icon">📭</div>
-                    <div>Нет данных. Заполните расписание!</div>
-                </div>
-            `;
-            return;
-        }
-        
-        sortedWeeks.forEach(week => {
-            const stats = calculateWeekPay(week, settings);
-            totalEarned += stats.total;
-            if (week.isPaid) {
-                totalReceived += week.paidAmount || stats.total;
+        if (logs.length > 0) {
+            hasAnyData = true;
+            workDays[index] = true;
+            
+            const sorted = [...logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+            const firstIn = sorted.find(l => l.type === 'in');
+            const lastOut = [...sorted].reverse().find(l => l.type === 'out');
+            
+            if (firstIn) {
+                const time = new Date(firstIn.timestamp);
+                workStart[index] = time.toTimeString().slice(0, 5);
             }
+            if (lastOut && lastOut.timestamp > firstIn?.timestamp) {
+                const time = new Date(lastOut.timestamp);
+                workEnd[index] = time.toTimeString().slice(0, 5);
+            } else if (firstIn) {
+                const now = new Date();
+                workEnd[index] = now.toTimeString().slice(0, 5);
+            }
+            
+            if (workStart[index] && workEnd[index]) {
+                hours[index] = calculateHoursFromTime(workStart[index], workEnd[index]);
+            }
+        }
+    });
+    
+    return {
+        workDays: workDays,
+        hours: hours,
+        workStart: workStart,
+        workEnd: workEnd,
+        isPaid: false,
+        fromAttendance: true
+    };
+}
+
+function getDayAttendance(dateStr) {
+    const logs = allAttendance[dateStr] || [];
+    if (logs.length === 0) return null;
+    const sorted = [...logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    return sorted;
+}
+
+// ============================================
+// СОХРАНЕНИЕ РАСЧИТАННОЙ ЗАРПЛАТЫ В БД
+// ============================================
+
+async function saveCalculatedPay(weekKey, calculatedPay, days, totalHours, ot) {
+    try {
+        const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
+        await updateDoc(docRef, {
+            calculatedPay: Math.round(calculatedPay * 100) / 100,
+            calculatedDays: days,
+            calculatedHours: Math.round(totalHours * 100) / 100,
+            calculatedOt: Math.round(ot * 100) / 100,
+            calculatedAt: new Date().toISOString()
         });
-        
-        document.getElementById('totalEarned').textContent = totalEarned.toLocaleString() + ' ₽';
-        document.getElementById('totalReceived').textContent = totalReceived.toLocaleString() + ' ₽';
-        document.getElementById('totalDebt').textContent = totalDebt.toLocaleString() + ' ₽';
-        
-        const statsGrid = document.getElementById('statsGrid');
-        const oldDebtCard = statsGrid.querySelector('.stat-card:last-child');
-        if (oldDebtCard && oldDebtCard.textContent.includes('Долг компании')) {
-            oldDebtCard.remove();
-        }
-        if (oldDebtCard && oldDebtCard.textContent.includes('Списать долг')) {
-            oldDebtCard.remove();
-        }
-        
-        if (companyDebt.totalDebt > 0) {
-            statsGrid.innerHTML += `
-                <div class="stat-card" style="border-color: var(--amber);">
-                    <div class="label">Долг компании</div>
-                    <div class="value amber">${companyDebt.totalDebt.toLocaleString()} ₽</div>
-                    <button onclick="window.handleWriteOffDebt()" 
-                            style="margin-top:6px; background:var(--red); color:#fff; border:none; padding:4px 12px; border-radius:6px; cursor:pointer; font-size:.6rem;">
-                        🗑️ Списать долг
-                    </button>
-                </div>
-            `;
-        }
-        
-        let html = '';
-        sortedWeeks.forEach(week => {
-            const stats = calculateWeekPay(week, settings);
-            const weekNum = getWeekNumber(week.weekKey);
-            const dateRange = formatDateRange(week.weekKey);
-            const isPaid = week.isPaid || false;
-            const paidAmount = week.paidAmount || 0;
-            const debtRepaid = week.debtRepaid || false;
-            const repaidAmount = week.repaidAmount || 0;
-            const companyDebtAmount = week.companyDebt || 0;
-            const fullAmount = stats.total;
-            
-            // Используем getFinalPay для корректного отображения
-            const { finalPay } = getFinalPay(week, settings);
-            
-            const totalActiveDebt = activeAdvances.reduce((sum, a) => sum + a.amount, 0);
-            
-            let statusText = isPaid ? '✅ Получено' : '⏳ Ожидает';
-            let statusClass = isPaid ? 'paid' : 'unpaid';
-            
-            const hasCompanyDebt = companyDebtAmount > 0;
-            const weekRepaidAmount = week.repaidAmount || 0;
-            const hasRepaid = weekRepaidAmount > 0;
-            
-            html += `
-                <div class="week-item">
-                    <div class="week-header">
-                        <div>
-                            <span class="week-title">Неделя ${weekNum}</span>
-                            ${hasRepaid ? ' <span class="debt-badge" style="background:rgba(62,207,168,.15);border-color:var(--teal);">💳 Погашен аванс</span>' : ''}
-                            ${hasCompanyDebt ? ' <span class="debt-badge" style="background:rgba(255,181,46,.2);border-color:var(--amber);">🏢 Долг компании</span>' : ''}
-                        </div>
-                        <span class="week-date">${dateRange}</span>
-                    </div>
-                    <div class="week-details">
-                        <div class="detail-item">
-                            <div class="dlabel">Дней</div>
-                            <div class="dvalue">${stats.days}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="dlabel">Часов</div>
-                            <div class="dvalue">${formatHours(stats.totalHours)}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="dlabel">Переработка</div>
-                            <div class="dvalue ${stats.ot > 0 ? 'debt' : 'mut'}">${stats.ot > 0 ? formatHours(stats.ot) + ' ч' : '—'}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="dlabel">Зарплата</div>
-                            <div class="dvalue amber">${stats.total.toLocaleString()} ₽</div>
-                        </div>
-                        ${hasRepaid ? `
-                            <div class="detail-item" style="border:1px solid var(--teal); border-radius:6px; grid-column: span 2; background:rgba(62,207,168,.05);">
-                                <div class="dlabel" style="color:var(--teal);">💳 Погашено аванса</div>
-                                <div class="dvalue" style="color:var(--red);">-${weekRepaidAmount.toLocaleString()} ₽</div>
-                            </div>
-                            <div class="detail-item">
-                                <div class="dlabel">К выплате</div>
-                                <div class="dvalue amber">${finalPay.toLocaleString()} ₽</div>
-                            </div>
-                        ` : ''}
-                        <div class="detail-item">
-                            <div class="dlabel">Статус</div>
-                            <div class="dvalue ${statusClass}">${statusText}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="dlabel">${isPaid ? 'Получено' : 'К получению'}</div>
-                            <div class="dvalue ${isPaid ? 'paid' : 'unpaid'}">${isPaid ? paidAmount.toLocaleString() : (hasRepaid ? finalPay.toLocaleString() : stats.total.toLocaleString())} ₽</div>
-                        </div>
-                        ${hasCompanyDebt ? `
-                            <div class="detail-item" style="grid-column: span 3;">
-                                <div class="dlabel" style="color:var(--amber);">🏢 Долг компании</div>
-                                <div class="dvalue amber">${companyDebtAmount.toLocaleString()} ₽</div>
-                            </div>
-                        ` : ''}
-                    </div>
-                    
-                    <!-- ===== БЛОК ПОГАШЕНИЯ АВАНСА ===== -->
-                    ${!isPaid && totalActiveDebt > 0 ? `
-                        <div class="week-actions" style="border-top: 2px solid var(--amber); margin-top:6px; padding-top:8px;">
-                            <div style="width:100%; font-size:.75rem; color:var(--amber); margin-bottom:4px;">
-                                💰 Активных долгов: ${activeAdvances.length} (всего: ${totalActiveDebt.toLocaleString()} ₽)
-                            </div>
-                            <div style="display:flex; flex-wrap:wrap; gap:6px; width:100%;">
-                                ${activeAdvances.map((advance, index) => `
-                                    <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:200px; padding:4px 0; border-top: ${index > 0 ? '1px solid var(--line)' : 'none'};">
-                                        <span style="font-size:.7rem; flex:1; min-width:60px;">
-                                            #${index + 1}: ${advance.amount.toLocaleString()} ₽
-                                            ${advance.comment ? `(${advance.comment})` : ''}
-                                        </span>
-                                        <div class="pay-input-group" style="flex:0;">
-                                            <input type="number" id="repayAmount_${week.id}_${advance.id}" placeholder="Сумма" value="${Math.min(advance.amount, stats.total)}" step="100" min="0" max="${advance.amount}" style="width:80px; padding:4px 6px; border-radius:4px; border:1px solid var(--line); background:var(--bg2); color:var(--txt); font-size:.75rem; text-align:center;">
-                                        </div>
-                                        <button class="btn-small amber" onclick="window.handleRepayAdvance('${week.id}', '${week.weekKey}', '${advance.id}', ${advance.amount})" style="flex:0; padding:4px 12px; min-width:44px; font-size:.7rem;">
-                                            💳
-                                        </button>
-                                    </div>
-                                `).join('')}
-                            </div>
-                            <div style="font-size:.65rem; color:var(--mut); margin-top:4px;">
-                                💡 Погашение аванса уменьшит сумму к выплате
-                            </div>
-                        </div>
-                    ` : ''}
-                    
-                    <!-- ===== БЛОК ПОЛУЧЕНИЯ ЗАРПЛАТЫ ===== -->
-                    ${!isPaid ? `
-                        <div class="week-actions" style="border-top: 1px solid var(--line); margin-top:6px; padding-top:8px;">
-                            <div class="pay-input-group">
-                                <input type="number" id="payAmount_${week.id}" placeholder="Сумма" value="${hasRepaid ? finalPay : stats.total}" step="100" min="0">
-                                <span style="font-size:.7rem; color:var(--mut);">₽</span>
-                            </div>
-                            <button class="btn-small amber" onclick="window.handleMarkPaid('${week.id}', '${week.weekKey}')">
-                                ✅ Получено
-                            </button>
-                            <div style="font-size:.65rem; color:var(--mut); width:100%; margin-top:2px;">
-                                💡 ${hasRepaid ? 'Сумма к выплате уменьшена на погашенный аванс' : 'Можно получить зарплату, не погашая аванс'}
-                            </div>
-                        </div>
-                    ` : `
-                        <div class="week-actions">
-                            <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; flex:1;">
-                                <span style="font-size:.7rem; color:var(--mut);">
-                                    Получено: <strong>${paidAmount.toLocaleString()} ₽</strong>
-                                    ${week.paidAt ? ` (${formatDate(week.paidAt)})` : ''}
-                                </span>
-                                ${week.companyDebt > 0 ? `
-                                    <span style="font-size:.7rem; color:var(--amber);">🏢 Долг: ${week.companyDebt.toLocaleString()} ₽</span>
-                                ` : ''}
-                            </div>
-                            <button class="btn-small ghost" onclick="window.handleEditPayment('${week.id}', ${paidAmount}, ${hasRepaid ? finalPay : stats.total}, '${week.weekKey}')" style="flex:0;">
-                                ✏️
-                            </button>
-                        </div>
-                    `}
-                </div>
-            `;
-        });
-        
-        weekList.innerHTML = html;
-        
+        console.log('💾 Сохранена расчётная зарплата:', { calculatedPay, days, totalHours, ot });
+        return true;
     } catch (error) {
-        console.error('Ошибка рендеринга:', error);
-        weekList.innerHTML = `
-            <div class="empty-state">
-                <div class="icon">❌</div>
-                <div>Ошибка загрузки: ${error.message}</div>
-            </div>
+        console.error('Ошибка сохранения calculatedPay:', error);
+        return false;
+    }
+}
+
+// ============================================
+// ПОСТРОЕНИЕ UI
+// ============================================
+
+function buildUI() {
+    const daysBox = document.getElementById('days');
+    daysBox.innerHTML = '';
+    DAY_NAMES.forEach((n, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'day';
+        b.dataset.i = i;
+        b.innerHTML = `<b>${n}</b><i></i>`;
+        b.disabled = true;
+        b.style.cursor = 'default';
+        b.style.opacity = '0.6';
+        daysBox.appendChild(b);
+    });
+    
+    const timeGroup = document.getElementById('dayTimeGroup');
+    timeGroup.innerHTML = '';
+    DAY_NAMES.forEach((n, i) => {
+        const div = document.createElement('div');
+        div.className = 'day-time-item';
+        div.innerHTML = `
+            <span class="day-label">${n}</span>
+            <input type="time" class="time-start" value="" disabled>
+            <input type="time" class="time-end" value="" disabled>
+            <span class="time-hours">⏱ <strong>0</strong> ч</span>
+            <span class="time-from-attendance" style="font-size:.45rem;color:var(--teal);font-family:var(--mono);margin-top:1px;display:none;"></span>
         `;
-    }
+        timeGroup.appendChild(div);
+    });
+}
+
+function updateWeekLabel(dates) {
+    const mon = dates[0];
+    const sun = dates[6];
+    const weekKey = getWeekKeyUTC(mon);
+    const today = new Date();
+    const todayWeek = getWeekKeyUTC(today);
+    const isCurrent = weekKey === todayWeek;
+    document.getElementById('weekRange').textContent = `${formatDateDisplay(mon)} – ${formatDateDisplay(sun)}`;
+    document.getElementById('weekSub').textContent = isCurrent ? 'текущая неделя' : weekKey;
 }
 
 // ============================================
-// ОБРАБОТЧИКИ (ЭКСПОРТИРУЕМ В WINDOW)
+// ОБНОВЛЕНИЕ ВРЕМЕНИ
 // ============================================
 
-// Отметка о получении зарплаты
-window.handleMarkPaid = async function(weekId, weekKey) {
-    const input = document.getElementById(`payAmount_${weekId}`);
-    if (!input) return;
+function updateTimeInputs() {
+    if (!currentData) return;
+    const { workDays, workStart, workEnd } = currentData;
+    const items = document.querySelectorAll('.day-time-item');
+    const dates = getWeekDatesUTC(currentWeekOffset);
     
-    const amount = parseFloat(input.value);
-    if (!amount || amount <= 0) {
-        alert('❌ Введите корректную сумму');
-        return;
-    }
-    
-    const weeks = await loadWeeks();
-    const week = weeks.find(w => w.id === weekId);
-    if (!week) return;
-    
-    // Используем getFinalPay для получения суммы к выплате
-    const { finalPay } = getFinalPay(week, settings);
-    
-    if (amount > finalPay) {
-        if (!confirm(`Сумма (${amount.toLocaleString()} ₽) превышает сумму к выплате (${finalPay.toLocaleString()} ₽). Продолжить?`)) {
-            return;
-        }
-    }
-    
-    const message = amount < finalPay 
-        ? `Отметить неделю как полученную на ${amount.toLocaleString()} ₽?\nНевыплаченная часть (${(finalPay - amount).toLocaleString()} ₽) будет записана как долг компании.`
-        : `Отметить неделю как полученную на ${amount.toLocaleString()} ₽?`;
-    
-    if (!confirm(message)) return;
-    
-    try {
-        const result = await markWeekAsPaid(weekId, amount, weekKey);
-        if (result.success) {
-            let msg = `✅ Неделя отмечена как полученная!\nПолучено: ${result.paidAmount.toLocaleString()} ₽`;
-            if (result.companyDebtAmount > 0) {
-                msg += `\n🏢 Долг компании: ${result.companyDebtAmount.toLocaleString()} ₽`;
-            }
-            alert(msg);
-            await renderStats();
-        } else {
-            alert('❌ Ошибка: ' + result.error);
-        }
-    } catch (error) {
-        alert('❌ Ошибка: ' + error.message);
-    }
-};
-
-// Погашение конкретного аванса
-window.handleRepayAdvance = async function(weekId, weekKey, advanceId, advanceAmount) {
-    const input = document.getElementById(`repayAmount_${weekId}_${advanceId}`);
-    if (!input) return;
-    
-    const amount = parseFloat(input.value);
-    if (!amount || amount <= 0) {
-        alert('❌ Введите корректную сумму');
-        return;
-    }
-    
-    if (amount > advanceAmount) {
-        alert(`❌ Сумма (${amount.toLocaleString()} ₽) превышает долг (${advanceAmount.toLocaleString()} ₽)`);
-        return;
-    }
-    
-    const weeks = await loadWeeks();
-    const week = weeks.find(w => w.id === weekId);
-    if (!week) {
-        alert('❌ Неделя не найдена');
-        return;
-    }
-    const stats = calculateWeekPay(week, settings);
-    const currentRepaid = week.repaidAmount || 0;
-    const maxRepay = stats.total - currentRepaid;
-    
-    if (amount > maxRepay) {
-        alert(`❌ Недостаточно средств. Доступно для погашения: ${maxRepay.toLocaleString()} ₽`);
-        return;
-    }
-    
-    const isFullyRepaid = amount >= advanceAmount;
-    const message = isFullyRepaid
-        ? `Погасить аванс полностью (${amount.toLocaleString()} ₽) из зарплаты за неделю ${weekKey}?`
-        : `Погасить часть аванса (${amount.toLocaleString()} ₽) из зарплаты за неделю ${weekKey}? Остаток: ${(advanceAmount - amount).toLocaleString()} ₽`;
-    
-    if (!confirm(message)) return;
-    
-    try {
-        const result = await repayAdvance(advanceId, amount, weekId, weekKey);
-        if (result.success) {
-            const weekRef = doc(db, 'salaryWeeks', weekId);
-            const newRepaidAmount = currentRepaid + amount;
-            
-            await updateDoc(weekRef, {
-                debtRepaid: true,
-                repaidAmount: newRepaidAmount
+    items.forEach((item, i) => {
+        const startInput = item.querySelector('.time-start');
+        const endInput = item.querySelector('.time-end');
+        const hoursDisplay = item.querySelector('.time-hours strong');
+        const attendanceDisplay = item.querySelector('.time-from-attendance');
+        
+        item.classList.remove('work-day', 'extra-day');
+        
+        const dateObj = dates[i];
+        const dateStr = getUTCDateStr(dateObj);
+        const attLogs = getDayAttendance(dateStr);
+        
+        if (attLogs && attLogs.length > 0) {
+            const times = attLogs.map(l => {
+                const t = new Date(l.timestamp);
+                return t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
             });
+            attendanceDisplay.textContent = `📌 ${times.join(' → ')}`;
+            attendanceDisplay.style.display = 'block';
+            attendanceDisplay.style.color = 'var(--teal)';
+        }
+        
+        if (workDays[i]) {
+            startInput.value = workStart[i] || getDefaultStartTime();
+            endInput.value = workEnd[i] || getDefaultEndTime();
             
-            alert(`✅ Аванс погашен!\nПогашено: ${result.repaidAmount.toLocaleString()} ₽\n${result.fullyRepaid ? '✅ Аванс полностью погашен' : '⏳ Остаток: ' + (advanceAmount - amount).toLocaleString() + ' ₽'}`);
-            await renderStats();
-        } else {
-            alert('❌ Ошибка: ' + result.error);
-        }
-    } catch (error) {
-        alert('❌ Ошибка: ' + error.message);
-    }
-};
-
-// Редактирование выплаты
-window.handleEditPayment = function(weekId, currentAmount, fullAmount, weekKey) {
-    const modal = document.createElement('div');
-    modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,.7);
-        backdrop-filter: blur(4px);
-        z-index: 1001;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
-    `;
-    modal.innerHTML = `
-        <div style="background: var(--card); border-radius: 16px; padding: 24px; max-width: 420px; width: 100%; border: 1px solid var(--line);">
-            <h3 style="font-family: var(--display); color: var(--amber); margin-bottom: 4px;">✏️ Редактировать выплату</h3>
-            <div style="color: var(--mut); font-size: .85rem; margin-bottom: 16px;">Неделя ${weekKey}</div>
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: .75rem; color: var(--mut); display: block; margin-bottom: 4px;">Сумма к выплате</label>
-                <div style="font-size: 1.1rem; font-weight: bold; color: var(--amber);">${fullAmount.toLocaleString()} ₽</div>
-            </div>
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: .75rem; color: var(--mut); display: block; margin-bottom: 4px;">Фактически выплачено</label>
-                <input type="number" id="editPaymentInput" value="${currentAmount}" min="0" step="100"
-                       style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--txt); font-size: 1rem;">
-            </div>
-            <div style="margin-bottom: 12px; padding: 8px 12px; background: rgba(255,181,46,.06); border-radius: 8px; border: 1px dashed var(--amber);">
-                <div style="display: flex; justify-content: space-between; font-size: .8rem;">
-                    <span style="color: var(--mut);">Долг компании:</span>
-                    <span style="color: var(--amber); font-weight: bold;" id="previewDebt">${(fullAmount - currentAmount).toLocaleString()} ₽</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: .8rem;">
-                    <span style="color: var(--mut);">Статус:</span>
-                    <span style="color: var(--teal); font-weight: bold;" id="previewStatus">${currentAmount > 0 ? '✅ Выплачено' : '⏳ Не выплачено'}</span>
-                </div>
-            </div>
-            <div style="display: flex; gap: 10px; margin-top: 8px;">
-                <button id="saveEditPayment" class="btn btn-amber" style="flex:1;">💾 Сохранить</button>
-                <button id="cancelEditPayment" class="btn btn-ghost" style="flex:1;">Отмена</button>
-            </div>
-            <div id="editError" style="color: var(--red); margin-top: 10px; font-size: .8rem;"></div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    
-    const input = modal.querySelector('#editPaymentInput');
-    const previewDebt = modal.querySelector('#previewDebt');
-    const previewStatus = modal.querySelector('#previewStatus');
-    
-    input.addEventListener('input', function() {
-        const val = parseFloat(this.value) || 0;
-        const debt = Math.max(0, fullAmount - val);
-        previewDebt.textContent = debt.toLocaleString() + ' ₽';
-        previewDebt.style.color = debt > 0 ? 'var(--amber)' : 'var(--teal)';
-        previewStatus.textContent = val > 0 ? '✅ Выплачено' : '⏳ Не выплачено';
-        previewStatus.style.color = val > 0 ? 'var(--teal)' : 'var(--red)';
-    });
-    
-    modal.querySelector('#cancelEditPayment').addEventListener('click', () => modal.remove());
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) modal.remove();
-    });
-    
-    modal.querySelector('#saveEditPayment').addEventListener('click', async () => {
-        const newAmount = parseFloat(input.value);
-        const errorEl = modal.querySelector('#editError');
-        
-        if (isNaN(newAmount) || newAmount < 0) {
-            errorEl.textContent = '❌ Введите корректную сумму';
-            return;
-        }
-        
-        if (newAmount === currentAmount) {
-            modal.remove();
-            return;
-        }
-        
-        try {
-            const result = await updateWeekPayment(weekId, newAmount, weekKey);
-            if (result.success) {
-                alert(`✅ Сумма выплаты обновлена!\nПолучено: ${result.paidAmount.toLocaleString()} ₽\n${result.companyDebt > 0 ? '🏢 Долг компании: ' + result.companyDebt.toLocaleString() + ' ₽' : '✅ Долг погашен'}`);
-                modal.remove();
-                await renderStats();
+            if (attLogs && attLogs.length > 0) {
+                const firstIn = attLogs.find(l => l.type === 'in');
+                const lastOut = [...attLogs].reverse().find(l => l.type === 'out');
+                if (firstIn && lastOut && firstIn.timestamp < lastOut.timestamp) {
+                    const h = calculateHoursFromTime(
+                        new Date(firstIn.timestamp).toTimeString().slice(0, 5),
+                        new Date(lastOut.timestamp).toTimeString().slice(0, 5)
+                    );
+                    hoursDisplay.textContent = formatHours(h);
+                } else if (firstIn) {
+                    const now = new Date();
+                    const diffMs = now - new Date(firstIn.timestamp);
+                    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+                    const h = Math.round(diffMinutes / 60 * 100) / 100;
+                    hoursDisplay.textContent = formatHours(h) + ' (в процессе)';
+                }
             } else {
-                errorEl.textContent = '❌ ' + result.error;
+                const h = calculateHoursFromTime(startInput.value, endInput.value);
+                hoursDisplay.textContent = formatHours(h);
+                if (!currentData.fromAttendance) {
+                    attendanceDisplay.textContent = '⏳ план';
+                    attendanceDisplay.style.display = 'block';
+                    attendanceDisplay.style.color = 'var(--mut)';
+                }
             }
-        } catch (error) {
-            errorEl.textContent = '❌ ' + error.message;
+            
+            const dayIndex = workDays.slice(0, i).filter(Boolean).length;
+            const isExtra = dayIndex >= 5;
+            item.classList.add('work-day');
+            if (isExtra) {
+                item.classList.add('extra-day');
+            }
+        } else {
+            startInput.value = '';
+            endInput.value = '';
+            hoursDisplay.textContent = '0';
+            if (!attLogs || attLogs.length === 0) {
+                attendanceDisplay.textContent = '';
+                attendanceDisplay.style.display = 'none';
+            }
         }
     });
-};
+}
 
-// Списание долга компании
-window.handleWriteOffDebt = async function() {
-    const companyDebt = await getCompanyDebt();
-    if (companyDebt.totalDebt <= 0) {
-        alert('Нет долга компании для списания');
+// ============================================
+// ОСНОВНАЯ ФУНКЦИЯ ОБНОВЛЕНИЯ UI + СОХРАНЕНИЕ В БД
+// ============================================
+
+async function update() {
+    if (!currentData) {
+        console.warn('⚠️ currentData is null, пропускаем update');
         return;
     }
     
-    const modal = document.createElement('div');
-    modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,.7);
-        backdrop-filter: blur(4px);
-        z-index: 1001;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
-    `;
-    modal.innerHTML = `
-        <div style="background: var(--card); border-radius: 16px; padding: 24px; max-width: 400px; width: 100%; border: 1px solid var(--line);">
-            <h3 style="font-family: var(--display); color: var(--amber); margin-bottom: 4px;">🗑️ Списать долг компании</h3>
-            <div style="color: var(--mut); font-size: .85rem; margin-bottom: 16px;">
-                Текущий долг: <strong style="color:var(--amber);">${companyDebt.totalDebt.toLocaleString()} ₽</strong>
-            </div>
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: .75rem; color: var(--mut); display: block; margin-bottom: 4px;">Сумма для списания</label>
-                <input type="number" id="writeOffAmount" value="${companyDebt.totalDebt}" min="0" max="${companyDebt.totalDebt}" step="100"
-                       style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--txt); font-size: 1rem;">
-            </div>
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: .75rem; color: var(--mut); display: block; margin-bottom: 4px;">Комментарий</label>
-                <input type="text" id="writeOffComment" placeholder="Причина списания" 
-                       style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--txt); font-size: 1rem;">
-            </div>
-            <div style="display: flex; gap: 10px; margin-top: 8px;">
-                <button id="saveWriteOff" class="btn btn-amber" style="flex:1;">✅ Списать</button>
-                <button id="cancelWriteOff" class="btn btn-ghost" style="flex:1;">Отмена</button>
-            </div>
-            <div id="writeOffError" style="color: var(--red); margin-top: 10px; font-size: .8rem;"></div>
-        </div>
-    `;
-    document.body.appendChild(modal);
+    const { workDays, hours, workStart, workEnd } = currentData;
+    const dates = getWeekDatesUTC(currentWeekOffset);
+    const weekKey = getWeekKeyUTC(dates[0]);
     
-    modal.querySelector('#cancelWriteOff').addEventListener('click', () => modal.remove());
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) modal.remove();
+    console.log('🔄 update() вызван, weekKey:', weekKey);
+    console.log('📊 currentData:', currentData);
+    
+    // ===== 1. БАЗОВЫЙ РАСЧЁТ =====
+    let stats = calculateWeekPay(currentData, settings);
+    console.log('📊 stats (базовый):', stats);
+    
+    // ===== 2. ЕСЛИ ЕСТЬ FIXED SALARY — ИСПОЛЬЗУЕМ ЕГО =====
+    if (currentData.fixedSalary !== undefined && currentData.fixedSalary !== null && currentData.fixedSalary > 0) {
+        console.log('📌 Используем fixedSalary:', currentData.fixedSalary);
+        stats = {
+            ...stats,
+            total: currentData.fixedSalary,
+            totalHours: currentData.fixedHours !== undefined && currentData.fixedHours !== null ? currentData.fixedHours : stats.totalHours,
+            days: currentData.fixedDays !== undefined && currentData.fixedDays !== null ? currentData.fixedDays : stats.days,
+            ot: currentData.fixedOt !== undefined && currentData.fixedOt !== null ? currentData.fixedOt : stats.ot
+        };
+    }
+    
+    console.log('📊 stats (итоговый):', stats);
+    
+    const days = stats.days;
+    const totalHours = stats.totalHours;
+    const norm = stats.norm;
+    const ot = stats.ot;
+    const ot1 = stats.ot1;
+    const ot2 = stats.ot2;
+    const payBase = stats.payBase;
+    const payExtra = stats.payExtra;
+    const payOt1 = stats.payOt1;
+    const payOt2 = stats.payOt2;
+    const total = stats.total;
+    
+    // ===== 3. СОХРАНЯЕМ РАСЧИТАННУЮ СУММУ В БД =====
+    // Это гарантирует, что admin-dashboard будет показывать ТУ ЖЕ сумму
+    await saveCalculatedPay(weekKey, total, days, totalHours, ot);
+    
+    // Обновляем дни
+    document.querySelectorAll('#days .day').forEach((b, i) => {
+        const on = workDays[i];
+        b.classList.toggle('on', on);
+        const dayIndex = workDays.slice(0, i).filter(Boolean).length;
+        const isExtra = on && dayIndex >= 5;
+        b.classList.toggle('extra', isExtra);
+        const rate = isExtra ? settings.rExtra : settings.rDay;
+        b.querySelector('i').textContent = rate.toLocaleString() + ' ₽';
     });
     
-    modal.querySelector('#saveWriteOff').addEventListener('click', async () => {
-        const amount = parseFloat(modal.querySelector('#writeOffAmount').value);
-        const comment = modal.querySelector('#writeOffComment').value.trim() || 'Списано компанией';
-        const errorEl = modal.querySelector('#writeOffError');
-        
-        if (!amount || amount <= 0) {
-            errorEl.textContent = '❌ Введите корректную сумму';
-            return;
-        }
-        
-        if (amount > companyDebt.totalDebt) {
-            errorEl.textContent = `❌ Сумма превышает долг (${companyDebt.totalDebt.toLocaleString()} ₽)`;
-            return;
-        }
-        
-        if (!confirm(`Списать ${amount.toLocaleString()} ₽ из долга компании?`)) {
-            return;
-        }
-        
-        try {
-            const result = await writeOffCompanyDebt(amount, comment);
-            if (result.success) {
-                alert(`✅ Долг компании списан!\nСписано: ${amount.toLocaleString()} ₽\nОстаток: ${result.totalDebt.toLocaleString()} ₽`);
-                modal.remove();
-                await renderStats();
-            } else {
-                errorEl.textContent = '❌ ' + result.error;
-            }
-        } catch (error) {
-            errorEl.textContent = '❌ ' + error.message;
-        }
-    });
-};
+    updateTimeInputs();
+    
+    document.getElementById('dOut').textContent = days;
+    document.getElementById('normOut').textContent = `норма: ${norm.toFixed(1).replace('.', ',')} ч (${days} дн × ${settings.hpd} ч)`;
+    
+    const otB = document.getElementById('otBadge');
+    const uwB = document.getElementById('uwBadge');
+    if (ot > 0) {
+        otB.hidden = false;
+        otB.textContent = `переработка +${formatHours(ot)} ч`;
+        otB.className = 'badge ' + (ot2 > 0 ? 'hot' : 'ot');
+    } else {
+        otB.hidden = true;
+    }
+    if (days > 0 && totalHours < norm) {
+        uwB.hidden = false;
+        uwB.textContent = `меньше нормы на ${formatHours(norm - totalHours)} ч`;
+    } else {
+        uwB.hidden = true;
+    }
+    
+    // СТРОКИ РАСЧЕТА
+    document.getElementById('qBase').textContent = `${days} дн × ${settings.rDay.toLocaleString()} ₽ (пропорционально)`;
+    document.getElementById('vBase').textContent = payBase.toLocaleString() + ' ₽';
+    
+    const rowExtra = document.getElementById('rowExtra');
+    const extraDaysCount = Math.max(0, Math.min(2, days - 5));
+    if (extraDaysCount === 0) {
+        rowExtra.classList.add('gone');
+    } else {
+        rowExtra.classList.remove('gone');
+        document.getElementById('qExtra').textContent = `${extraDaysCount} дн × ${settings.rExtra.toLocaleString()} ₽ (пропорционально)`;
+        document.getElementById('vExtra').textContent = payExtra.toLocaleString() + ' ₽';
+    }
+    
+    const rowOt1 = document.getElementById('rowOt1');
+    if (ot1 === 0) {
+        rowOt1.classList.add('gone');
+    } else {
+        rowOt1.classList.remove('gone');
+        document.getElementById('qOt1').textContent = `${formatHours(ot1)} ч × ${settings.rOt1.toLocaleString()} ₽`;
+        document.getElementById('vOt1').textContent = payOt1.toLocaleString() + ' ₽';
+    }
+    
+    const rowOt2 = document.getElementById('rowOt2');
+    if (ot2 === 0) {
+        rowOt2.classList.add('gone');
+    } else {
+        rowOt2.classList.remove('gone');
+        document.getElementById('qOt2').textContent = `${formatHours(ot2)} ч × ${settings.rOt2.toLocaleString()} ₽`;
+        document.getElementById('vOt2').textContent = payOt2.toLocaleString() + ' ₽';
+    }
+    
+    const scale = Math.max(totalHours, norm, 1);
+    document.getElementById('bNorm').style.width = (Math.min(totalHours, norm) / scale * 100) + '%';
+    document.getElementById('bOt1').style.width = (ot1 / scale * 100) + '%';
+    document.getElementById('bOt2').style.width = (ot2 / scale * 100) + '%';
+    document.getElementById('lNorm').textContent = formatHours(Math.min(totalHours, norm)) + ' ч';
+    document.getElementById('lOt1').textContent = formatHours(ot1) + ' ч';
+    document.getElementById('lOt2').textContent = formatHours(ot2) + ' ч';
+    
+    document.getElementById('totalOut').textContent = total.toLocaleString();
+    const stamp = document.getElementById('stamp');
+    stamp.classList.remove('pop');
+    void stamp.offsetWidth;
+    stamp.classList.add('pop');
+    
+    const parts = [];
+    if (payBase > 0) parts.push(`<b class="f-n">${days}×${settings.rDay.toLocaleString()}</b>`);
+    if (payExtra > 0) parts.push(`<b class="f-n">${extraDaysCount}×${settings.rExtra.toLocaleString()}</b>`);
+    if (ot1 > 0) parts.push(`<b class="f-1">${formatHours(ot1)}×${settings.rOt1.toLocaleString()}</b>`);
+    if (ot2 > 0) parts.push(`<b class="f-2">${formatHours(ot2)}×${settings.rOt2.toLocaleString()}</b>`);
+    document.getElementById('formula').innerHTML = parts.length ? parts.join(' + ') + ` = ${total.toLocaleString()} ₽` : '—';
+    
+    document.getElementById('metaLine').textContent =
+        `отработано ${formatHours(totalHours)} ч · норма ${formatHours(norm)} ч`;
+    
+    document.getElementById('chip1').textContent = `1–5 день · ${settings.rDay.toLocaleString()} ₽`;
+    document.getElementById('chip2').textContent = `6–7 день · ${settings.rExtra.toLocaleString()} ₽`;
+    document.getElementById('chip3').textContent = `переработка · ${settings.rOt1.toLocaleString()} / ${settings.rOt2.toLocaleString()} ₽/ч`;
+    
+    const mon = dates[0];
+    const sun = dates[6];
+    const weekLabel = `неделя №${weekKey.replace('W', '')} · ${formatDateDisplay(mon)} – ${formatDateDisplay(sun)}`;
+    document.getElementById('eyebrow').textContent = `Табель · ${weekLabel}`;
+    document.getElementById('wk').textContent = weekLabel;
+}
 
 // ============================================
 // ИНИЦИАЛИЗАЦИЯ
 // ============================================
 
 async function init() {
-    await loadEmployeeInfo();
+    console.log('🚀 Запуск employee-view (только просмотр)...');
+    console.log('📌 EMPLOYEE_ID:', EMPLOYEE_ID);
+    
     await loadSettings();
-    await renderStats();
+    await loadEmployeeInfo();
+    await loadAttendance();
+    buildUI();
+    
+    updateStatsLink();
+    
+    const dates = getWeekDatesUTC(0);
+    const weekKey = getWeekKeyUTC(dates[0]);
+    console.log('📅 Текущая неделя (UTC):', weekKey);
+    console.log('📅 Даты недели:', dates.map(d => getUTCDateStr(d)));
+    
+    // Пытаемся загрузить данные из salaryWeeks
+    let weekData = await loadWeekData(weekKey);
+    
+    if (!weekData) {
+        console.log('⚠️ Данных в salaryWeeks нет, создаём из отметок');
+        weekData = buildDataFromAttendance(dates);
+        weekData.fromAttendance = true;
+        
+        // Сразу создаём документ в salaryWeeks, чтобы потом сохранить calculatedPay
+        try {
+            const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
+            await setDoc(docRef, {
+                employeeId: EMPLOYEE_ID,
+                weekKey: weekKey,
+                workDays: weekData.workDays,
+                hours: weekData.hours,
+                workStart: weekData.workStart,
+                workEnd: weekData.workEnd,
+                isPaid: false,
+                fromAttendance: true,
+                createdAt: new Date().toISOString()
+            }, { merge: true });
+            console.log('✅ Создан документ недели из отметок');
+        } catch (error) {
+            console.error('❌ Ошибка создания документа:', error);
+        }
+        
+        if (weekData.workDays.some(d => d === true)) {
+            console.log('✅ Созданы данные из отметок:', weekData);
+            document.querySelector('.sub').innerHTML = `
+                📋 Данные автоматически построены из отметок.
+                <span style="color:var(--amber);">Для точного расчёта обратитесь к администратору.</span>
+                <span class="view-only-badge">🔒 Только просмотр</span>
+            `;
+        } else {
+            console.log('⚠️ Нет отметок за эту неделю');
+            document.querySelector('.sub').innerHTML = `
+                📋 Нет данных за эту неделю.
+                <span style="color:var(--amber);">Обратитесь к руководителю.</span>
+                <span class="view-only-badge">🔒 Только просмотр</span>
+            `;
+        }
+    } else {
+        weekData.fromAttendance = false;
+        console.log('✅ Загружены данные из salaryWeeks');
+    }
+    
+    currentData = weekData;
+    updateWeekLabel(dates);
+    await update(); // <-- теперь сохраняет calculatedPay в БД (с учётом fixedSalary)
+    
+    await renderEmployeeFinance();
+    
+    // Обработчики навигации
+    document.getElementById('weekPrev').addEventListener('click', async () => {
+        console.log('◀️ Предыдущая неделя');
+        currentWeekOffset--;
+        const dates = getWeekDatesUTC(currentWeekOffset);
+        const weekKey = getWeekKeyUTC(dates[0]);
+        updateWeekLabel(dates);
+        let weekData = await loadWeekData(weekKey);
+        if (!weekData) {
+            weekData = buildDataFromAttendance(dates);
+            weekData.fromAttendance = true;
+            try {
+                const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
+                await setDoc(docRef, {
+                    employeeId: EMPLOYEE_ID,
+                    weekKey: weekKey,
+                    workDays: weekData.workDays,
+                    hours: weekData.hours,
+                    workStart: weekData.workStart,
+                    workEnd: weekData.workEnd,
+                    isPaid: false,
+                    fromAttendance: true,
+                    createdAt: new Date().toISOString()
+                }, { merge: true });
+            } catch (e) { console.error(e); }
+        } else {
+            weekData.fromAttendance = false;
+        }
+        currentData = weekData;
+        await update();
+    });
+    document.getElementById('weekNext').addEventListener('click', async () => {
+        console.log('▶️ Следующая неделя');
+        currentWeekOffset++;
+        const dates = getWeekDatesUTC(currentWeekOffset);
+        const weekKey = getWeekKeyUTC(dates[0]);
+        updateWeekLabel(dates);
+        let weekData = await loadWeekData(weekKey);
+        if (!weekData) {
+            weekData = buildDataFromAttendance(dates);
+            weekData.fromAttendance = true;
+            try {
+                const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
+                await setDoc(docRef, {
+                    employeeId: EMPLOYEE_ID,
+                    weekKey: weekKey,
+                    workDays: weekData.workDays,
+                    hours: weekData.hours,
+                    workStart: weekData.workStart,
+                    workEnd: weekData.workEnd,
+                    isPaid: false,
+                    fromAttendance: true,
+                    createdAt: new Date().toISOString()
+                }, { merge: true });
+            } catch (e) { console.error(e); }
+        } else {
+            weekData.fromAttendance = false;
+        }
+        currentData = weekData;
+        await update();
+    });
+    document.getElementById('weekToday').addEventListener('click', async () => {
+        console.log('📅 Сегодня');
+        currentWeekOffset = 0;
+        const dates = getWeekDatesUTC(0);
+        const weekKey = getWeekKeyUTC(dates[0]);
+        updateWeekLabel(dates);
+        let weekData = await loadWeekData(weekKey);
+        if (!weekData) {
+            weekData = buildDataFromAttendance(dates);
+            weekData.fromAttendance = true;
+            try {
+                const docRef = doc(db, 'salaryWeeks', `${EMPLOYEE_ID}_${weekKey}`);
+                await setDoc(docRef, {
+                    employeeId: EMPLOYEE_ID,
+                    weekKey: weekKey,
+                    workDays: weekData.workDays,
+                    hours: weekData.hours,
+                    workStart: weekData.workStart,
+                    workEnd: weekData.workEnd,
+                    isPaid: false,
+                    fromAttendance: true,
+                    createdAt: new Date().toISOString()
+                }, { merge: true });
+            } catch (e) { console.error(e); }
+        } else {
+            weekData.fromAttendance = false;
+        }
+        currentData = weekData;
+        await update();
+    });
+    
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+        const total = document.getElementById('totalOut').textContent;
+        const dates = getWeekDatesUTC(currentWeekOffset);
+        const mon = dates[0];
+        const sun = dates[6];
+        const text = `Зарплата за неделю ${formatDateDisplay(mon)}–${formatDateDisplay(sun)}: ${total} ₽`;
+        try {
+            await navigator.clipboard.writeText(text);
+            const btn = document.getElementById('copyBtn');
+            const old = btn.textContent;
+            btn.textContent = '✓ Скопировано';
+            setTimeout(() => btn.textContent = old, 1500);
+        } catch (e) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+            const btn = document.getElementById('copyBtn');
+            const old = btn.textContent;
+            btn.textContent = '✓ Скопировано';
+            setTimeout(() => btn.textContent = old, 1500);
+        }
+    });
+    
+    console.log('✅ employee-view инициализирован (только просмотр)');
 }
+
+const style = document.createElement('style');
+style.textContent = `
+    .day-time-item .time-from-attendance {
+        font-size: .45rem;
+        color: var(--teal);
+        font-family: var(--mono);
+        margin-top: 1px;
+    }
+    .day-time-item.work-day {
+        border-color: rgba(62,207,168,.3);
+        background: rgba(62,207,168,.05);
+    }
+    .day-time-item.extra-day {
+        border-color: var(--amber);
+        background: rgba(255,181,46,.08);
+    }
+    .day-time-item.work-day .day-label {
+        color: var(--teal);
+    }
+    .day-time-item.extra-day .day-label {
+        color: var(--amber);
+    }
+`;
+document.head.appendChild(style);
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
