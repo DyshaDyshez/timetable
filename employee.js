@@ -1,5 +1,7 @@
 // employee.js
-// Скрипт страницы сотрудника
+// Скрипт страницы сотрудника (полная версия с редактированием)
+// СОХРАНЯЕТ ТОЛЬКО ИСХОДНЫЕ ДАННЫЕ (workDays, hours, workStart, workEnd)
+// НЕ СОХРАНЯЕТ calculatedPay — это делает employee-view.js
 
 import { calculateWeekPay, getFinalPay } from './modules/calculator.js';
 
@@ -156,7 +158,7 @@ async function deleteEmployeeAdvance(advanceId) {
 }
 
 // ============================================
-// UI ДЛЯ ФИНАНСОВОГО БЛОКА (С АРХИВОМ)
+// UI ДЛЯ ФИНАНСОВОГО БЛОКА
 // ============================================
 
 async function renderEmployeeFinance() {
@@ -168,7 +170,6 @@ async function renderEmployeeFinance() {
         const activeAdvances = advances.filter(a => a.status === 'active');
         const totalDebt = activeAdvances.reduce((sum, a) => sum + a.amount, 0);
         
-        // Берем последние 4 аванса (включая погашенные)
         const visibleAdvances = advances.slice(0, 4);
         const archivedAdvances = advances.slice(4);
         const hasArchived = archivedAdvances.length > 0;
@@ -270,7 +271,6 @@ async function renderEmployeeFinance() {
             </div>
         `;
         
-        // Обработчики
         const takeBtn = document.getElementById('takeAdvanceBtn');
         if (takeBtn) {
             takeBtn.addEventListener('click', handleTakeAdvance);
@@ -288,7 +288,6 @@ async function renderEmployeeFinance() {
             });
         }
         
-        // Кнопка показа/скрытия архива
         const toggleBtn = document.getElementById('toggleArchiveBtn');
         const archiveContainer = document.getElementById('archiveContainer');
         if (toggleBtn && archiveContainer) {
@@ -552,7 +551,7 @@ function isFutureWeek(weekKey) {
 }
 
 // ============================================
-// РАБОТА С БАЗОЙ ДАННЫХ
+// РАБОТА С БАЗОЙ ДАННЫХ (ТОЛЬКО ИСХОДНЫЕ ДАННЫЕ)
 // ============================================
 
 async function loadWeekData(weekKey) {
@@ -740,10 +739,9 @@ function update() {
     const weekKey = getWeekKey(dates[0]);
     const isFuture = isFutureWeek(weekKey);
     
-    // Используем модуль для расчёта зарплаты
+    // Используем модуль для расчёта зарплаты (только для отображения)
     const stats = calculateWeekPay(currentData, settings);
     
-    // Извлекаем все нужные значения из stats
     const days = stats.days;
     const totalHours = stats.totalHours;
     const norm = stats.norm;
@@ -767,14 +765,11 @@ function update() {
         b.querySelector('i').textContent = rate.toLocaleString() + ' ₽';
     });
     
-    // Обновляем время
     updateTimeInputs();
     
-    // Счетчики
     document.getElementById('dOut').textContent = days;
     document.getElementById('normOut').textContent = `норма: ${norm.toFixed(1).replace('.', ',')} ч (${days} дн × ${settings.hpd} ч)`;
     
-    // Бейджи
     const otB = document.getElementById('otBadge');
     const uwB = document.getElementById('uwBadge');
     if (ot > 0) {
@@ -791,13 +786,10 @@ function update() {
         uwB.hidden = true;
     }
     
-    // Строки расчета
     document.getElementById('qBase').textContent = `${days} дн × ${settings.rDay.toLocaleString()} ₽ (пропорционально)`;
     document.getElementById('vBase').textContent = payBase.toLocaleString() + ' ₽';
     
     const rowExtra = document.getElementById('rowExtra');
-    // Нам нужно количество дней, оплаченных по повышенной ставке (6-й и 7-й)
-    // В stats нет отдельного счетчика, но мы можем посчитать: если days > 5, то extraDays = days - 5, но не более 2
     const extraDaysCount = Math.max(0, Math.min(2, days - 5));
     if (extraDaysCount === 0) {
         rowExtra.classList.add('gone');
@@ -825,7 +817,6 @@ function update() {
         document.getElementById('vOt2').textContent = payOt2.toLocaleString() + ' ₽';
     }
     
-    // Бары
     const scale = Math.max(totalHours, norm, 1);
     document.getElementById('bNorm').style.width = (Math.min(totalHours, norm) / scale * 100) + '%';
     document.getElementById('bOt1').style.width = (ot1 / scale * 100) + '%';
@@ -834,14 +825,12 @@ function update() {
     document.getElementById('lOt1').textContent = formatHours(ot1) + ' ч';
     document.getElementById('lOt2').textContent = formatHours(ot2) + ' ч';
     
-    // Итог
     document.getElementById('totalOut').textContent = total.toLocaleString();
     const stamp = document.getElementById('stamp');
     stamp.classList.remove('pop');
     void stamp.offsetWidth;
     stamp.classList.add('pop');
     
-    // Формула
     const parts = [];
     if (payBase > 0) parts.push(`<b class="f-n">${days}×${settings.rDay.toLocaleString()}</b>`);
     if (payExtra > 0) parts.push(`<b class="f-n">${extraDaysCount}×${settings.rExtra.toLocaleString()}</b>`);
@@ -849,23 +838,19 @@ function update() {
     if (ot2 > 0) parts.push(`<b class="f-2">${formatHours(ot2)}×${settings.rOt2.toLocaleString()}</b>`);
     document.getElementById('formula').innerHTML = parts.length ? parts.join(' + ') + ` = ${total.toLocaleString()} ₽` : '—';
     
-    // Мета
     document.getElementById('metaLine').textContent =
         `отработано ${formatHours(totalHours)} ч · норма ${formatHours(norm)} ч`;
     
-    // Чипсы
     document.getElementById('chip1').textContent = `1–5 день · ${settings.rDay.toLocaleString()} ₽`;
     document.getElementById('chip2').textContent = `6–7 день · ${settings.rExtra.toLocaleString()} ₽`;
     document.getElementById('chip3').textContent = `переработка · ${settings.rOt1.toLocaleString()} / ${settings.rOt2.toLocaleString()} ₽/ч`;
     
-    // Заголовок недели
     const mon = dates[0];
     const sun = dates[6];
     const weekLabel = `неделя №${weekKey.replace('W', '')} · ${formatDateShort(mon)} – ${formatDateShort(sun)}`;
     document.getElementById('eyebrow').textContent = `Табель · ${weekLabel}`;
     document.getElementById('wk').textContent = weekLabel;
     
-    // Кнопка очистки будущих недель
     const clearBtn = document.getElementById('clearFutureBtn');
     if (clearBtn) {
         if (isFuture) {
@@ -976,7 +961,6 @@ async function init() {
     await loadEmployeeInfo();
     buildUI();
     
-    // Обновляем ссылку на статистику
     updateStatsLink();
     
     const dates = getWeekDates(0);
@@ -996,7 +980,6 @@ async function init() {
     
     await renderEmployeeFinance();
     
-    // Обработчики навигации
     document.getElementById('weekPrev').addEventListener('click', async () => {
         currentWeekOffset--;
         const dates = getWeekDates(currentWeekOffset);
@@ -1079,7 +1062,6 @@ async function init() {
         }
     });
     
-    // Обработчики для ставок
     const settingsFields = ['rDay', 'rExtra', 'rOt1', 'rOt2', 'otLimit'];
     settingsFields.forEach(id => {
         const el = document.getElementById(id);
@@ -1099,7 +1081,6 @@ async function init() {
         }
     });
     
-    // Кнопка очистки будущих недель
     const clearFutureBtn = document.createElement('button');
     clearFutureBtn.id = 'clearFutureBtn';
     clearFutureBtn.className = 'btn btn-ghost';

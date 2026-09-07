@@ -173,6 +173,21 @@
         .history-list .entry.out {
             color: var(--red);
         }
+        .force-btn {
+            margin-top: 8px;
+            background: rgba(255,255,255,.05);
+            color: var(--mut);
+            border: 1px solid var(--line);
+            padding: 6px 16px;
+            border-radius: 8px;
+            font-size: .7rem;
+            cursor: pointer;
+            transition: .2s;
+        }
+        .force-btn:hover {
+            border-color: var(--amber);
+            color: var(--amber);
+        }
     </style>
 </head>
 <body>
@@ -346,6 +361,9 @@
             historyList.innerHTML = `📋 ${html}`;
         }
 
+        // ============================================
+        // ОСНОВНАЯ ЛОГИКА ОТМЕТКИ (ИСПРАВЛЕННАЯ)
+        // ============================================
         async function performAttendance(employeeId) {
             setStatus('loading', 'Загрузка...');
             debugInfo.textContent = '⏳ Проверка...';
@@ -355,8 +373,7 @@
                 const today = new Date();
                 const todayStr = today.toISOString().slice(0, 10);
                 
-                // Проверяем, не наступило ли 00:00 по местному времени
-                // Если сейчас 00:00 или позже, но отметок за сегодня нет — считаем что новый день
+                // Получаем все отметки за сегодня
                 const q = query(
                     collection(db, 'attendance'),
                     where('employeeId', '==', employeeId),
@@ -367,47 +384,28 @@
                 snapshot.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
                 logs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
-                // Показываем историю
                 renderHistory(logs);
 
                 // ===== ОПРЕДЕЛЯЕМ ТИП ОТМЕТКИ =====
                 let type;
                 const now = new Date();
-                const hour = now.getHours();
-                const minute = now.getMinutes();
                 
+                // 1. Если нет отметок за сегодня → всегда "in"
                 if (logs.length === 0) {
-                    // Нет отметок → всегда "in"
                     type = 'in';
+                    console.log('✅ Нет отметок за сегодня → ставим "in"');
                 } else {
                     const last = logs[logs.length - 1];
                     
-                    // Проверяем, не было ли отметки вчера (если сотрудник забыл отметиться)
-                    // Если последняя отметка была "in" и прошло больше 12 часов — считаем что был "out"
-                    const lastTime = new Date(last.timestamp);
-                    const hoursDiff = (now - lastTime) / (1000 * 60 * 60);
-                    
-                    if (last.type === 'in' && hoursDiff > 12) {
-                        // Сотрудник скорее всего забыл отметиться "out"
-                        // Ставим принудительный "out" и затем "in" (как новый день)
-                        console.log('⚠️ Прошло более 12 часов с последнего "in", создаём принудительный "out"');
-                        
-                        // Сохраняем принудительный "out"
-                        const outTimestamp = new Date(lastTime.getTime() + 8 * 60 * 60 * 1000).toISOString(); // +8 часов
-                        await addDoc(collection(db, 'attendance'), {
-                            employeeId: employeeId,
-                            timestamp: outTimestamp,
-                            type: 'out',
-                            date: lastTime.toISOString().slice(0, 10),
-                            weekKey: getWeekKey(lastTime),
-                            source: 'auto'
-                        });
-                        console.log('✅ Создан принудительный "out"');
-                        
-                        // Теперь ставим "in" для нового дня
-                        type = 'in';
-                    } else if (last.type === 'in') {
+                    // 2. Если последняя отметка за сегодня "in" → ставим "out"
+                    if (last.type === 'in') {
                         type = 'out';
+                        console.log('✅ Последняя отметка "in" → ставим "out"');
+                    } 
+                    // 3. Если последняя отметка "out" → ставим "in"
+                    else if (last.type === 'out') {
+                        type = 'in';
+                        console.log('✅ Последняя отметка "out" → ставим "in"');
                     } else {
                         type = 'in';
                     }
