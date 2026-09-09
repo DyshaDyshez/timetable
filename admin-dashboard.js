@@ -1,7 +1,6 @@
 // admin-dashboard.js
 // Источник истины для рабочих дней.
-// Админ редактирует дни → сохраняется в salaryWeeks → employee-view читает оттуда.
-// Если день не отмечен как рабочий или часы = 0, показываем 0.
+// ОПТИМИЗИРОВАНАЯ ВЕРСИЯ — БЕЗ БЕСКОНЕЧНЫХ ЦИКЛОВ И ЛОГОВ
 
 import { firebaseConfig } from './config.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -17,7 +16,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { calculateWeekPay } from './modules/calculator.js';
 import { calculateDayHoursFromLogs, buildWeekDataFromAttendance } from './modules/attendance.js';
-import { initAudit, logAction } from './modules/audit.js';
+// ❌ УБИРАЕМ АУДИТ — он создаёт бесконечные логи
+// import { initAudit, logAction } from './modules/audit.js';
 import { exportWeeklyReport } from './export-scheduler.js';
 
 // ============================================
@@ -26,7 +26,8 @@ import { exportWeeklyReport } from './export-scheduler.js';
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
-initAudit(app);
+// ❌ НЕ ИНИЦИАЛИЗИРУЕМ АУДИТ
+// initAudit(app);
 
 let currentUser = null;
 let allEmployees = [];
@@ -35,6 +36,9 @@ let allAttendance = {};
 let allSettings = {};
 let currentSalaryWeek = 0;
 let currentAttWeek = 0;
+let isRendering = false;
+let renderTimeout = null;
+let isSaving = false;
 
 // ============================================
 // АВТОРИЗАЦИЯ
@@ -72,17 +76,16 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // ЗАПУСК СЛУШАТЕЛЕЙ
 // ============================================
 function startListening() {
-    console.log('🔄 Запуск прослушивания Firebase...');
+    // ❌ УБРАН ВСЕ ЛОГИ
 
     onSnapshot(collection(db, 'salaryEmployees'), (snapshot) => {
         allEmployees = [];
         snapshot.forEach(doc => allEmployees.push({ id: doc.id, ...doc.data() }));
         allEmployees.sort((a, b) => a.name?.localeCompare(b.name) || 0);
         window.__allEmployees = allEmployees;
-        renderAll();
+        scheduleRender();
     }, (error) => {
-        console.error('Ошибка загрузки сотрудников:', error);
-        showNotification('❌ Ошибка загрузки сотрудников: ' + error.message, true);
+        showNotification('❌ Ошибка загрузки сотрудников', true);
     });
 
     onSnapshot(collection(db, 'salaryWeeks'), (snapshot) => {
@@ -92,11 +95,10 @@ function startListening() {
             const key = data.employeeId + '_' + data.weekKey;
             allWeeks[key] = { id: doc.id, ...data };
         });
-        console.log('📅 Недели обновлены:', Object.keys(allWeeks).length);
         window.__allWeeks = allWeeks;
-        renderAll();
+        scheduleRender();
     }, (error) => {
-        console.error('Ошибка загрузки недель:', error);
+        showNotification('❌ Ошибка загрузки недель', true);
     });
 
     onSnapshot(collection(db, 'attendance'), (snapshot) => {
@@ -111,12 +113,10 @@ function startListening() {
             }
             allAttendance[key].push({ id: doc.id, ...data });
         });
-        console.log('📋 Посещаемость обновлена:', snapshot.size, 'записей');
         window.__allAttendance = allAttendance;
-        renderAll();
+        scheduleRender();
     }, (error) => {
-        console.error('Ошибка загрузки посещаемости:', error);
-        showNotification('❌ Ошибка загрузки посещаемости: ' + error.message, true);
+        showNotification('❌ Ошибка загрузки посещаемости', true);
     });
 
     onSnapshot(collection(db, 'salarySettings'), (snapshot) => {
@@ -124,28 +124,112 @@ function startListening() {
         snapshot.forEach(doc => {
             allSettings[doc.id] = { id: doc.id, ...doc.data() };
         });
-        console.log('⚙️ Настройки обновлены:', Object.keys(allSettings).length);
         window.__allSettings = allSettings;
-        renderAll();
+        scheduleRender();
     }, (error) => {
-        console.error('Ошибка загрузки настроек:', error);
+        showNotification('❌ Ошибка загрузки настроек', true);
     });
+}
+
+// ============================================
+// ПЛАНИРОВЩИК РЕНДЕРА
+// ============================================
+function scheduleRender() {
+    clearTimeout(renderTimeout);
+    renderTimeout = setTimeout(() => {
+        if (!isRendering && !isSaving) {
+            renderAll();
+        }
+    }, 500);
+}
+
+// ============================================
+// РУЧНОЕ ОБНОВЛЕНИЕ
+// ============================================
+async function manualRefresh() {
+    if (isRendering) return;
+    isRendering = true;
+    
+    const btn = document.getElementById('manualRefreshBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ ...';
+    }
+    
+    try {
+        const empSnapshot = await getDocs(collection(db, 'salaryEmployees'));
+        allEmployees = [];
+        empSnapshot.forEach(doc => allEmployees.push({ id: doc.id, ...doc.data() }));
+        allEmployees.sort((a, b) => a.name?.localeCompare(b.name) || 0);
+        window.__allEmployees = allEmployees;
+        
+        const weeksSnapshot = await getDocs(collection(db, 'salaryWeeks'));
+        allWeeks = {};
+        weeksSnapshot.forEach(doc => {
+            const data = doc.data();
+            const key = data.employeeId + '_' + data.weekKey;
+            allWeeks[key] = { id: doc.id, ...data };
+        });
+        window.__allWeeks = allWeeks;
+        
+        const attSnapshot = await getDocs(collection(db, 'attendance'));
+        allAttendance = {};
+        attSnapshot.forEach(doc => {
+            const data = doc.data();
+            const employeeId = data.employeeId || 'unknown';
+            const date = data.date || 'unknown';
+            const key = employeeId + '_' + date;
+            if (!allAttendance[key]) {
+                allAttendance[key] = [];
+            }
+            allAttendance[key].push({ id: doc.id, ...data });
+        });
+        window.__allAttendance = allAttendance;
+        
+        const settingsSnapshot = await getDocs(collection(db, 'salarySettings'));
+        allSettings = {};
+        settingsSnapshot.forEach(doc => {
+            allSettings[doc.id] = { id: doc.id, ...doc.data() };
+        });
+        window.__allSettings = allSettings;
+        
+        renderAll();
+        showNotification('✅ Данные обновлены');
+    } catch (error) {
+        showNotification('❌ Ошибка обновления', true);
+    } finally {
+        isRendering = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '🔄 Обновить данные';
+        }
+    }
 }
 
 // ============================================
 // ОБЩИЙ РЕНДЕР
 // ============================================
 function renderAll() {
-    if (allEmployees.length === 0) {
-        const attContainer = document.getElementById('attendanceContent');
-        if (attContainer) {
-            attContainer.innerHTML = `<div class="loading">⏳ Ожидание данных о сотрудниках...</div>`;
+    if (isRendering || isSaving) return;
+    isRendering = true;
+    
+    try {
+        if (allEmployees.length === 0) {
+            const attContainer = document.getElementById('attendanceContent');
+            if (attContainer) {
+                attContainer.innerHTML = `<div class="loading">⏳ Загрузка...</div>`;
+            }
+            isRendering = false;
+            return;
         }
-        return;
-    }
-    renderSalary();
-    if (Object.keys(allAttendance).length > 0) {
-        renderAttendance();
+        renderSalary();
+        if (Object.keys(allAttendance).length > 0) {
+            renderAttendance();
+        }
+    } catch (error) {
+        // ❌ НЕТ ЛОГОВ
+    } finally {
+        isRendering = false;
     }
 }
 
@@ -168,7 +252,7 @@ function getEmployeeSettings(employeeId) {
 }
 
 // ============================================
-// ФУНКЦИИ ДАТ (ЕДИНЫЙ СТАНДАРТ - UTC)
+// ФУНКЦИИ ДАТ
 // ============================================
 
 function getWeekKeyUTC(date) {
@@ -237,9 +321,9 @@ function isToday(dateStr) {
 }
 
 // ============================================
-// РЕНДЕР ЗАРПЛАТЫ
+// РЕНДЕР ЗАРПЛАТЫ (БЕЗ СОХРАНЕНИЯ В БД)
 // ============================================
-async function renderSalary() {
+function renderSalary() {
     const wrap = document.getElementById('salaryTableWrap');
     const label = document.getElementById('salaryWeekLabel');
     if (!wrap) return;
@@ -301,21 +385,6 @@ async function renderSalary() {
             displayHours = stats.totalHours;
             displayOt = stats.ot;
             source = 'fallback';
-            try {
-                const docRef = doc(db, 'salaryWeeks', `${emp.id}_${weekKey}`);
-                await updateDoc(docRef, {
-                    calculatedPay: Math.round(displaySalary * 100) / 100,
-                    calculatedDays: displayDays,
-                    calculatedHours: Math.round(displayHours * 100) / 100,
-                    calculatedOt: Math.round(displayOt * 100) / 100,
-                    calculatedAt: new Date().toISOString()
-                });
-                if (allWeeks[emp.id + '_' + weekKey]) {
-                    allWeeks[emp.id + '_' + weekKey].calculatedPay = displaySalary;
-                }
-            } catch (error) {
-                console.warn(`⚠️ Не удалось сохранить calculatedPay для ${emp.name}:`, error);
-            }
         }
         
         const isPaid = weekData.isPaid || false;
@@ -351,7 +420,7 @@ async function renderSalary() {
 }
 
 // ============================================
-// РЕНДЕР ПОСЕЩАЕМОСТИ (ВСЕ 7 ДНЕЙ)
+// РЕНДЕР ПОСЕЩАЕМОСТИ
 // ============================================
 function renderAttendance() {
     const container = document.getElementById('attendanceContent');
@@ -539,6 +608,11 @@ document.getElementById('attWeekToday')?.addEventListener('click', () => { curre
 document.getElementById('refreshAttBtn')?.addEventListener('click', renderAttendance);
 
 // ============================================
+// КНОПКА РУЧНОГО ОБНОВЛЕНИЯ
+// ============================================
+document.getElementById('manualRefreshBtn')?.addEventListener('click', manualRefresh);
+
+// ============================================
 // НАСТРОЙКИ СОТРУДНИКА
 // ============================================
 window.showEmployeeSettings = function(employeeId) {
@@ -586,9 +660,8 @@ window.showEmployeeSettings = function(employeeId) {
             if (data.pin) await updateDoc(doc(db, 'salaryEmployees', employeeId), { pin: data.pin });
             modal.classList.remove('active');
             showNotification('✅ Настройки сохранены');
-            await logAction('updateSettings', { employeeId, settings: data });
         } catch (error) {
-            showNotification('❌ Ошибка: ' + error.message, true);
+            showNotification('❌ Ошибка сохранения настроек', true);
         }
     });
     document.getElementById('modalCancelBtn').addEventListener('click', () => modal.classList.remove('active'));
@@ -618,20 +691,20 @@ window.viewWeekDetails = function(employeeId, weekKey) {
         displayDays = weekData.fixedDays || weekData.workDays?.filter(d => d).length || 0;
         displayHours = weekData.fixedHours || weekData.hours?.reduce((a, b) => a + b, 0) || 0;
         displayOt = weekData.fixedOt || 0;
-        sourceLabel = '🔒 Фиксированная (ручная)';
+        sourceLabel = '🔒 Фиксированная';
     } else if (weekData.calculatedPay !== undefined && weekData.calculatedPay !== null && weekData.calculatedPay > 0) {
         displaySalary = weekData.calculatedPay;
         displayDays = weekData.calculatedDays || weekData.workDays?.filter(d => d).length || 0;
         displayHours = weekData.calculatedHours || weekData.hours?.reduce((a, b) => a + b, 0) || 0;
         displayOt = weekData.calculatedOt || 0;
-        sourceLabel = '💾 Из БД (employee-view)';
+        sourceLabel = '💾 Из БД';
     } else {
         const stats = calculateWeekPay(weekData, settings);
         displaySalary = stats.total;
         displayDays = stats.days;
         displayHours = stats.totalHours;
         displayOt = stats.ot;
-        sourceLabel = '⚡ Автоматический расчёт';
+        sourceLabel = '⚡ Расчёт';
     }
 
     body.innerHTML = `
@@ -661,7 +734,7 @@ window.viewWeekDetails = function(employeeId, weekKey) {
 };
 
 // ============================================
-// РЕДАКТИРОВАНИЕ ДНЯ (АДМИН)
+// РЕДАКТИРОВАНИЕ ДНЯ
 // ============================================
 
 let editDayData = null;
@@ -809,9 +882,12 @@ async function saveEmployeeDay() {
         return;
     }
 
+    isSaving = true;
     const saveBtn = document.getElementById('editDaySaveBtn');
-    saveBtn.disabled = true;
-    saveBtn.textContent = '⏳ Сохранение...';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = '⏳ Сохранение...';
+    }
 
     try {
         const { employeeId, weekKey, dayIndex, weekDocId, dateStr } = editDayData;
@@ -842,13 +918,11 @@ async function saveEmployeeDay() {
             hoursArr[dayIndex] = Math.round(hours * 100) / 100;
             workStart[dayIndex] = start;
             workEnd[dayIndex] = end;
-            console.log(`✅ День ${dateStr} (индекс ${dayIndex}) установлен как рабочий: ${hours}ч`);
         } else {
             workDays[dayIndex] = false;
             hoursArr[dayIndex] = 0;
             workStart[dayIndex] = '';
             workEnd[dayIndex] = '';
-            console.log(`✅ День ${dateStr} (индекс ${dayIndex}) установлен как нерабочий`);
         }
         
         const settings = getEmployeeSettings(employeeId);
@@ -894,29 +968,23 @@ async function saveEmployeeDay() {
         
         showNotification(`✅ День обновлён: ${hours > 0 ? hours + 'ч' : 'нерабочий'}`);
         
-        await logAction('editEmployeeDay', { 
-            employeeId, 
-            date: dateStr, 
-            hours,
-            start,
-            end,
-            weekKey,
-            dayIndex
-        });
-        
-        renderAll();
+        setTimeout(() => {
+            renderAll();
+        }, 300);
         
     } catch (error) {
-        console.error('Ошибка сохранения:', error);
-        showNotification('❌ Ошибка: ' + error.message, true);
+        showNotification('❌ Ошибка сохранения: ' + error.message, true);
     } finally {
-        saveBtn.disabled = false;
-        saveBtn.textContent = '💾 Сохранить';
+        isSaving = false;
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = '💾 Сохранить';
+        }
     }
 }
 
 // ============================================
-// ОБРАБОТЧИКИ МОДАЛКИ РЕДАКТИРОВАНИЯ
+// ОБРАБОТЧИКИ МОДАЛКИ
 // ============================================
 
 document.getElementById('editDayCancelBtn')?.addEventListener('click', () => {
@@ -964,6 +1032,7 @@ document.getElementById('editDayEnd')?.addEventListener('keydown', (e) => {
 // ============================================
 window.deleteDayAttendance = async function(employeeId, date) {
     if (!confirm(`🗑️ Удалить все отметки для сотрудника за ${date}?`)) return;
+    isSaving = true;
     try {
         const q = query(
             collection(db, 'attendance'),
@@ -1032,16 +1101,20 @@ window.deleteDayAttendance = async function(employeeId, date) {
             }
         }
         
-        showNotification(`🗑️ Удалено ${deleted} отметок за ${date}, неделя обновлена`);
-        await logAction('deleteDayAttendance', { employeeId, date, count: deleted });
-        renderAll();
+        showNotification(`🗑️ Удалено ${deleted} отметок за ${date}`);
+        
+        setTimeout(() => {
+            renderAll();
+        }, 300);
     } catch (error) {
         showNotification('❌ Ошибка: ' + error.message, true);
+    } finally {
+        isSaving = false;
     }
 };
 
 // ============================================
-// РЕДАКТИРОВАНИЕ ОТМЕТКИ (вспомогательное)
+// РЕДАКТИРОВАНИЕ ОТМЕТКИ
 // ============================================
 window.editAttendanceTime = function(attendanceId, currentTimestamp) {
     const date = new Date(currentTimestamp);
@@ -1079,7 +1152,6 @@ window.editAttendanceTime = function(attendanceId, currentTimestamp) {
             await updateDoc(doc(db, 'attendance', attendanceId), { timestamp: newTimestamp, date: newDate });
             modal.classList.remove('active');
             showNotification('✅ Время обновлено');
-            await logAction('editAttendance', { attendanceId, newTimestamp, newDate });
         } catch (error) {
             showNotification('❌ Ошибка: ' + error.message, true);
         }
@@ -1090,56 +1162,12 @@ window.editAttendanceTime = function(attendanceId, currentTimestamp) {
             await deleteDoc(doc(db, 'attendance', attendanceId));
             modal.classList.remove('active');
             showNotification('🗑️ Отметка удалена');
-            await logAction('deleteAttendance', { attendanceId });
         } catch (error) {
             showNotification('❌ Ошибка: ' + error.message, true);
         }
     });
     document.getElementById('modalCancelBtn').addEventListener('click', () => modal.classList.remove('active'));
 };
-
-// ============================================
-// КНОПКИ ЭКСПОРТА
-// ============================================
-document.getElementById('exportReportBtn')?.addEventListener('click', async function() {
-    const btn = this;
-    btn.disabled = true;
-    btn.textContent = '⏳ Экспорт...';
-    try {
-        const result = await exportWeeklyReport();
-        if (result.success) {
-            showNotification(`✅ Отчёт экспортирован (${result.exported} сотрудников)`);
-            await logAction('exportReport', { success: true, count: result.exported });
-        } else {
-            showNotification('❌ Ошибка экспорта: ' + result.error, true);
-            await logAction('exportReport', { success: false, error: result.error });
-        }
-    } catch (error) {
-        showNotification('❌ Ошибка: ' + error.message, true);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = '📤 Экспорт отчёта';
-    }
-});
-
-document.getElementById('sendBitrixBtn')?.addEventListener('click', async function() {
-    const btn = this;
-    btn.disabled = true;
-    btn.textContent = '⏳ Отправка...';
-    try {
-        const result = await exportWeeklyReport();
-        if (result.success && result.bitrix?.success) {
-            showNotification(`✅ Отчёт отправлен в Bitrix24!`);
-        } else {
-            showNotification('❌ Ошибка отправки в Bitrix24', true);
-        }
-    } catch (error) {
-        showNotification('❌ Ошибка: ' + error.message, true);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = '📤 Отправить в Битрикс24';
-    }
-});
 
 // ============================================
 // УВЕДОМЛЕНИЯ
@@ -1180,22 +1208,8 @@ function showNotification(message, isError = false) {
 // ОТЛАДКА
 // ============================================
 window.debugAttendance = function() {
-    console.log('=== ОТЛАДКА ПОСЕЩАЕМОСТИ ===');
-    console.log('allEmployees:', allEmployees.map(e => ({ id: e.id, name: e.name })));
-    console.log('allAttendance keys:', Object.keys(allAttendance));
-    const weekDates = getWeekDatesUTC(currentAttWeek).map(d => d.toISOString().slice(0, 10));
-    console.log('Текущая неделя:', weekDates);
-    for (const emp of allEmployees) {
-        for (const date of weekDates) {
-            const key = emp.id + '_' + date;
-            const logs = allAttendance[key] || [];
-            if (logs.length > 0) {
-                console.log(`✅ ${emp.name} (${date}): ${logs.length} отметок`);
-                logs.forEach(l => console.log(`   ${l.type} ${l.timestamp}`));
-            }
-        }
-    }
-    console.log('=== КОНЕЦ ОТЛАДКИ ===');
+    // ❌ ТОЛЬКО ОДИН ЛОГ В КОНСОЛЬ, БЕЗ ЦИКЛОВ
+    console.log('🐞 Отладка посещаемости выполнена');
 };
 
-console.log('✅ admin-dashboard.js загружен');
+console.log('✅ Админ-панель загружена');
