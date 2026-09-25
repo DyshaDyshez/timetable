@@ -18,10 +18,7 @@
             margin: 0;
             padding: 20px;
         }
-        .container {
-            max-width: 420px;
-            width: 100%;
-        }
+        .container { max-width: 420px; width: 100%; }
         .card {
             background: var(--card);
             border: 1px solid var(--line);
@@ -30,163 +27,100 @@
             text-align: center;
             box-shadow: 0 20px 60px rgba(0,0,0,0.5);
         }
-        .name {
-            font-size: 1.8rem;
-            font-weight: bold;
-            color: var(--amber2);
-            margin-bottom: 4px;
-        }
-        .id-label {
-            font-size: .7rem;
-            color: var(--mut);
-            font-family: var(--mono);
-            margin-bottom: 16px;
-        }
-        .status {
-            font-size: 1.6rem;
-            margin: 16px 0 8px;
-            font-weight: bold;
-            transition: color .3s;
-        }
-        .status.success { 
-            color: #3ecfa8;
-        }
-        .status.error { 
-            color: #e5484d;
-        }
-        .status.loading { 
-            color: var(--amber); 
-        }
-        .time {
-            font-family: var(--mono);
-            font-size: 1.1rem;
-            color: var(--mut);
-        }
-        .pin-input {
-            margin: 20px 0 12px;
-        }
+        .name { font-size: 1.8rem; font-weight: bold; color: var(--amber2); margin-bottom: 4px; }
+        .id-label { font-size: .7rem; color: var(--mut); font-family: var(--mono); margin-bottom: 16px; }
+        .status { font-size: 1.6rem; margin: 16px 0 8px; font-weight: bold; transition: color .3s; }
+        .status.success { color: #3ecfa8; }
+        .status.error { color: #e5484d; }
+        .status.loading { color: var(--amber); }
+        .time { font-family: var(--mono); font-size: 1.1rem; color: var(--mut); }
+        .pin-input { margin: 20px 0 12px; }
         .pin-input input {
-            width: 100%;
-            padding: 14px;
-            border-radius: 12px;
-            border: 1px solid var(--line);
-            background: var(--bg2);
-            color: var(--txt);
-            font-size: 1.4rem;
-            text-align: center;
-            letter-spacing: 8px;
-            font-family: var(--mono);
-            max-width: 200px;
-            margin: 0 auto;
+            width: 100%; padding: 14px; border-radius: 12px;
+            border: 1px solid var(--line); background: var(--bg2);
+            color: var(--txt); font-size: 1.4rem; text-align: center;
+            letter-spacing: 8px; font-family: var(--mono);
+            max-width: 200px; margin: 0 auto;
         }
-        .pin-input input:focus {
-            outline: 2px solid var(--amber);
-        }
-        .pin-input .hint {
-            font-size: .7rem;
-            color: var(--mut);
-            margin-top: 6px;
-        }
+        .pin-input input:focus { outline: 2px solid var(--amber); }
+        .pin-input .hint { font-size: .7rem; color: var(--mut); margin-top: 6px; }
         .btn-confirm {
-            background: var(--amber);
-            color: #241d10;
-            border: none;
-            padding: 14px 30px;
-            border-radius: 12px;
-            font-weight: bold;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: .2s;
-            width: 100%;
-            margin-top: 8px;
+            background: var(--amber); color: #241d10; border: none;
+            padding: 14px 30px; border-radius: 12px; font-weight: bold;
+            font-size: 1rem; cursor: pointer; transition: .2s;
+            width: 100%; margin-top: 8px;
         }
-        .btn-confirm:hover {
-            filter: brightness(1.1);
-        }
-        .btn-confirm:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+        .btn-confirm:hover { filter: brightness(1.1); }
+        .btn-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
         .close-btn {
-            margin-top: 16px;
-            background: rgba(255,255,255,.05);
-            color: var(--mut);
-            border: 1px solid var(--line);
-            padding: 10px 24px;
-            border-radius: 12px;
-            font-size: .9rem;
-            cursor: pointer;
-            transition: .2s;
-            display: none;
+            margin-top: 16px; background: rgba(255,255,255,.05);
+            color: var(--mut); border: 1px solid var(--line);
+            padding: 10px 24px; border-radius: 12px; font-size: .9rem;
+            cursor: pointer; transition: .2s; display: none;
         }
-        .close-btn.show {
-            display: inline-block;
-        }
-        .close-btn:hover {
-            border-color: var(--mut);
-            color: var(--txt);
-        }
-        .sub {
-            font-size: .8rem;
-            color: var(--mut);
-            margin-top: 12px;
-            min-height: 40px;
-        }
-        #pinError {
-            color: var(--red);
-            font-size: .8rem;
-            min-height: 20px;
-            margin-top: 6px;
-        }
-        .status-icon {
-            font-size: 2rem;
-            display: block;
-            margin-bottom: 4px;
-        }
+        .close-btn.show { display: inline-block; }
+        .close-btn:hover { border-color: var(--mut); color: var(--txt); }
+        .sub { font-size: .8rem; color: var(--mut); margin-top: 12px; min-height: 40px; }
+        #pinError { color: var(--red); font-size: .8rem; min-height: 20px; margin-top: 6px; }
+        .status-icon { font-size: 2rem; display: block; margin-bottom: 4px; }
         .debug-info {
-            font-size: .6rem;
-            color: var(--mut);
-            margin-top: 16px;
-            padding: 8px;
-            border-top: 1px solid var(--line);
-            opacity: 0.5;
-            word-break: break-all;
+            font-size: .6rem; color: var(--mut); margin-top: 16px;
+            padding: 8px; border-top: 1px solid var(--line);
+            opacity: 0.5; word-break: break-all;
         }
         .history-list {
-            font-size: .65rem;
+            font-size: .65rem; color: var(--mut); margin-top: 8px;
+            padding: 6px 10px; background: rgba(255,255,255,.03);
+            border-radius: 6px; border: 1px solid var(--line);
+            min-height: 24px; text-align: left;
+        }
+        .history-list .entry { display: inline-block; margin: 0 4px; }
+        .history-list .entry.in { color: var(--teal); }
+        .history-list .entry.out { color: var(--red); }
+
+        /* ФИНАЛЬНЫЙ ЭКРАН (после отметки) */
+        .final-screen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 16px;
+            z-index: 99999;
+            padding: 20px;
+            text-align: center;
+        }
+        .final-screen .big-icon {
+            font-size: 5rem;
+            line-height: 1;
+            animation: pop-in .3s ease-out;
+        }
+        .final-screen .final-text {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        .final-screen .final-time {
+            font-family: var(--mono);
+            font-size: 1.2rem;
             color: var(--mut);
-            margin-top: 8px;
-            padding: 6px 10px;
-            background: rgba(255,255,255,.03);
-            border-radius: 6px;
-            border: 1px solid var(--line);
-            min-height: 24px;
-            text-align: left;
         }
-        .history-list .entry {
-            display: inline-block;
-            margin: 0 4px;
-        }
-        .history-list .entry.in {
-            color: var(--teal);
-        }
-        .history-list .entry.out {
-            color: var(--red);
-        }
-        .force-btn {
-            margin-top: 8px;
-            background: rgba(255,255,255,.05);
+        .final-screen .final-hint {
+            font-size: .8rem;
             color: var(--mut);
-            border: 1px solid var(--line);
-            padding: 6px 16px;
-            border-radius: 8px;
-            font-size: .7rem;
-            cursor: pointer;
-            transition: .2s;
+            margin-top: 20px;
+            opacity: 0.6;
         }
-        .force-btn:hover {
-            border-color: var(--amber);
-            color: var(--amber);
+        .final-screen.good .big-icon { color: var(--teal); }
+        .final-screen.good .final-text { color: var(--teal); }
+        .final-screen.bad .big-icon { color: var(--red); }
+        .final-screen.bad .final-text { color: var(--red); }
+
+        @keyframes pop-in {
+            0%   { transform: scale(0.3); opacity: 0; }
+            70%  { transform: scale(1.15); opacity: 1; }
+            100% { transform: scale(1); }
         }
     </style>
 </head>
@@ -208,16 +142,14 @@
             <div id="mainMode" style="display: none;">
                 <div class="name" id="employeeName">Имя</div>
                 <div class="id-label" id="employeeIdLabel">ID: —</div>
-                
                 <div class="status loading" id="statusText">
                     <span class="status-icon" id="statusIcon">⏳</span>
                     <span id="statusLabel">Обработка...</span>
                 </div>
-                
                 <div class="time" id="timeText">--:--</div>
                 <div class="sub" id="subText"></div>
                 <div class="history-list" id="historyList"></div>
-                <button class="close-btn" id="closeBtn">✕ Закрыть</button>
+                <button class="close-btn" id="closeBtn">✕ Закрыть сейчас</button>
                 <div class="debug-info" id="debugInfo"></div>
             </div>
         </div>
@@ -235,7 +167,6 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // DOM элементы
         const pinMode = document.getElementById('pinMode');
         const mainMode = document.getElementById('mainMode');
         const pinInput = document.getElementById('pinInput');
@@ -255,7 +186,6 @@
         let currentEmployeeId = null;
         let currentEmployeeName = '';
 
-        // Проверяем сохранённый ID
         const savedId = localStorage.getItem('selectedEmployeeId');
         if (savedId) {
             tryAuthorize(savedId);
@@ -321,7 +251,6 @@
 
         function setStatus(type, message, timeStr) {
             statusText.classList.remove('success', 'error', 'loading');
-            
             if (type === 'in') {
                 statusText.classList.add('success');
                 statusIcon.textContent = '✅';
@@ -339,10 +268,7 @@
                 statusIcon.textContent = '❌';
                 statusLabel.textContent = message || 'Ошибка';
             }
-            
-            if (timeStr) {
-                timeText.textContent = `⏱ ${timeStr}`;
-            }
+            if (timeStr) timeText.textContent = `⏱ ${timeStr}`;
         }
 
         function renderHistory(logs) {
@@ -361,8 +287,48 @@
             historyList.innerHTML = `📋 ${html}`;
         }
 
+        // ============================================================
+        // ★ ГЛАВНОЕ: финальный экран + попытка закрыть + очистка страницы
+        // ============================================================
+        function showFinalScreenAndClose(type, timeStr) {
+            const isIn = type === 'in';
+            const icon = isIn ? '✅' : '🚪';
+            const text = isIn ? 'Вы пришли' : 'Вы ушли';
+
+            // 1. Рисуем финальный экран поверх всего
+            const finalEl = document.createElement('div');
+            finalEl.className = 'final-screen ' + (isIn ? 'good' : 'bad');
+            finalEl.innerHTML = `
+                <div class="big-icon">${icon}</div>
+                <div class="final-text">${text}</div>
+                <div class="final-time">${timeStr}</div>
+                <div class="final-hint">Можно закрыть страницу</div>
+            `;
+            document.body.appendChild(finalEl);
+
+            // 2. Через 1 секунду пробуем все способы закрытия/очистки
+            setTimeout(() => {
+                // Способ 1: window.close() — для WebView/открытых через window.open
+                try { window.close(); } catch (e) {}
+
+                // Способ 2: редирект на about:blank
+                setTimeout(() => {
+                    try { window.location.replace('about:blank'); } catch (e) {}
+
+                    // Способ 3: полностью очищаем DOM (100% работает везде)
+                    setTimeout(() => {
+                        try {
+                            document.documentElement.innerHTML = '';
+                            document.body.innerHTML = '';
+                            document.body.style.background = '#000';
+                        } catch (e) {}
+                    }, 300);
+                }, 300);
+            }, 1000);
+        }
+
         // ============================================
-        // ОСНОВНАЯ ЛОГИКА ОТМЕТКИ (ИСПРАВЛЕННАЯ)
+        // ОСНОВНАЯ ЛОГИКА ОТМЕТКИ
         // ============================================
         async function performAttendance(employeeId) {
             setStatus('loading', 'Загрузка...');
@@ -372,8 +338,7 @@
             try {
                 const today = new Date();
                 const todayStr = today.toISOString().slice(0, 10);
-                
-                // Получаем все отметки за сегодня
+
                 const q = query(
                     collection(db, 'attendance'),
                     where('employeeId', '==', employeeId),
@@ -389,33 +354,19 @@
                 // ===== ОПРЕДЕЛЯЕМ ТИП ОТМЕТКИ =====
                 let type;
                 const now = new Date();
-                
-                // 1. Если нет отметок за сегодня → всегда "in"
+
                 if (logs.length === 0) {
                     type = 'in';
-                    console.log('✅ Нет отметок за сегодня → ставим "in"');
                 } else {
                     const last = logs[logs.length - 1];
-                    
-                    // 2. Если последняя отметка за сегодня "in" → ставим "out"
-                    if (last.type === 'in') {
-                        type = 'out';
-                        console.log('✅ Последняя отметка "in" → ставим "out"');
-                    } 
-                    // 3. Если последняя отметка "out" → ставим "in"
-                    else if (last.type === 'out') {
-                        type = 'in';
-                        console.log('✅ Последняя отметка "out" → ставим "in"');
-                    } else {
-                        type = 'in';
-                    }
+                    if (last.type === 'in') type = 'out';
+                    else type = 'in';
                 }
 
                 const dateStr = now.toISOString().slice(0, 10);
                 const weekKey = getWeekKey(now);
                 const timestamp = now.toISOString();
 
-                // Сохраняем отметку
                 const docRef = await addDoc(collection(db, 'attendance'), {
                     employeeId: employeeId,
                     timestamp: timestamp,
@@ -427,21 +378,18 @@
 
                 const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
                 const label = type === 'in' ? '✅ Пришёл' : '🚪 Ушёл';
-                
+
                 setStatus(type, label, timeStr);
-                subText.textContent = `✅ Отметка "${label}" сохранена.`;
-                
-                // Обновляем историю с новой отметкой
+                subText.innerHTML = `✅ Отметка сохранена.<br><small style="opacity:.7;">Страница закроется через 1 сек...</small>`;
+
                 const updatedLogs = [...logs, { type, timestamp }];
                 renderHistory(updatedLogs);
-                
-                debugInfo.textContent = `📝 Сохранено: ${type} | ${dateStr} | ${weekKey} | ID: ${docRef.id}`;
+
+                debugInfo.textContent = `📝 ${type} | ${dateStr} | ${weekKey} | ID: ${docRef.id}`;
                 console.log('✅ Отметка сохранена:', { employeeId, type, dateStr, weekKey, timestamp });
 
-                setTimeout(() => {
-                    closeBtn.classList.add('show');
-                    subText.textContent = 'Если страница не закрылась, нажмите кнопку ниже.';
-                }, 2000);
+                // ★★ Показываем финальный экран и пытаемся закрыть/очистить
+                showFinalScreenAndClose(type, timeStr);
 
             } catch (error) {
                 console.error('Ошибка:', error);
@@ -449,6 +397,7 @@
                 closeBtn.classList.add('show');
                 subText.textContent = 'Попробуйте ещё раз.';
                 debugInfo.textContent = '❌ ' + error.message;
+                // При ошибке НЕ закрываем — сотрудник должен видеть проблему
             }
         }
 
@@ -480,7 +429,6 @@
                 currentEmployeeId = employee.id;
                 currentEmployeeName = employee.name || 'Сотрудник';
                 enterMainMode(employee.id);
-
             } catch (error) {
                 pinError.textContent = '❌ Ошибка: ' + error.message;
                 pinConfirmBtn.disabled = false;
@@ -492,9 +440,16 @@
             if (e.key === 'Enter') pinConfirmBtn.click();
         });
 
+        // Кнопка «Закрыть сейчас» — если нужно закрыть вручную (для отладки)
         closeBtn.addEventListener('click', () => {
-            window.close();
-            window.location.href = 'about:blank';
+            try { window.close(); } catch (e) {}
+            setTimeout(() => {
+                try { window.location.replace('about:blank'); } catch (e) {}
+                setTimeout(() => {
+                    document.documentElement.innerHTML = '';
+                    document.body.style.background = '#000';
+                }, 200);
+            }, 200);
         });
 
         console.log('✅ Страница отметок загружена');

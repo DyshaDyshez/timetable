@@ -1,6 +1,11 @@
 // admin-dashboard.js
 // Источник истины для рабочих дней.
-// ОПТИМИЗИРОВАНАЯ ВЕРСИЯ — БЕЗ БЕСКОНЕЧНЫХ ЦИКЛОВ И ЛОГОВ
+//
+// ЛОГИКА (совпадает с employee-view.js):
+// - Для каждого дня отдельно:
+//     • adminEditedDays[i] === true → данные админа (в т.ч. 0ч = отмена дня)
+//     • иначе → данные из отметок
+// - updatedBy: 'admin' ставится, если админ вообще трогал неделю.
 
 import { firebaseConfig } from './config.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -16,9 +21,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { calculateWeekPay } from './modules/calculator.js';
 import { calculateDayHoursFromLogs, buildWeekDataFromAttendance } from './modules/attendance.js';
-// ❌ УБИРАЕМ АУДИТ — он создаёт бесконечные логи
-// import { initAudit, logAction } from './modules/audit.js';
-import { exportWeeklyReport } from './export-scheduler.js';
 
 // ============================================
 // ИНИЦИАЛИЗАЦИЯ
@@ -26,13 +28,11 @@ import { exportWeeklyReport } from './export-scheduler.js';
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
-// ❌ НЕ ИНИЦИАЛИЗИРУЕМ АУДИТ
-// initAudit(app);
 
 let currentUser = null;
 let allEmployees = [];
 let allWeeks = {};
-let allAttendance = {};
+let allAttendance = {};      // ключ: 'employeeId_YYYY-MM-DD' → [logs]
 let allSettings = {};
 let currentSalaryWeek = 0;
 let currentAttWeek = 0;
@@ -73,20 +73,15 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 // ============================================
-// ЗАПУСК СЛУШАТЕЛЕЙ
+// СЛУШАТЕЛИ
 // ============================================
 function startListening() {
-    // ❌ УБРАН ВСЕ ЛОГИ
-
     onSnapshot(collection(db, 'salaryEmployees'), (snapshot) => {
         allEmployees = [];
         snapshot.forEach(doc => allEmployees.push({ id: doc.id, ...doc.data() }));
         allEmployees.sort((a, b) => a.name?.localeCompare(b.name) || 0);
-        window.__allEmployees = allEmployees;
         scheduleRender();
-    }, (error) => {
-        showNotification('❌ Ошибка загрузки сотрудников', true);
-    });
+    }, () => showNotification('❌ Ошибка загрузки сотрудников', true));
 
     onSnapshot(collection(db, 'salaryWeeks'), (snapshot) => {
         allWeeks = {};
@@ -95,11 +90,8 @@ function startListening() {
             const key = data.employeeId + '_' + data.weekKey;
             allWeeks[key] = { id: doc.id, ...data };
         });
-        window.__allWeeks = allWeeks;
         scheduleRender();
-    }, (error) => {
-        showNotification('❌ Ошибка загрузки недель', true);
-    });
+    }, () => showNotification('❌ Ошибка загрузки недель', true));
 
     onSnapshot(collection(db, 'attendance'), (snapshot) => {
         allAttendance = {};
@@ -108,153 +100,67 @@ function startListening() {
             const employeeId = data.employeeId || 'unknown';
             const date = data.date || 'unknown';
             const key = employeeId + '_' + date;
-            if (!allAttendance[key]) {
-                allAttendance[key] = [];
-            }
+            if (!allAttendance[key]) allAttendance[key] = [];
             allAttendance[key].push({ id: doc.id, ...data });
         });
-        window.__allAttendance = allAttendance;
         scheduleRender();
-    }, (error) => {
-        showNotification('❌ Ошибка загрузки посещаемости', true);
-    });
+    }, () => showNotification('❌ Ошибка загрузки посещаемости', true));
 
     onSnapshot(collection(db, 'salarySettings'), (snapshot) => {
         allSettings = {};
         snapshot.forEach(doc => {
             allSettings[doc.id] = { id: doc.id, ...doc.data() };
         });
-        window.__allSettings = allSettings;
         scheduleRender();
-    }, (error) => {
-        showNotification('❌ Ошибка загрузки настроек', true);
-    });
+    }, () => showNotification('❌ Ошибка загрузки настроек', true));
 }
 
-// ============================================
-// ПЛАНИРОВЩИК РЕНДЕРА
-// ============================================
 function scheduleRender() {
     clearTimeout(renderTimeout);
     renderTimeout = setTimeout(() => {
-        if (!isRendering && !isSaving) {
-            renderAll();
-        }
+        if (!isRendering && !isSaving) renderAll();
     }, 500);
 }
 
-// ============================================
-// РУЧНОЕ ОБНОВЛЕНИЕ
-// ============================================
-async function manualRefresh() {
-    if (isRendering) return;
-    isRendering = true;
-    
-    const btn = document.getElementById('manualRefreshBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.textContent = '⏳ ...';
-    }
-    
-    try {
-        const empSnapshot = await getDocs(collection(db, 'salaryEmployees'));
-        allEmployees = [];
-        empSnapshot.forEach(doc => allEmployees.push({ id: doc.id, ...doc.data() }));
-        allEmployees.sort((a, b) => a.name?.localeCompare(b.name) || 0);
-        window.__allEmployees = allEmployees;
-        
-        const weeksSnapshot = await getDocs(collection(db, 'salaryWeeks'));
-        allWeeks = {};
-        weeksSnapshot.forEach(doc => {
-            const data = doc.data();
-            const key = data.employeeId + '_' + data.weekKey;
-            allWeeks[key] = { id: doc.id, ...data };
-        });
-        window.__allWeeks = allWeeks;
-        
-        const attSnapshot = await getDocs(collection(db, 'attendance'));
-        allAttendance = {};
-        attSnapshot.forEach(doc => {
-            const data = doc.data();
-            const employeeId = data.employeeId || 'unknown';
-            const date = data.date || 'unknown';
-            const key = employeeId + '_' + date;
-            if (!allAttendance[key]) {
-                allAttendance[key] = [];
-            }
-            allAttendance[key].push({ id: doc.id, ...data });
-        });
-        window.__allAttendance = allAttendance;
-        
-        const settingsSnapshot = await getDocs(collection(db, 'salarySettings'));
-        allSettings = {};
-        settingsSnapshot.forEach(doc => {
-            allSettings[doc.id] = { id: doc.id, ...doc.data() };
-        });
-        window.__allSettings = allSettings;
-        
-        renderAll();
-        showNotification('✅ Данные обновлены');
-    } catch (error) {
-        showNotification('❌ Ошибка обновления', true);
-    } finally {
-        isRendering = false;
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = '🔄 Обновить данные';
-        }
-    }
-}
-
-// ============================================
-// ОБЩИЙ РЕНДЕР
-// ============================================
 function renderAll() {
     if (isRendering || isSaving) return;
     isRendering = true;
-    
     try {
         if (allEmployees.length === 0) {
             const attContainer = document.getElementById('attendanceContent');
-            if (attContainer) {
-                attContainer.innerHTML = `<div class="loading">⏳ Загрузка...</div>`;
-            }
-            isRendering = false;
+            if (attContainer) attContainer.innerHTML = `<div class="loading">⏳ Загрузка...</div>`;
             return;
         }
         renderSalary();
-        if (Object.keys(allAttendance).length > 0) {
-            renderAttendance();
-        }
-    } catch (error) {
-        // ❌ НЕТ ЛОГОВ
+        if (Object.keys(allAttendance).length > 0) renderAttendance();
+    } catch (e) {
+        console.error(e);
     } finally {
         isRendering = false;
     }
 }
 
 // ============================================
-// ПОЛУЧЕНИЕ НАСТРОЕК
+// НАСТРОЙКИ
 // ============================================
 function getEmployeeSettings(employeeId) {
-    const settings = allSettings[employeeId];
-    if (settings) {
+    const s = allSettings[employeeId];
+    if (s) {
         return {
-            rDay: settings.rDay || 3000,
-            rExtra: settings.rExtra || 3500,
-            rOt1: settings.rOt1 || 400,
-            rOt2: settings.rOt2 || 800,
-            otLimit: settings.otLimit || 5,
-            hpd: settings.hpd || 8
+            rDay: s.rDay || 3000,
+            rExtra: s.rExtra || 3500,
+            rOt1: s.rOt1 || 400,
+            rOt2: s.rOt2 || 800,
+            otLimit: s.otLimit || 5,
+            hpd: s.hpd || 8
         };
     }
     return { rDay: 3000, rExtra: 3500, rOt1: 400, rOt2: 800, otLimit: 5, hpd: 8 };
 }
 
 // ============================================
-// ФУНКЦИИ ДАТ
+// ДАТЫ (UTC)
 // ============================================
-
 function getWeekKeyUTC(date) {
     const d = new Date(date);
     const day = d.getUTCDay() || 7;
@@ -281,54 +187,123 @@ function getWeekDatesUTC(offset) {
 
 function getWeekRange(offset) {
     const dates = getWeekDatesUTC(offset);
-    const start = dates[0];
-    const end = dates[6];
-    const weekKey = getWeekKeyUTC(start);
-    return { start, end, weekKey, dates };
+    return { start: dates[0], end: dates[6], weekKey: getWeekKeyUTC(dates[0]), dates };
 }
 
 function formatDateShort(d) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
 }
-
 function formatDateDisplay(d) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
 }
-
 function formatTime(date) {
     return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
-
 function getDayNameFromIndex(index) {
-    const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-    return days[index] || '?';
+    return ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'][index] || '?';
 }
-
 function getDayName(dateStr) {
     const d = new Date(dateStr + 'T00:00:00Z');
     const index = d.getUTCDay() === 0 ? 6 : d.getUTCDay() - 1;
     return getDayNameFromIndex(index);
 }
-
 function getDayMonth(dateStr) {
     const d = new Date(dateStr + 'T00:00:00Z');
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
 }
-
 function isToday(dateStr) {
-    const today = new Date().toISOString().slice(0, 10);
-    return dateStr === today;
+    return dateStr === new Date().toISOString().slice(0, 10);
+}
+function timeToMinutes(t) {
+    if (!t) return 0;
+    const p = t.split(':');
+    return parseInt(p[0]) * 60 + parseInt(p[1]);
 }
 
 // ============================================
-// РЕНДЕР ЗАРПЛАТЫ (БЕЗ СОХРАНЕНИЯ В БД)
+// ★ ГЛАВНАЯ ФУНКЦИЯ: смешивание данных по дням
+// ============================================
+/**
+ * Для указанной недели возвращает данные, где:
+ *   - дни, которые админ правил (adminEditedDays[i] === true) → из salaryWeeks
+ *   - остальные дни → из отметок
+ *
+ * Возвращает { workDays, hours, workStart, workEnd, daySource, source }
+ *   daySource[i] = 'admin' | 'attendance' | 'empty'
+ */
+function getWeekDataForEmployee(employeeId, weekKey, weekDates) {
+    const dbWeek = allWeeks[employeeId + '_' + weekKey];
+
+    // Админские массивы (если есть)
+    const adminEditedDays = dbWeek?.adminEditedDays || null;
+    const adminWorkDays = dbWeek?.workDays || null;
+    const adminHours = dbWeek?.hours || null;
+    const adminWorkStart = dbWeek?.workStart || null;
+    const adminWorkEnd = dbWeek?.workEnd || null;
+
+    const workDays = [false, false, false, false, false, false, false];
+    const hours = [0, 0, 0, 0, 0, 0, 0];
+    const workStart = ['', '', '', '', '', '', ''];
+    const workEnd = ['', '', '', '', '', '', ''];
+    const daySource = ['empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty'];
+
+    let anyData = false;
+
+    weekDates.forEach((dateObj, i) => {
+        const dateStr = dateObj.toISOString().slice(0, 10);
+        const key = employeeId + '_' + dateStr;
+        const logs = allAttendance[key] || [];
+
+        // ---- 1. Есть админ-правка этого дня? ----
+        if (adminEditedDays && adminEditedDays[i] === true) {
+            const h = Number(adminHours?.[i]) || 0;
+            workDays[i] = h > 0 ? true : false;
+            hours[i] = h;
+            workStart[i] = adminWorkStart?.[i] || '';
+            workEnd[i] = adminWorkEnd?.[i] || '';
+            daySource[i] = 'admin';
+            anyData = true;
+            return;
+        }
+
+        // ---- 2. Иначе — из отметок ----
+        if (logs.length > 0) {
+            const dayInfo = calculateDayHoursFromLogs(logs);
+            const h = dayInfo.totalHoursDecimal || 0;
+            workDays[i] = h > 0;
+            hours[i] = h;
+            daySource[i] = 'attendance';
+            anyData = true;
+
+            const sorted = [...logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+            const firstIn = sorted.find(l => l.type === 'in');
+            const lastOut = [...sorted].reverse().find(l => l.type === 'out');
+            if (firstIn) workStart[i] = new Date(firstIn.timestamp).toTimeString().slice(0, 5);
+            if (lastOut && firstIn && lastOut.timestamp > firstIn.timestamp) {
+                workEnd[i] = new Date(lastOut.timestamp).toTimeString().slice(0, 5);
+            } else if (firstIn) {
+                workEnd[i] = new Date().toTimeString().slice(0, 5);
+            }
+        }
+    });
+
+    // Определяем общий источник
+    let source = 'empty';
+    if (daySource.includes('admin')) source = 'mixed-or-admin';
+    else if (daySource.includes('attendance')) source = 'attendance';
+
+    return { workDays, hours, workStart, workEnd, daySource, source, anyData };
+}
+
+// ============================================
+// РЕНДЕР ЗАРПЛАТЫ
 // ============================================
 function renderSalary() {
     const wrap = document.getElementById('salaryTableWrap');
     const label = document.getElementById('salaryWeekLabel');
     if (!wrap) return;
 
-    const { start, end, weekKey } = getWeekRange(currentSalaryWeek);
+    const { start, end, weekKey, dates } = getWeekRange(currentSalaryWeek);
     if (label) label.textContent = `${formatDateShort(start)} – ${formatDateShort(end)} (${weekKey})`;
 
     let html = `<table>
@@ -345,62 +320,36 @@ function renderSalary() {
     let totalPay = 0, paidCount = 0, totalCount = 0;
 
     for (const emp of allEmployees) {
-        let weekData = allWeeks[emp.id + '_' + weekKey];
-        let fromAttendance = false;
-        
-        if (!weekData) {
-            const attData = buildWeekDataFromAttendance(emp.id, getWeekDatesUTC(currentSalaryWeek), allAttendance);
-            if (attData.fromAttendance) {
-                weekData = attData;
-                fromAttendance = true;
-            }
-        }
-        
-        if (!weekData) {
+        const weekData = getWeekDataForEmployee(emp.id, weekKey, dates);
+
+        if (!weekData.anyData) {
             html += `<tr><td class="col-employee">${emp.name || 'Без имени'}</td>
                 <td colspan="6" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td></tr>`;
             continue;
         }
-        
+
         const settings = getEmployeeSettings(emp.id);
-        let displaySalary, displayDays, displayHours, displayOt;
-        let source = 'calculated';
-        
-        if (weekData.fixedSalary !== undefined && weekData.fixedSalary !== null && weekData.fixedSalary > 0) {
-            displaySalary = weekData.fixedSalary;
-            displayDays = weekData.fixedDays !== undefined && weekData.fixedDays !== null ? weekData.fixedDays : weekData.workDays?.filter(d => d).length || 0;
-            displayHours = weekData.fixedHours !== undefined && weekData.fixedHours !== null ? weekData.fixedHours : weekData.hours?.reduce((a, b) => a + b, 0) || 0;
-            displayOt = weekData.fixedOt !== undefined && weekData.fixedOt !== null ? weekData.fixedOt : 0;
-            source = 'fixed';
-        } else if (weekData.calculatedPay !== undefined && weekData.calculatedPay !== null && weekData.calculatedPay > 0) {
-            displaySalary = weekData.calculatedPay;
-            displayDays = weekData.calculatedDays !== undefined && weekData.calculatedDays !== null ? weekData.calculatedDays : weekData.workDays?.filter(d => d).length || 0;
-            displayHours = weekData.calculatedHours !== undefined && weekData.calculatedHours !== null ? weekData.calculatedHours : weekData.hours?.reduce((a, b) => a + b, 0) || 0;
-            displayOt = weekData.calculatedOt !== undefined && weekData.calculatedOt !== null ? weekData.calculatedOt : 0;
-            source = 'calculated';
-        } else {
-            const stats = calculateWeekPay(weekData, settings);
-            displaySalary = stats.total;
-            displayDays = stats.days;
-            displayHours = stats.totalHours;
-            displayOt = stats.ot;
-            source = 'fallback';
-        }
-        
-        const isPaid = weekData.isPaid || false;
-        totalPay += displaySalary;
+        const stats = calculateWeekPay(weekData, settings);
+        const isPaid = allWeeks[emp.id + '_' + weekKey]?.isPaid || false;
+
+        totalPay += stats.total;
         totalCount++;
         if (isPaid) paidCount++;
 
-        const sourceIndicator = fromAttendance ? ' 📌' : '';
-        const sourceLabel = source === 'fixed' ? '🔒' : source === 'calculated' ? '💾' : '⚡';
+        // Индикаторы: 🔒 — есть админские дни, 📌 — есть дни из отметок
+        const hasAdmin = weekData.daySource.includes('admin');
+        const hasAtt = weekData.daySource.includes('attendance');
+        let sourceLabel = '';
+        if (hasAdmin && hasAtt) sourceLabel = ' 🔒📌';
+        else if (hasAdmin) sourceLabel = ' 🔒';
+        else if (hasAtt) sourceLabel = ' 📌';
 
         html += `<tr>
-            <td class="col-employee">${emp.name} ${sourceLabel}${sourceIndicator}</td>
-            <td>${displayDays}</td>
-            <td>${displayHours.toFixed(1)}</td>
-            <td>${displayOt > 0 ? displayOt.toFixed(1) + 'ч' : '—'}</td>
-            <td class="col-pay" style="text-align:right; font-weight:700; color:var(--amber); font-size:1.1rem;">${displaySalary.toLocaleString()} ₽</td>
+            <td class="col-employee">${emp.name}${sourceLabel}</td>
+            <td>${stats.days}</td>
+            <td>${stats.totalHours.toFixed(1)}</td>
+            <td>${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</td>
+            <td class="col-pay" style="text-align:right; font-weight:700; color:var(--amber); font-size:1.1rem;">${stats.total.toLocaleString()} ₽</td>
             <td style="text-align:center;">${isPaid ? '<span class="status-badge paid">✅ Выплачено</span>' : '<span class="status-badge unpaid">⏳ Ожидает</span>'}</td>
             <td style="text-align:center;">
                 <button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')" title="Настройки">⚙️</button>
@@ -431,7 +380,6 @@ function renderAttendance() {
     if (label) label.textContent = `${formatDateShort(start)} – ${formatDateShort(end)} (${weekKey})`;
 
     const weekDates = dates.map(d => d.toISOString().slice(0, 10));
-
     const allDayData = [];
 
     for (const emp of allEmployees) {
@@ -440,20 +388,17 @@ function renderAttendance() {
             const logs = allAttendance[key] || [];
             
             const dateObj = new Date(dateStr + 'T00:00:00Z');
-            const weekKey = getWeekKeyUTC(dateObj);
-            const weekData = allWeeks[emp.id + '_' + weekKey];
+            const dayWeekKey = getWeekKeyUTC(dateObj);
+            const weekData = allWeeks[emp.id + '_' + dayWeekKey];
             const dayIndex = dateObj.getUTCDay() === 0 ? 6 : dateObj.getUTCDay() - 1;
             
             let plannedHours = 0;
-            let plannedStart = '';
-            let plannedEnd = '';
             let isWorkDay = false;
+            const adminEdited = weekData?.adminEditedDays?.[dayIndex] === true;
             
-            if (weekData) {
-                plannedHours = weekData.hours && weekData.hours[dayIndex] ? weekData.hours[dayIndex] : 0;
-                plannedStart = weekData.workStart && weekData.workStart[dayIndex] ? weekData.workStart[dayIndex] : '';
-                plannedEnd = weekData.workEnd && weekData.workEnd[dayIndex] ? weekData.workEnd[dayIndex] : '';
-                isWorkDay = weekData.workDays && weekData.workDays[dayIndex] ? weekData.workDays[dayIndex] : false;
+            if (adminEdited) {
+                plannedHours = weekData?.hours?.[dayIndex] || 0;
+                isWorkDay = weekData?.workDays?.[dayIndex] || false;
             }
             
             const dayInfo = logs.length > 0 ? calculateDayHoursFromLogs(logs) : null;
@@ -462,16 +407,9 @@ function renderAttendance() {
                 employeeId: emp.id,
                 employeeName: emp.name || 'Без имени',
                 date: dateStr,
-                dateObj: dateObj,
-                logs: logs,
-                hasLogs: logs.length > 0,
-                dayInfo: dayInfo,
-                plannedHours: plannedHours,
-                plannedStart: plannedStart,
-                plannedEnd: plannedEnd,
-                isWorkDay: isWorkDay,
-                weekKey: weekKey,
-                dayIndex: dayIndex
+                logs, hasLogs: logs.length > 0,
+                dayInfo, plannedHours, isWorkDay,
+                weekKey: dayWeekKey, dayIndex, adminEdited
             });
         }
     }
@@ -521,9 +459,7 @@ function renderAttendance() {
                         lastType = log.type;
                     }
                 }
-                if (filtered.length > 0 && filtered[0].type === 'out') {
-                    filtered.shift();
-                }
+                if (filtered.length > 0 && filtered[0].type === 'out') filtered.shift();
 
                 for (const log of filtered) {
                     const time = new Date(log.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
@@ -543,9 +479,9 @@ function renderAttendance() {
                     segmentsHtml = item.dayInfo.segments.map((seg) => {
                         const startStr = formatTime(seg.start);
                         const endStr = seg.isOpen ? '... (сейчас)' : formatTime(seg.end);
-                        const hours = Math.floor(seg.minutes / 60);
-                        const mins = seg.minutes % 60;
-                        return `<span class="segment">${startStr} → ${endStr} <span class="segment-time">${hours}ч ${mins}м</span></span>`;
+                        const h = Math.floor(seg.minutes / 60);
+                        const m = seg.minutes % 60;
+                        return `<span class="segment">${startStr} → ${endStr} <span class="segment-time">${h}ч ${m}м</span></span>`;
                     }).join(' ');
                 }
             }
@@ -556,8 +492,8 @@ function renderAttendance() {
             if (item.hasLogs && item.dayInfo) {
                 totalDisplay = item.dayInfo.totalHours;
                 totalClass = 'has-time';
-            } else if (item.isWorkDay && item.plannedHours > 0) {
-                totalDisplay = `${Math.floor(item.plannedHours)}ч ${Math.round((item.plannedHours % 1) * 60)}м (план)`;
+            } else if (item.adminEdited && item.plannedHours > 0) {
+                totalDisplay = `${Math.floor(item.plannedHours)}ч ${Math.round((item.plannedHours % 1) * 60)}м (админ)`;
                 totalClass = 'planned';
             } else {
                 totalDisplay = '—';
@@ -576,7 +512,6 @@ function renderAttendance() {
                         <span class="total-badge ${totalClass}">
                             📊 ${totalDisplay}
                             ${item.hasLogs && totalMinutes > 0 ? `<span class="total-decimal">(${item.dayInfo.totalHoursDecimal.toFixed(2)} ч)</span>` : ''}
-                            ${item.isWorkDay && !item.hasLogs && item.plannedHours > 0 ? `<span class="total-decimal">(${item.plannedHours.toFixed(2)} ч)</span>` : ''}
                         </span>
                     </div>
                     ${item.hasLogs && segmentsHtml ? `<div class="segments-info">${segmentsHtml}</div>` : ''}
@@ -596,7 +531,7 @@ function renderAttendance() {
 }
 
 // ============================================
-// НАВИГАЦИЯ ПО НЕДЕЛЯМ
+// НАВИГАЦИЯ
 // ============================================
 document.getElementById('salaryWeekPrev')?.addEventListener('click', () => { currentSalaryWeek--; renderSalary(); });
 document.getElementById('salaryWeekNext')?.addEventListener('click', () => { currentSalaryWeek++; renderSalary(); });
@@ -608,12 +543,7 @@ document.getElementById('attWeekToday')?.addEventListener('click', () => { curre
 document.getElementById('refreshAttBtn')?.addEventListener('click', renderAttendance);
 
 // ============================================
-// КНОПКА РУЧНОГО ОБНОВЛЕНИЯ
-// ============================================
-document.getElementById('manualRefreshBtn')?.addEventListener('click', manualRefresh);
-
-// ============================================
-// НАСТРОЙКИ СОТРУДНИКА
+// НАСТРОЙКИ СОТРУДНИКА (модалка)
 // ============================================
 window.showEmployeeSettings = function(employeeId) {
     const emp = allEmployees.find(e => e.id === employeeId);
@@ -652,8 +582,7 @@ window.showEmployeeSettings = function(employeeId) {
             pin: document.getElementById('set_pin')?.value.trim() || ''
         };
         try {
-            const settingsRef = doc(db, 'salarySettings', employeeId);
-            await updateDoc(settingsRef, {
+            await setDoc(doc(db, 'salarySettings', employeeId), {
                 rDay: data.rDay, rExtra: data.rExtra, rOt1: data.rOt1, rOt2: data.rOt2,
                 otLimit: data.otLimit, updatedAt: new Date().toISOString()
             }, { merge: true });
@@ -671,60 +600,59 @@ window.showEmployeeSettings = function(employeeId) {
 // ДЕТАЛИ НЕДЕЛИ
 // ============================================
 window.viewWeekDetails = function(employeeId, weekKey) {
-    const weekData = allWeeks[employeeId + '_' + weekKey];
-    if (!weekData) { showNotification('Нет данных за эту неделю', true); return; }
     const emp = allEmployees.find(e => e.id === employeeId);
+    if (!emp) return;
+
+    const dates = getWeekDatesUTC(currentSalaryWeek);
+    const weekData = getWeekDataForEmployee(employeeId, weekKey, dates);
     const settings = getEmployeeSettings(employeeId);
+    const stats = calculateWeekPay(weekData, settings);
+
     const modal = document.getElementById('modalOverlay');
     const body = document.getElementById('modalBody');
     const actions = document.getElementById('modalActions');
     const title = document.getElementById('modalTitle');
     const sub = document.getElementById('modalSub');
     if (!modal || !body) return;
-    title.textContent = `📊 ${emp?.name || 'Сотрудник'}`;
-    sub.textContent = `Неделя ${weekKey}`;
 
-    let displaySalary, displayDays, displayHours, displayOt, sourceLabel;
-    
-    if (weekData.fixedSalary !== undefined && weekData.fixedSalary !== null && weekData.fixedSalary > 0) {
-        displaySalary = weekData.fixedSalary;
-        displayDays = weekData.fixedDays || weekData.workDays?.filter(d => d).length || 0;
-        displayHours = weekData.fixedHours || weekData.hours?.reduce((a, b) => a + b, 0) || 0;
-        displayOt = weekData.fixedOt || 0;
-        sourceLabel = '🔒 Фиксированная';
-    } else if (weekData.calculatedPay !== undefined && weekData.calculatedPay !== null && weekData.calculatedPay > 0) {
-        displaySalary = weekData.calculatedPay;
-        displayDays = weekData.calculatedDays || weekData.workDays?.filter(d => d).length || 0;
-        displayHours = weekData.calculatedHours || weekData.hours?.reduce((a, b) => a + b, 0) || 0;
-        displayOt = weekData.calculatedOt || 0;
-        sourceLabel = '💾 Из БД';
-    } else {
-        const stats = calculateWeekPay(weekData, settings);
-        displaySalary = stats.total;
-        displayDays = stats.days;
-        displayHours = stats.totalHours;
-        displayOt = stats.ot;
-        sourceLabel = '⚡ Расчёт';
-    }
+    title.textContent = `📊 ${emp.name}`;
+    sub.textContent = `Неделя ${weekKey}`;
 
     body.innerHTML = `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
             <div style="background:rgba(255,255,255,.05);padding:12px;border-radius:8px;text-align:center;">
                 <div style="color:var(--mut);font-size:.7rem;">Дней</div>
-                <div style="font-size:1.4rem;font-weight:bold;color:var(--amber2);">${displayDays}</div>
+                <div style="font-size:1.4rem;font-weight:bold;color:var(--amber2);">${stats.days}</div>
             </div>
             <div style="background:rgba(255,255,255,.05);padding:12px;border-radius:8px;text-align:center;">
                 <div style="color:var(--mut);font-size:.7rem;">Часов</div>
-                <div style="font-size:1.4rem;font-weight:bold;color:var(--amber2);">${displayHours.toFixed(1)}</div>
+                <div style="font-size:1.4rem;font-weight:bold;color:var(--amber2);">${stats.totalHours.toFixed(1)}</div>
             </div>
             <div style="background:rgba(255,255,255,.05);padding:12px;border-radius:8px;text-align:center;">
                 <div style="color:var(--mut);font-size:.7rem;">Переработка</div>
-                <div style="font-size:1.4rem;font-weight:bold;color:${displayOt > 0 ? 'var(--amber)' : 'var(--mut)'};">${displayOt > 0 ? displayOt.toFixed(1) + 'ч' : '—'}</div>
+                <div style="font-size:1.4rem;font-weight:bold;color:${stats.ot > 0 ? 'var(--amber)' : 'var(--mut)'};">${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</div>
             </div>
             <div style="background:rgba(255,181,46,.1);padding:12px;border-radius:8px;text-align:center;border:1px solid var(--amber);">
                 <div style="color:var(--mut);font-size:.7rem;">Итого</div>
-                <div style="font-size:1.6rem;font-weight:bold;color:var(--amber);">${displaySalary.toLocaleString()} ₽</div>
-                <div style="font-size:.6rem;color:var(--mut);">${sourceLabel}</div>
+                <div style="font-size:1.6rem;font-weight:bold;color:var(--amber);">${stats.total.toLocaleString()} ₽</div>
+            </div>
+        </div>
+        <div style="border-top:1px solid var(--line); padding-top:12px;">
+            <div style="color:var(--mut); font-size:.7rem; margin-bottom:8px;">По дням:</div>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">
+                ${['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map((d, i) => {
+                    const src = weekData.daySource[i];
+                    const color = src === 'admin' ? 'var(--amber)' : src === 'attendance' ? 'var(--teal)' : 'var(--line)';
+                    const bg = src === 'admin' ? 'rgba(255,181,46,.15)' : src === 'attendance' ? 'rgba(62,207,168,.15)' : 'rgba(255,255,255,.05)';
+                    const icon = src === 'admin' ? '🔒' : src === 'attendance' ? '📌' : '';
+                    return `
+                        <div style="text-align:center;padding:6px 2px;border-radius:6px;
+                            background:${bg};border:1px solid ${color};">
+                            <div style="font-size:.55rem;color:var(--mut);">${d} ${icon}</div>
+                            <div style="font-weight:bold;font-size:.85rem;">${weekData.hours[i]}ч</div>
+                        </div>
+                    `;
+                }).join('')}
             </div>
         </div>
     `;
@@ -736,7 +664,6 @@ window.viewWeekDetails = function(employeeId, weekKey) {
 // ============================================
 // РЕДАКТИРОВАНИЕ ДНЯ
 // ============================================
-
 let editDayData = null;
 
 window.editEmployeeDay = function(employeeId, dateStr, dayIndexParam) {
@@ -773,17 +700,9 @@ window.editEmployeeDay = function(employeeId, dateStr, dayIndexParam) {
     }
 
     editDayData = {
-        employeeId: employeeId,
-        employeeName: emp.name,
-        dateStr: dateStr,
-        weekKey: weekKey,
-        dayIndex: dayIndex,
+        employeeId, employeeName: emp.name, dateStr, weekKey, dayIndex,
         weekDocId: employeeId + '_' + weekKey,
-        currentHours: currentHours,
-        currentStart: currentStart,
-        currentEnd: currentEnd,
-        currentIsWorkDay: currentIsWorkDay,
-        dateObj: dateObj
+        currentHours, currentStart, currentEnd, currentIsWorkDay, dateObj
     };
 
     const modal = document.getElementById('editDayModal');
@@ -793,7 +712,6 @@ window.editEmployeeDay = function(employeeId, dateStr, dayIndexParam) {
     const hoursInput = document.getElementById('editDayHours');
     const startInput = document.getElementById('editDayStart');
     const endInput = document.getElementById('editDayEnd');
-    const hoursDisplay = document.getElementById('editDayHoursDisplay');
 
     const dayName = getDayNameFromIndex(dayIndex);
     title.textContent = `✏️ Редактировать день: ${emp.name}`;
@@ -811,10 +729,8 @@ window.editEmployeeDay = function(employeeId, dateStr, dayIndexParam) {
     }
     
     updateHoursDisplay();
-
     modal.style.display = 'flex';
     modal.classList.add('active');
-
     setTimeout(() => hoursInput.focus(), 100);
 };
 
@@ -823,21 +739,16 @@ function updateHoursDisplay() {
     const endInput = document.getElementById('editDayEnd');
     const hoursDisplay = document.getElementById('editDayHoursDisplay');
     const hoursInput = document.getElementById('editDayHours');
-    
     if (!startInput || !endInput || !hoursDisplay) return;
     
     const start = startInput.value;
     const end = endInput.value;
-    
     if (start && end) {
         const startMin = timeToMinutes(start);
         let endMin = timeToMinutes(end);
-        if (endMin <= startMin) {
-            endMin += 24 * 60;
-        }
-        const diffMinutes = endMin - startMin;
-        const hours = Math.round((diffMinutes / 60) * 100) / 100;
-        
+        if (endMin <= startMin) endMin += 24 * 60;
+        const diff = endMin - startMin;
+        const hours = Math.round((diff / 60) * 100) / 100;
         if (hours > 0) {
             hoursDisplay.textContent = `⏱ ${hours.toFixed(2)} ч`;
             hoursDisplay.style.color = 'var(--teal)';
@@ -850,12 +761,6 @@ function updateHoursDisplay() {
         hoursDisplay.textContent = '⏱ укажите время';
         hoursDisplay.style.color = 'var(--mut)';
     }
-}
-
-function timeToMinutes(timeStr) {
-    if (!timeStr) return 0;
-    const parts = timeStr.split(':');
-    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
 }
 
 async function saveEmployeeDay() {
@@ -884,34 +789,26 @@ async function saveEmployeeDay() {
 
     isSaving = true;
     const saveBtn = document.getElementById('editDaySaveBtn');
-    if (saveBtn) {
-        saveBtn.disabled = true;
-        saveBtn.textContent = '⏳ Сохранение...';
-    }
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Сохранение...'; }
 
     try {
-        const { employeeId, weekKey, dayIndex, weekDocId, dateStr } = editDayData;
+        const { employeeId, weekKey, dayIndex, weekDocId } = editDayData;
         
-        let weekData = allWeeks[weekDocId];
-        if (!weekData) {
-            const defaultWorkDays = [false, false, false, false, false, false, false];
-            const defaultHours = [0, 0, 0, 0, 0, 0, 0];
-            const defaultStart = ['', '', '', '', '', '', ''];
-            const defaultEnd = ['', '', '', '', '', '', ''];
-            weekData = {
-                workDays: defaultWorkDays,
-                hours: defaultHours,
-                workStart: defaultStart,
-                workEnd: defaultEnd,
-                isPaid: false,
-                id: weekDocId
-            };
-        }
+        let weekData = allWeeks[weekDocId] || {
+            workDays: [false, false, false, false, false, false, false],
+            hours: [0, 0, 0, 0, 0, 0, 0],
+            workStart: ['', '', '', '', '', '', ''],
+            workEnd: ['', '', '', '', '', '', ''],
+            adminEditedDays: [false, false, false, false, false, false, false],
+            isPaid: false
+        };
         
-        const workDays = [...weekData.workDays];
-        const hoursArr = [...weekData.hours];
-        const workStart = [...weekData.workStart];
-        const workEnd = [...weekData.workEnd];
+        const workDays = [...(weekData.workDays || [false, false, false, false, false, false, false])];
+        const hoursArr = [...(weekData.hours || [0, 0, 0, 0, 0, 0, 0])];
+        const workStart = [...(weekData.workStart || ['', '', '', '', '', '', ''])];
+        const workEnd = [...(weekData.workEnd || ['', '', '', '', '', '', ''])];
+        // ★ Массив, где отмечено, какие дни правил админ
+        const adminEditedDays = [...(weekData.adminEditedDays || [false, false, false, false, false, false, false])];
         
         if (hours > 0) {
             workDays[dayIndex] = true;
@@ -919,74 +816,45 @@ async function saveEmployeeDay() {
             workStart[dayIndex] = start;
             workEnd[dayIndex] = end;
         } else {
+            // ★ Админ явно поставил 0 → день нерабочий и помечен как "правленый"
             workDays[dayIndex] = false;
             hoursArr[dayIndex] = 0;
             workStart[dayIndex] = '';
             workEnd[dayIndex] = '';
         }
         
-        const settings = getEmployeeSettings(employeeId);
-        const updatedWeekData = {
-            workDays: workDays,
-            hours: hoursArr,
-            workStart: workStart,
-            workEnd: workEnd,
-            isPaid: weekData.isPaid || false
-        };
-        const stats = calculateWeekPay(updatedWeekData, settings);
+        // ★ Помечаем день как правленый админом
+        adminEditedDays[dayIndex] = true;
         
         const docRef = doc(db, 'salaryWeeks', weekDocId);
         await setDoc(docRef, {
-            employeeId: employeeId,
-            weekKey: weekKey,
-            workDays: workDays,
+            employeeId,
+            weekKey,
+            workDays,
             hours: hoursArr,
-            workStart: workStart,
-            workEnd: workEnd,
-            isPaid: weekData.isPaid || false,
-            calculatedPay: Math.round(stats.total * 100) / 100,
-            calculatedDays: stats.days,
-            calculatedHours: Math.round(stats.totalHours * 100) / 100,
-            calculatedOt: Math.round(stats.ot * 100) / 100,
-            calculatedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            workStart,
+            workEnd,
+            adminEditedDays,
+            updatedBy: 'admin',
+            updatedAt: new Date().toISOString(),
+            isPaid: weekData.isPaid || false
         }, { merge: true });
-        
-        if (allWeeks[weekDocId]) {
-            allWeeks[weekDocId].workDays = workDays;
-            allWeeks[weekDocId].hours = hoursArr;
-            allWeeks[weekDocId].workStart = workStart;
-            allWeeks[weekDocId].workEnd = workEnd;
-            allWeeks[weekDocId].calculatedPay = stats.total;
-            allWeeks[weekDocId].calculatedDays = stats.days;
-            allWeeks[weekDocId].calculatedHours = stats.totalHours;
-            allWeeks[weekDocId].calculatedOt = stats.ot;
-        }
         
         document.getElementById('editDayModal').classList.remove('active');
         document.getElementById('editDayModal').style.display = 'none';
         
         showNotification(`✅ День обновлён: ${hours > 0 ? hours + 'ч' : 'нерабочий'}`);
-        
-        setTimeout(() => {
-            renderAll();
-        }, 300);
-        
     } catch (error) {
         showNotification('❌ Ошибка сохранения: ' + error.message, true);
     } finally {
         isSaving = false;
-        if (saveBtn) {
-            saveBtn.disabled = false;
-            saveBtn.textContent = '💾 Сохранить';
-        }
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Сохранить'; }
     }
 }
 
 // ============================================
-// ОБРАБОТЧИКИ МОДАЛКИ
+// ОБРАБОТЧИКИ МОДАЛКИ РЕДАКТИРОВАНИЯ
 // ============================================
-
 document.getElementById('editDayCancelBtn')?.addEventListener('click', () => {
     document.getElementById('editDayModal').classList.remove('active');
     document.getElementById('editDayModal').style.display = 'none';
@@ -1007,28 +875,17 @@ document.getElementById('editDayStart')?.addEventListener('input', updateHoursDi
 document.getElementById('editDayEnd')?.addEventListener('input', updateHoursDisplay);
 
 document.getElementById('editDayHours')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        document.getElementById('editDayStart')?.focus();
-    }
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('editDayStart')?.focus(); }
 });
-
 document.getElementById('editDayStart')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        document.getElementById('editDayEnd')?.focus();
-    }
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('editDayEnd')?.focus(); }
 });
-
 document.getElementById('editDayEnd')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        saveEmployeeDay();
-    }
+    if (e.key === 'Enter') { e.preventDefault(); saveEmployeeDay(); }
 });
 
 // ============================================
-// УДАЛЕНИЕ ДНЯ
+// УДАЛЕНИЕ ОТМЕТОК ЗА ДЕНЬ
 // ============================================
 window.deleteDayAttendance = async function(employeeId, date) {
     if (!confirm(`🗑️ Удалить все отметки для сотрудника за ${date}?`)) return;
@@ -1041,71 +898,11 @@ window.deleteDayAttendance = async function(employeeId, date) {
         );
         const snapshot = await getDocs(q);
         let deleted = 0;
-        for (const doc of snapshot.docs) {
-            await deleteDoc(doc.ref);
+        for (const d of snapshot.docs) {
+            await deleteDoc(d.ref);
             deleted++;
         }
-        
-        const dateObj = new Date(date + 'T00:00:00Z');
-        const weekKey = getWeekKeyUTC(dateObj);
-        const weekDocId = employeeId + '_' + weekKey;
-        const weekRef = doc(db, 'salaryWeeks', weekDocId);
-        const weekSnap = await getDoc(weekRef);
-        
-        if (weekSnap.exists()) {
-            const weekData = weekSnap.data();
-            const dayIndex = dateObj.getUTCDay() === 0 ? 6 : dateObj.getUTCDay() - 1;
-            
-            const workDays = [...weekData.workDays];
-            const hours = [...weekData.hours];
-            const workStart = [...weekData.workStart];
-            const workEnd = [...weekData.workEnd];
-            
-            workDays[dayIndex] = false;
-            hours[dayIndex] = 0;
-            workStart[dayIndex] = '';
-            workEnd[dayIndex] = '';
-            
-            const settings = getEmployeeSettings(employeeId);
-            const updatedWeekData = {
-                workDays: workDays,
-                hours: hours,
-                workStart: workStart,
-                workEnd: workEnd,
-                isPaid: weekData.isPaid || false
-            };
-            const stats = calculateWeekPay(updatedWeekData, settings);
-            
-            await updateDoc(weekRef, {
-                workDays: workDays,
-                hours: hours,
-                workStart: workStart,
-                workEnd: workEnd,
-                calculatedPay: Math.round(stats.total * 100) / 100,
-                calculatedDays: stats.days,
-                calculatedHours: Math.round(stats.totalHours * 100) / 100,
-                calculatedOt: Math.round(stats.ot * 100) / 100,
-                calculatedAt: new Date().toISOString()
-            });
-            
-            const cacheKey = employeeId + '_' + weekKey;
-            if (allWeeks[cacheKey]) {
-                allWeeks[cacheKey].workDays = workDays;
-                allWeeks[cacheKey].hours = hours;
-                allWeeks[cacheKey].workStart = workStart;
-                allWeeks[cacheKey].workEnd = workEnd;
-                allWeeks[cacheKey].calculatedPay = stats.total;
-                allWeeks[cacheKey].calculatedDays = stats.days;
-                allWeeks[cacheKey].calculatedHours = stats.totalHours;
-                allWeeks[cacheKey].calculatedOt = stats.ot;
-            }
-        }
-        
         showNotification(`🗑️ Удалено ${deleted} отметок за ${date}`);
-        
-        setTimeout(() => {
-            renderAll();
-        }, 300);
     } catch (error) {
         showNotification('❌ Ошибка: ' + error.message, true);
     } finally {
@@ -1148,8 +945,13 @@ window.editAttendanceTime = function(attendanceId, currentTimestamp) {
             return;
         }
         const newTimestamp = new Date(newDate + 'T' + newTime + ':00').toISOString();
+        const newWeekKey = getWeekKeyUTC(new Date(newTimestamp));
         try {
-            await updateDoc(doc(db, 'attendance', attendanceId), { timestamp: newTimestamp, date: newDate });
+            await updateDoc(doc(db, 'attendance', attendanceId), {
+                timestamp: newTimestamp,
+                date: newDate,
+                weekKey: newWeekKey
+            });
             modal.classList.remove('active');
             showNotification('✅ Время обновлено');
         } catch (error) {
@@ -1190,26 +992,10 @@ function showNotification(message, isError = false) {
     }
     el.textContent = message;
     el.className = 'notification show';
-    if (isError) {
-        el.style.background = 'var(--red)';
-        el.style.color = '#fff';
-    } else {
-        el.style.background = 'var(--teal)';
-        el.style.color = '#0c1520';
-    }
+    if (isError) { el.style.background = 'var(--red)'; el.style.color = '#fff'; }
+    else { el.style.background = 'var(--teal)'; el.style.color = '#0c1520'; }
     clearTimeout(el._timer);
-    el._timer = setTimeout(() => {
-        el.classList.remove('show');
-        el.style.opacity = '0';
-    }, 3000);
+    el._timer = setTimeout(() => { el.classList.remove('show'); el.style.opacity = '0'; }, 3000);
 }
-
-// ============================================
-// ОТЛАДКА
-// ============================================
-window.debugAttendance = function() {
-    // ❌ ТОЛЬКО ОДИН ЛОГ В КОНСОЛЬ, БЕЗ ЦИКЛОВ
-    console.log('🐞 Отладка посещаемости выполнена');
-};
 
 console.log('✅ Админ-панель загружена');
