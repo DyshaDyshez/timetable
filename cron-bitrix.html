@@ -252,7 +252,20 @@
             }
         }
 
-        runCron();
+        runCron().then(() => {
+            // Автозакрытие вкладки через 15 секунд
+            console.log('⏱️ Вкладка закроется через 5 секунд...');
+            setTimeout(() => {
+                console.log('✕ Закрываем вкладку...');
+                window.close();
+                
+                // Если не сработало — редирект на пустую страницу
+                setTimeout(() => {
+                    window.location.href = 'about:blank';
+                }, 500);
+            }, 500);
+        });
+    </script>
     </script>
 </body>
 </html>
