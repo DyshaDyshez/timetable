@@ -254,7 +254,7 @@
 
         runCron().then(() => {
             // Автозакрытие вкладки через 15 секунд
-            console.log('⏱️ Вкладка закроется через 5 секунд...');
+            console.log('⏱️ Вкладка закроется через 15 секунд...');
             setTimeout(() => {
                 console.log('✕ Закрываем вкладку...');
                 window.close();
@@ -263,9 +263,9 @@
                 setTimeout(() => {
                     window.location.href = 'about:blank';
                 }, 500);
-            }, 700);
+            }, 15000);
         });
     </script>
-    </script>
+    
 </body>
 </html>
