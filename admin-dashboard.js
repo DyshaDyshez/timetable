@@ -158,10 +158,18 @@ function getEmployeeSettings(employeeId) {
             rOt1: s.rOt1 || 400,
             rOt2: s.rOt2 || 800,
             otLimit: s.otLimit || 5,
-            hpd: s.hpd || 8
+            hpd: s.hpd || 8,
+            // ★ НОВЫЕ ПОЛЯ
+            sundayBonusEnabled: s.sundayBonusEnabled === true,
+            sundayBonusAmount: s.sundayBonusAmount || 1000
         };
     }
-    return { rDay: 3000, rExtra: 3500, rOt1: 400, rOt2: 800, otLimit: 5, hpd: 8 };
+    return { 
+        rDay: 3000, rExtra: 3500, rOt1: 400, rOt2: 800, otLimit: 5, hpd: 8,
+        // ★ НОВЫЕ ПОЛЯ
+        sundayBonusEnabled: false,
+        sundayBonusAmount: 1000
+    };
 }
 
 // ============================================

@@ -4,7 +4,7 @@
 /**
  * Расчет зарплаты за неделю
  * @param {Object} weekData - данные недели { workDays, hours }
- * @param {Object} settings - настройки { rDay, rExtra, rOt1, rOt2, hpd, otLimit }
+ * @param {Object} settings - настройки { rDay, rExtra, rOt1, rOt2, hpd, otLimit, sundayBonusEnabled, sundayBonusAmount }
  * @returns {Object} - детальный расчет
  */
 export function calculateWeekPay(weekData, settings = {}) {
@@ -17,6 +17,10 @@ export function calculateWeekPay(weekData, settings = {}) {
     const r2 = settings.rOt2 || 800;
     const hpd = settings.hpd || 8;
     const lim = settings.otLimit || 5;
+    
+    // ★ НАДБАВКА ЗА ВОСКРЕСЕНЬЕ
+    const sundayBonusEnabled = settings.sundayBonusEnabled === true;
+    const sundayBonusAmount = settings.sundayBonusAmount || 1000;
     
     // Собираем рабочие дни (только где часы > 0)
     const workingDays = [];
@@ -69,7 +73,17 @@ export function calculateWeekPay(weekData, settings = {}) {
     const payOt1 = ot1 * r1;
     const payOt2 = ot2 * r2;
     
-    const total = payBase + payExtra + payOt1 + payOt2;
+    // ★ НАДБАВКА ЗА ВОСКРЕСЕНЬЕ (индекс 6 = воскресенье)
+    let sundayBonus = 0;
+    let sundayBonusCount = 0;
+    const SUNDAY_INDEX = 6;
+    
+    if (sundayBonusEnabled && workDays[SUNDAY_INDEX] && hours[SUNDAY_INDEX] > 0) {
+        sundayBonus = sundayBonusAmount;
+        sundayBonusCount = 1;
+    }
+    
+    const total = payBase + payExtra + payOt1 + payOt2 + sundayBonus;
     const norm = daysCount * hpd;
     const ot = otHours;
     
@@ -85,6 +99,9 @@ export function calculateWeekPay(weekData, settings = {}) {
         payOt1,
         payOt2,
         total,
+        // ★ НОВЫЕ ПОЛЯ
+        sundayBonus,
+        sundayBonusCount,
         workDays,
         hours
     };
