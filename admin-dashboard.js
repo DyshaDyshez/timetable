@@ -298,6 +298,9 @@ function getWeekDataForEmployee(employeeId, weekKey, weekDates) {
 // ============================================
 // РЕНДЕР ЗАРПЛАТЫ
 // ============================================
+// ============================================
+// РЕНДЕР ЗАРПЛАТЫ (аккуратная сетка, без "Статуса")
+// ============================================
 function renderSalary() {
     const wrap = document.getElementById('salaryTableWrap');
     const label = document.getElementById('salaryWeekLabel');
@@ -306,37 +309,46 @@ function renderSalary() {
     const { start, end, weekKey, dates } = getWeekRange(currentSalaryWeek);
     if (label) label.textContent = `${formatDateShort(start)} – ${formatDateShort(end)} (${weekKey})`;
 
-    let html = `<table>
+    // ★ Фиксированная сетка колонок — чтобы ничего не съезжало
+    const COLS = '2.2fr 0.8fr 0.9fr 1fr 1.4fr 1fr';
+
+    let html = `<table style="table-layout:fixed;width:100%;">
+        <colgroup>
+            <col style="width:32%;">
+            <col style="width:10%;">
+            <col style="width:11%;">
+            <col style="width:12%;">
+            <col style="width:20%;">
+            <col style="width:15%;">
+        </colgroup>
         <thead><tr>
             <th>Сотрудник</th>
-            <th>Дней</th>
-            <th>Часов</th>
-            <th>Перераб.</th>
+            <th style="text-align:center;">Дней</th>
+            <th style="text-align:center;">Часов</th>
+            <th style="text-align:center;">Перераб.</th>
             <th style="text-align:right;">Зарплата</th>
-            <th style="text-align:center;">Статус</th>
             <th style="text-align:center;">Действия</th>
         </tr></thead><tbody>`;
 
-    let totalPay = 0, paidCount = 0, totalCount = 0;
+    let totalPay = 0, totalCount = 0;
 
     for (const emp of allEmployees) {
         const weekData = getWeekDataForEmployee(emp.id, weekKey, dates);
 
         if (!weekData.anyData) {
-            html += `<tr><td class="col-employee">${emp.name || 'Без имени'}</td>
-                <td colspan="6" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td></tr>`;
+            html += `<tr>
+                <td class="col-employee" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${emp.name || 'Без имени'}</td>
+                <td colspan="5" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td>
+            </tr>`;
             continue;
         }
 
         const settings = getEmployeeSettings(emp.id);
         const stats = calculateWeekPay(weekData, settings);
-        const isPaid = allWeeks[emp.id + '_' + weekKey]?.isPaid || false;
 
         totalPay += stats.total;
         totalCount++;
-        if (isPaid) paidCount++;
 
-        // Индикаторы: 🔒 — есть админские дни, 📌 — есть дни из отметок
         const hasAdmin = weekData.daySource.includes('admin');
         const hasAtt = weekData.daySource.includes('attendance');
         let sourceLabel = '';
@@ -345,24 +357,23 @@ function renderSalary() {
         else if (hasAtt) sourceLabel = ' 📌';
 
         html += `<tr>
-            <td class="col-employee">${emp.name}${sourceLabel}</td>
-            <td>${stats.days}</td>
-            <td>${stats.totalHours.toFixed(1)}</td>
-            <td>${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</td>
-            <td class="col-pay" style="text-align:right; font-weight:700; color:var(--amber); font-size:1.1rem;">${stats.total.toLocaleString()} ₽</td>
-            <td style="text-align:center;">${isPaid ? '<span class="status-badge paid">✅ Выплачено</span>' : '<span class="status-badge unpaid">⏳ Ожидает</span>'}</td>
-            <td style="text-align:center;">
+            <td class="col-employee" title="${emp.name}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${emp.name}${sourceLabel}</td>
+            <td style="text-align:center;">${stats.days}</td>
+            <td style="text-align:center;">${stats.totalHours.toFixed(1)}</td>
+            <td style="text-align:center;">${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</td>
+            <td style="text-align:right;font-weight:700;color:var(--amber);font-size:1.05rem;white-space:nowrap;">${stats.total.toLocaleString()} ₽</td>
+            <td style="text-align:center;white-space:nowrap;">
                 <button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')" title="Настройки">⚙️</button>
                 <button class="btn-sm amber" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')" title="Детали">👁️</button>
             </td>
         </tr>`;
     }
 
+    // ★ ИТОГО: колонка "Сотрудник" + пустые "Дней/Часов/Перераб." + сумма + пустая "Действия"
     html += `<tr style="border-top:2px solid var(--amber);">
         <td><b style="color:var(--amber);">📊 ИТОГО</b></td>
-        <td colspan="3"></td>
-        <td style="text-align:right;font-weight:700;color:var(--amber);font-size:1.1rem;">${totalPay.toLocaleString()} ₽</td>
-        <td style="text-align:center;font-size:.8rem;color:var(--mut);">${paidCount}/${totalCount}</td>
+        <td colspan="3" style="text-align:center;font-size:.8rem;color:var(--mut);">${totalCount} сотрудников</td>
+        <td style="text-align:right;font-weight:700;color:var(--amber);font-size:1.1rem;white-space:nowrap;">${totalPay.toLocaleString()} ₽</td>
         <td></td>
     </tr></tbody></table>`;
     wrap.innerHTML = html;

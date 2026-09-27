@@ -74,7 +74,6 @@ if (loginBtn) {
             await signInWithEmailAndPassword(auth, email.value, password.value);
             if (errorEl) errorEl.textContent = '';
             showNotification('✅ Вход выполнен');
-            // Логируем вход
             await logAction('adminLogin', { email: email.value });
         } catch (error) {
             if (errorEl) errorEl.textContent = '❌ ' + error.message;
@@ -87,7 +86,6 @@ const logoutBtn = document.getElementById('logoutBtn');
 if (logoutBtn) {
     logoutBtn.addEventListener('click', () => {
         signOut(auth);
-        // Логируем выход
         logAction('adminLogout', {});
     });
 }
@@ -110,7 +108,8 @@ function loadEmployees() {
         snapshot.forEach((doc) => {
             const emp = { id: doc.id, ...doc.data() };
             const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
-            const employeeLink = baseUrl + 'employee.html?id=' + emp.id;
+            // ★★★ ССЫЛКА ТЕПЕРЬ НА employee-view.html ★★★
+            const employeeLink = baseUrl + 'employee-view.html?id=' + emp.id;
 
             const card = document.createElement('div');
             card.className = 'employee-card';
@@ -129,7 +128,6 @@ function loadEmployees() {
                 </div>
                 <div class="emp-actions">
                     <button class="btn-copy-link" data-link="${employeeLink}">📋 Ссылка</button>
-                    <button class="btn-stats" onclick="window.showStats('${emp.id}', '${emp.name}')">📈 Статистика</button>
                     <button class="btn-delete" onclick="window.deleteEmployee('${emp.id}')">🗑️</button>
                 </div>
                 <div class="link-hint">${employeeLink}</div>
@@ -163,7 +161,6 @@ function loadEmployees() {
                     if (display) display.textContent = newPin;
                     emp.pin = newPin;
                     showNotification('✅ PIN обновлён');
-                    // Логируем генерацию PIN
                     await logAction('generatePin', { employeeId: emp.id, newPin });
                 });
             }
@@ -186,7 +183,6 @@ function loadEmployees() {
                     if (editBtn) editBtn.style.display = 'inline-block';
                     saveBtn.style.display = 'none';
                     showNotification('✅ PIN сохранён');
-                    // Логируем ручное изменение PIN
                     await logAction('editPin', { employeeId: emp.id, newPin });
                 });
             }
@@ -211,8 +207,6 @@ function generatePin() {
 async function updateEmployeePin(employeeId, pin) {
     try {
         await updateDoc(doc(db, 'salaryEmployees', employeeId), { pin: pin });
-        // Логируем обновление PIN (вызывается из генерации и сохранения)
-        // Само логирование будет в вызывающих функциях, но на всякий случай можно и здесь оставить
         return true;
     } catch (error) {
         console.error('Ошибка обновления PIN:', error);
@@ -261,7 +255,6 @@ if (generateAllPinsBtn) {
                 const newPin = generatePin();
                 await updateEmployeePin(emp.id, newPin);
                 updated++;
-                // Логируем каждую генерацию
                 await logAction('generatePinForAll', { employeeId: emp.id, name: emp.name, newPin });
             }
 
@@ -314,7 +307,6 @@ if (addBtn) {
             nameInput.value = '';
             phoneInput.value = '';
             showNotification(`✅ Сотрудник добавлен! PIN: ${newPin}`);
-            // Логируем добавление
             await logAction('addEmployee', { 
                 employeeId: docRef.id, 
                 name, 
@@ -338,40 +330,32 @@ if (addBtn) {
 window.deleteEmployee = async (id) => {
     if (!confirm('🗑️ Удалить сотрудника и все его данные?')) return;
     try {
-        // Получаем данные сотрудника для логирования
         const empRef = doc(db, 'salaryEmployees', id);
         const empSnap = await getDoc(empRef);
         const empData = empSnap.exists() ? empSnap.data() : null;
         const empName = empData ? empData.name : id;
 
-        // Удаляем недели
         const q = query(collection(db, 'salaryWeeks'), where('employeeId', '==', id));
         const weeksSnap = await getDocs(q);
         for (const doc of weeksSnap.docs) await deleteDoc(doc.ref);
 
-        // Удаляем авансы
         const q2 = query(collection(db, 'salaryAdvances'), where('employeeId', '==', id));
         const advSnap = await getDocs(q2);
         for (const doc of advSnap.docs) await deleteDoc(doc.ref);
 
-        // Удаляем отметки
         const q3 = query(collection(db, 'attendance'), where('employeeId', '==', id));
         const attSnap = await getDocs(q3);
         for (const doc of attSnap.docs) await deleteDoc(doc.ref);
 
-        // Удаляем настройки
         const settingsRef = doc(db, 'salarySettings', id);
         await deleteDoc(settingsRef).catch(() => {});
 
-        // Удаляем долг компании
         const debtRef = doc(db, 'companyDebt', id);
         await deleteDoc(debtRef).catch(() => {});
 
-        // Удаляем самого сотрудника
         await deleteDoc(empRef);
 
         showNotification('🗑️ Удалено');
-        // Логируем удаление
         await logAction('deleteEmployee', { 
             employeeId: id, 
             name: empName,
@@ -382,13 +366,6 @@ window.deleteEmployee = async (id) => {
     } catch (error) {
         showNotification('❌ Ошибка: ' + error.message, true);
     }
-};
-
-// ============================================
-// СТАТИСТИКА (заглушка)
-// ============================================
-window.showStats = (employeeId, employeeName) => {
-    showNotification(`📊 Статистика для ${employeeName} (в разработке)`);
 };
 
 // ============================================
