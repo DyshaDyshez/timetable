@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Cron: Отправка отчёта в Битрикс24</title>
+    <style>
+        body {
+            padding: 40px;
+            font-family: monospace;
+            background: #0c1520;
+            color: #e9f0f7;
+        }
+        pre {
+            background: #13202f;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,.1);
+            white-space: pre-wrap;
+        }
+        .success { color: #3ecfa8; }
+        .error { color: #e5484d; }
+        .info { color: #ffb52e; }
+    </style>
+</head>
+<body>
+    <h1>🕐 Cron: Автоотправка отчёта в Битрикс24</h1>
+    <pre id="log">⏳ Запуск...</pre>
+
+    <script type="module">
+        import { firebaseConfig } from './config.js';
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { 
+            getFirestore, 
+            collection, doc, getDocs, getDoc
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { calculateWeekPay } from './modules/calculator.js';
+        import { calculateDayHoursFromLogs } from './modules/attendance.js';
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        const log = document.getElementById('log');
+        
+        function addLog(text, className = '') {
+            log.innerHTML += `\n<span class="${className}">${text}</span>`;
+        }
+
+        // ============================================
+        // Утилиты
+        // ============================================
+        function getWeekKeyUTC(date) {
+            const d = new Date(date);
+            const day = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - day);
+            const y = d.getUTCFullYear();
+            const week = Math.ceil(((d - Date.UTC(y, 0, 1)) / 864e5 + 1) / 7);
+            return `${y}-W${String(week).padStart(2, '0')}`;
+        }
+
+        function getWeekDatesUTC(offset) {
+            const today = new Date();
+            const utcToday = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+            const dayOfWeek = new Date(utcToday).getUTCDay();
+            const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            const mondayUTC = new Date(utcToday - daysToMonday * 86400000 + offset * 7 * 86400000);
+            const dates = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(mondayUTC);
+                d.setUTCDate(d.getUTCDate() + i);
+                dates.push(d);
+            }
+            return dates;
+        }
+
+        function getWeekRange(offset) {
+            const dates = getWeekDatesUTC(offset);
+            return { 
+                start: dates[0], 
+                end: dates[6], 
+                weekKey: getWeekKeyUTC(dates[0]), 
+                dates 
+            };
+        }
+
+        function formatDateShort(d) {
+            return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
+        }
+
+        // ============================================
+        // ОСНОВНАЯ ЛОГИКА
+        // ============================================
+        async function runCron() {
+            try {
+                addLog('📥 Загрузка данных из Firebase...', 'info');
+
+                // 1. Настройки Bitrix24
+                const bitrixSnap = await getDoc(doc(db, 'settings', 'bitrix24'));
+                if (!bitrixSnap.exists()) {
+                    addLog('❌ Настройки Bitrix24 не найдены!', 'error');
+                    return;
+                }
+                const bitrixData = bitrixSnap.data();
+                const webhook = bitrixData.webhook;
+                const chatId = bitrixData.chatId || 'chat1104';
+                addLog(`✅ Вебхук: ${webhook}`, 'success');
+                addLog(`✅ Чат: ${chatId}`, 'success');
+
+                // 2. Сотрудники
+                const empSnap = await getDocs(collection(db, 'salaryEmployees'));
+                const employees = [];
+                empSnap.forEach(doc => employees.push({ id: doc.id, ...doc.data() }));
+                addLog(`👤 Сотрудников: ${employees.length}`, 'info');
+
+                // 3. Настройки ставок
+                const settingsSnap = await getDocs(collection(db, 'salarySettings'));
+                const allSettings = {};
+                settingsSnap.forEach(doc => {
+                    allSettings[doc.id] = doc.data();
+                });
+
+                // 4. Недели
+                const weeksSnap = await getDocs(collection(db, 'salaryWeeks'));
+                const allWeeks = {};
+                weeksSnap.forEach(doc => {
+                    const data = doc.data();
+                    const key = data.employeeId + '_' + data.weekKey;
+                    allWeeks[key] = { id: doc.id, ...data };
+                });
+
+                // 5. Посещаемость
+                const attSnap = await getDocs(collection(db, 'attendance'));
+                const allAttendance = {};
+                attSnap.forEach(doc => {
+                    const data = doc.data();
+                    const key = data.employeeId + '_' + data.date;
+                    if (!allAttendance[key]) allAttendance[key] = [];
+                    allAttendance[key].push({ id: doc.id, ...data });
+                });
+                addLog(`📋 Отметок: ${attSnap.size}`, 'info');
+
+                // 6. Определяем текущую неделю
+                const { start, end, weekKey, dates } = getWeekRange(0);
+                const dateRange = `${formatDateShort(start)} – ${formatDateShort(end)}`;
+                addLog(`📅 Неделя: ${dateRange} (${weekKey})`, 'info');
+
+                // 7. Собираем отчёт
+                const reportData = [];
+                let totalSalary = 0;
+                let totalEmployees = 0;
+
+                for (const emp of employees) {
+                    const dbWeek = allWeeks[emp.id + '_' + weekKey];
+                    const adminEditedDays = dbWeek?.adminEditedDays || null;
+                    
+                    const workDays = [false, false, false, false, false, false, false];
+                    const hours = [0, 0, 0, 0, 0, 0, 0];
+                    let anyData = false;
+
+                    dates.forEach((dateObj, i) => {
+                        const dateStr = dateObj.toISOString().slice(0, 10);
+                        const key = emp.id + '_' + dateStr;
+                        const logs = allAttendance[key] || [];
+
+                        if (adminEditedDays && adminEditedDays[i] === true) {
+                            const h = Number(dbWeek?.hours?.[i]) || 0;
+                            workDays[i] = h > 0;
+                            hours[i] = h;
+                            anyData = true;
+                            return;
+                        }
+
+                        if (logs.length > 0) {
+                            const dayInfo = calculateDayHoursFromLogs(logs);
+                            const h = dayInfo.totalHoursDecimal || 0;
+                            workDays[i] = h > 0;
+                            hours[i] = h;
+                            anyData = true;
+                        }
+                    });
+
+                    if (!anyData) continue;
+
+                    const s = allSettings[emp.id] || {};
+                    const settings = {
+                        rDay: s.rDay || 3000,
+                        rExtra: s.rExtra || 3500,
+                        rOt1: s.rOt1 || 400,
+                        rOt2: s.rOt2 || 800,
+                        otLimit: s.otLimit || 5,
+                        hpd: s.hpd || 8
+                    };
+
+                    const weekData = { workDays, hours };
+                    const stats = calculateWeekPay(weekData, settings);
+
+                    reportData.push({
+                        name: emp.name || 'Без имени',
+                        days: stats.days,
+                        totalHours: stats.totalHours,
+                        salary: stats.total
+                    });
+
+                    totalSalary += stats.total;
+                    totalEmployees++;
+                }
+
+                if (reportData.length === 0) {
+                    addLog('❌ Нет данных для отправки', 'error');
+                    return;
+                }
+
+                addLog(`📊 Сотрудников в отчёте: ${reportData.length}`, 'success');
+
+                // 8. Формируем сообщение
+                let message = `📊 **ОТЧЁТ ЗА НЕДЕЛЮ ${dateRange}**\n`;
+                message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+                reportData.forEach((emp) => {
+                    message += `👤 **${emp.name}**, ${emp.days} дн. / ${emp.totalHours.toFixed(2)} ч, **${emp.salary.toLocaleString()} ₽**\n`;
+                });
+
+                message += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
+                message += `📊 **ИТОГО:** ${totalEmployees} сотр. · ${totalSalary.toLocaleString()} ₽`;
+
+                // 9. Отправляем
+                addLog('📤 Отправка в Битрикс24...', 'info');
+
+                const url = webhook + 'im.message.add.json';
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        DIALOG_ID: chatId,
+                        MESSAGE: message
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    addLog(`❌ Ошибка Битрикс24: ${result.error_description}`, 'error');
+                    return;
+                }
+
+                addLog(`✅ Отчёт отправлен! ID: ${result.result}`, 'success');
+                addLog('━━━━━━━━━━━━━━━━━━━━━');
+                addLog('📋 Готово!', 'success');
+
+            } catch (error) {
+                addLog(`❌ Ошибка: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        runCron();
+    </script>
+</body>
+</html>

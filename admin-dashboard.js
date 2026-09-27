@@ -6,6 +6,8 @@
 //     • adminEditedDays[i] === true → данные админа (в т.ч. 0ч = отмена дня)
 //     • иначе → данные из отметок
 // - updatedBy: 'admin' ставится, если админ вообще трогал неделю.
+//
+// + КНОПКА ОТПРАВКИ В BITRIX24
 
 import { firebaseConfig } from './config.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -80,6 +82,7 @@ function startListening() {
         allEmployees = [];
         snapshot.forEach(doc => allEmployees.push({ id: doc.id, ...doc.data() }));
         allEmployees.sort((a, b) => a.name?.localeCompare(b.name) || 0);
+        window.__allEmployees = allEmployees;
         scheduleRender();
     }, () => showNotification('❌ Ошибка загрузки сотрудников', true));
 
@@ -90,6 +93,7 @@ function startListening() {
             const key = data.employeeId + '_' + data.weekKey;
             allWeeks[key] = { id: doc.id, ...data };
         });
+        window.__allWeeks = allWeeks;
         scheduleRender();
     }, () => showNotification('❌ Ошибка загрузки недель', true));
 
@@ -103,6 +107,7 @@ function startListening() {
             if (!allAttendance[key]) allAttendance[key] = [];
             allAttendance[key].push({ id: doc.id, ...data });
         });
+        window.__allAttendance = allAttendance;
         scheduleRender();
     }, () => showNotification('❌ Ошибка загрузки посещаемости', true));
 
@@ -111,6 +116,7 @@ function startListening() {
         snapshot.forEach(doc => {
             allSettings[doc.id] = { id: doc.id, ...doc.data() };
         });
+        window.__allSettings = allSettings;
         scheduleRender();
     }, () => showNotification('❌ Ошибка загрузки настроек', true));
 }
@@ -223,18 +229,9 @@ function timeToMinutes(t) {
 // ============================================
 // ★ ГЛАВНАЯ ФУНКЦИЯ: смешивание данных по дням
 // ============================================
-/**
- * Для указанной недели возвращает данные, где:
- *   - дни, которые админ правил (adminEditedDays[i] === true) → из salaryWeeks
- *   - остальные дни → из отметок
- *
- * Возвращает { workDays, hours, workStart, workEnd, daySource, source }
- *   daySource[i] = 'admin' | 'attendance' | 'empty'
- */
 function getWeekDataForEmployee(employeeId, weekKey, weekDates) {
     const dbWeek = allWeeks[employeeId + '_' + weekKey];
 
-    // Админские массивы (если есть)
     const adminEditedDays = dbWeek?.adminEditedDays || null;
     const adminWorkDays = dbWeek?.workDays || null;
     const adminHours = dbWeek?.hours || null;
@@ -287,7 +284,6 @@ function getWeekDataForEmployee(employeeId, weekKey, weekDates) {
         }
     });
 
-    // Определяем общий источник
     let source = 'empty';
     if (daySource.includes('admin')) source = 'mixed-or-admin';
     else if (daySource.includes('attendance')) source = 'attendance';
@@ -298,9 +294,6 @@ function getWeekDataForEmployee(employeeId, weekKey, weekDates) {
 // ============================================
 // РЕНДЕР ЗАРПЛАТЫ
 // ============================================
-// ============================================
-// РЕНДЕР ЗАРПЛАТЫ (аккуратная сетка, без "Статуса")
-// ============================================
 function renderSalary() {
     const wrap = document.getElementById('salaryTableWrap');
     const label = document.getElementById('salaryWeekLabel');
@@ -308,9 +301,6 @@ function renderSalary() {
 
     const { start, end, weekKey, dates } = getWeekRange(currentSalaryWeek);
     if (label) label.textContent = `${formatDateShort(start)} – ${formatDateShort(end)} (${weekKey})`;
-
-    // ★ Фиксированная сетка колонок — чтобы ничего не съезжало
-    const COLS = '2.2fr 0.8fr 0.9fr 1fr 1.4fr 1fr';
 
     let html = `<table style="table-layout:fixed;width:100%;">
         <colgroup>
@@ -369,7 +359,6 @@ function renderSalary() {
         </tr>`;
     }
 
-    // ★ ИТОГО: колонка "Сотрудник" + пустые "Дней/Часов/Перераб." + сумма + пустая "Действия"
     html += `<tr style="border-top:2px solid var(--amber);">
         <td><b style="color:var(--amber);">📊 ИТОГО</b></td>
         <td colspan="3" style="text-align:center;font-size:.8rem;color:var(--mut);">${totalCount} сотрудников</td>
@@ -818,7 +807,6 @@ async function saveEmployeeDay() {
         const hoursArr = [...(weekData.hours || [0, 0, 0, 0, 0, 0, 0])];
         const workStart = [...(weekData.workStart || ['', '', '', '', '', '', ''])];
         const workEnd = [...(weekData.workEnd || ['', '', '', '', '', '', ''])];
-        // ★ Массив, где отмечено, какие дни правил админ
         const adminEditedDays = [...(weekData.adminEditedDays || [false, false, false, false, false, false, false])];
         
         if (hours > 0) {
@@ -827,14 +815,12 @@ async function saveEmployeeDay() {
             workStart[dayIndex] = start;
             workEnd[dayIndex] = end;
         } else {
-            // ★ Админ явно поставил 0 → день нерабочий и помечен как "правленый"
             workDays[dayIndex] = false;
             hoursArr[dayIndex] = 0;
             workStart[dayIndex] = '';
             workEnd[dayIndex] = '';
         }
         
-        // ★ Помечаем день как правленый админом
         adminEditedDays[dayIndex] = true;
         
         const docRef = doc(db, 'salaryWeeks', weekDocId);
@@ -1008,5 +994,121 @@ function showNotification(message, isError = false) {
     clearTimeout(el._timer);
     el._timer = setTimeout(() => { el.classList.remove('show'); el.style.opacity = '0'; }, 3000);
 }
+
+// ============================================
+// ★ КНОПКА ОТПРАВКИ В BITRIX24
+// ============================================
+async function sendBitrixReport() {
+    const btn = document.getElementById('sendBitrixBtn');
+    if (!btn) return;
+
+    const { start, end, weekKey, dates } = getWeekRange(currentSalaryWeek);
+    const dateRange = `${formatDateShort(start)} – ${formatDateShort(end)}`;
+
+    if (!confirm(`📤 Отправить отчёт за неделю ${dateRange} в Битрикс24?`)) return;
+
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ Отправка...';
+    btn.style.opacity = '0.6';
+
+    try {
+        // Получаем вебхук и chatId из Firebase
+        const docRef = doc(db, 'settings', 'bitrix24');
+        const docSnap = await getDoc(docRef);
+
+        if (!docSnap.exists()) {
+            showNotification('❌ Настройки Битрикс24 не найдены в Firebase!', true);
+            return;
+        }
+
+        const webhookData = docSnap.data();
+        const webhook = webhookData.webhook;
+        const chatId = webhookData.chatId || 'chat1104';
+
+        if (!webhook) {
+            showNotification('❌ Вебхук не указан в настройках!', true);
+            return;
+        }
+
+        // Собираем данные по всем сотрудникам
+        const reportData = [];
+        let totalSalary = 0;
+        let totalEmployees = 0;
+
+        for (const emp of allEmployees) {
+            const weekData = getWeekDataForEmployee(emp.id, weekKey, dates);
+            if (!weekData.anyData) continue;
+
+            const settings = getEmployeeSettings(emp.id);
+            const stats = calculateWeekPay(weekData, settings);
+
+            reportData.push({
+                name: emp.name || 'Без имени',
+                days: stats.days,
+                totalHours: stats.totalHours,
+                salary: stats.total
+            });
+
+            totalSalary += stats.total;
+            totalEmployees++;
+        }
+
+        if (reportData.length === 0) {
+            showNotification('❌ Нет данных для отправки', true);
+            return;
+        }
+
+        // ============================================
+        // ФОРМИРУЕМ СООБЩЕНИЕ (ФИО, ДНИ/ЧАСЫ, ЗП)
+        // ============================================
+        let message = `📊 **ОТЧЁТ ЗА НЕДЕЛЮ ${dateRange}**\n`;
+        message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+        reportData.forEach((emp) => {
+            message += `👤 **${emp.name}**, ${emp.days} дн. / ${emp.totalHours.toFixed(2)} ч, **${emp.salary.toLocaleString()} ₽**\n`;
+        });
+
+        message += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `📊 **ИТОГО:** ${totalEmployees} сотр. · ${totalSalary.toLocaleString()} ₽`;
+
+        // ============================================
+        // ОТПРАВЛЯЕМ В BITRIX24
+        // ============================================
+        const url = webhook + 'im.message.add.json';
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                DIALOG_ID: chatId,
+                MESSAGE: message
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.error) {
+            throw new Error(result.error_description || result.error);
+        }
+
+        console.log('✅ Отправлено в Битрикс24:', result);
+        showNotification(`✅ Отчёт за ${dateRange} отправлен в Битрикс24!`);
+
+    } catch (error) {
+        console.error('❌ Ошибка:', error);
+        showNotification('❌ Ошибка отправки: ' + error.message, true);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        btn.style.opacity = '1';
+    }
+}
+
+// Привязываем кнопку
+document.getElementById('sendBitrixBtn')?.addEventListener('click', sendBitrixReport);
 
 console.log('✅ Админ-панель загружена');
