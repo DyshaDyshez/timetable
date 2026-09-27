@@ -181,17 +181,17 @@
                     if (!anyData) continue;
 
                     const s = allSettings[emp.id] || {};
-const settings = {
-    rDay: s.rDay || 3000,
-    rExtra: s.rExtra || 3500,
-    rOt1: s.rOt1 || 400,
-    rOt2: s.rOt2 || 800,
-    otLimit: s.otLimit || 5,
-    hpd: s.hpd || 8,
-    // ★ НОВЫЕ ПОЛЯ
-    sundayBonusEnabled: s.sundayBonusEnabled === true,
-    sundayBonusAmount: s.sundayBonusAmount || 1000
-};;
+                    const settings = {
+                        rDay: s.rDay || 3000,
+                        rExtra: s.rExtra || 3500,
+                        rOt1: s.rOt1 || 400,
+                        rOt2: s.rOt2 || 800,
+                        otLimit: s.otLimit || 5,
+                        hpd: s.hpd || 8,
+                        // ★ НОВЫЕ ПОЛЯ
+                        sundayBonusEnabled: s.sundayBonusEnabled === true,
+                        sundayBonusAmount: s.sundayBonusAmount || 1000
+                    };
 
                     const weekData = { workDays, hours };
                     const stats = calculateWeekPay(weekData, settings);

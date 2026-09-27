@@ -9,13 +9,16 @@ export async function getEmployeeSettings(employeeId, db, doc, getDoc) {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
             const data = docSnap.data();
-            return {
+            settings = {
                 rDay: data.rDay || 3000,
                 rExtra: data.rExtra || 3500,
                 rOt1: data.rOt1 || 400,
                 rOt2: data.rOt2 || 800,
+                otLimit: data.otLimit || 5,
                 hpd: data.hpd || 8,
-                otLimit: data.otLimit || 5
+                // ★ НОВЫЕ ПОЛЯ
+                sundayBonusEnabled: data.sundayBonusEnabled === true,
+                sundayBonusAmount: data.sundayBonusAmount || 1000
             };
         }
     } catch (error) {

@@ -461,7 +461,10 @@ async function loadSettings() {
                 rOt1: data.rOt1 || 400,
                 rOt2: data.rOt2 || 800,
                 otLimit: data.otLimit || 5,
-                hpd: data.hpd || 8
+                hpd: data.hpd || 8,
+                // ★ НОВЫЕ ПОЛЯ
+                sundayBonusEnabled: data.sundayBonusEnabled === true,
+                sundayBonusAmount: data.sundayBonusAmount || 1000
             };
             console.log('⚙️ Настройки загружены:', settings);
             document.getElementById('rDay').value = settings.rDay;
