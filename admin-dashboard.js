@@ -800,7 +800,7 @@ async function saveEmployeeDay() {
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Сохранение...'; }
 
     try {
-        const { employeeId, weekKey, dayIndex, weekDocId } = editDayData;
+        const { employeeId, weekKey, dayIndex, weekDocId, dateStr } = editDayData;
         
         let weekData = allWeeks[weekDocId] || {
             workDays: [false, false, false, false, false, false, false],
@@ -831,6 +831,9 @@ async function saveEmployeeDay() {
         
         adminEditedDays[dayIndex] = true;
         
+        // ============================================
+        // 1. СОХРАНЯЕМ В salaryWeeks
+        // ============================================
         const docRef = doc(db, 'salaryWeeks', weekDocId);
         await setDoc(docRef, {
             employeeId,
@@ -845,6 +848,46 @@ async function saveEmployeeDay() {
             isPaid: weekData.isPaid || false
         }, { merge: true });
         
+        // ============================================
+        // ★ 2. СОЗДАЁМ ОТМЕТКИ В attendance
+        // ============================================
+        // Сначала удаляем старые отметки за этот день (чтобы не было дубликатов)
+        const oldQ = query(
+            collection(db, 'attendance'),
+            where('employeeId', '==', employeeId),
+            where('date', '==', dateStr)
+        );
+        const oldSnap = await getDocs(oldQ);
+        for (const d of oldSnap.docs) {
+            await deleteDoc(d.ref);
+        }
+        
+        // Если часы > 0 — создаём новые отметки in/out с датой этого дня
+        if (hours > 0) {
+            const inTimestamp = new Date(dateStr + 'T' + start + ':00').toISOString();
+            const outTimestamp = new Date(dateStr + 'T' + end + ':00').toISOString();
+            
+            await addDoc(collection(db, 'attendance'), {
+                employeeId: employeeId,
+                timestamp: inTimestamp,
+                type: 'in',
+                date: dateStr,
+                weekKey: weekKey,
+                source: 'admin'
+            });
+            
+            await addDoc(collection(db, 'attendance'), {
+                employeeId: employeeId,
+                timestamp: outTimestamp,
+                type: 'out',
+                date: dateStr,
+                weekKey: weekKey,
+                source: 'admin'
+            });
+            
+            console.log(`✅ Созданы отметки: ${dateStr} ${start} → ${end}`);
+        }
+        
         document.getElementById('editDayModal').classList.remove('active');
         document.getElementById('editDayModal').style.display = 'none';
         
@@ -856,7 +899,6 @@ async function saveEmployeeDay() {
         if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Сохранить'; }
     }
 }
-
 // ============================================
 // ОБРАБОТЧИКИ МОДАЛКИ РЕДАКТИРОВАНИЯ
 // ============================================
