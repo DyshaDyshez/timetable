@@ -6,6 +6,8 @@
 //     • adminEditedDays[i] === true → данные админа (в т.ч. 0ч = отмена дня)
 //     • иначе → данные из отметок
 // - Ничего в БД НЕ записываем.
+//
+// ★ ДОБАВЛЕНО ОТОБРАЖЕНИЕ НАДБАВКИ ЗА ВОСКРЕСЕНЬЕ
 
 import { calculateWeekPay } from './modules/calculator.js';
 import { calculateDayHoursFromLogs } from './modules/attendance.js';
@@ -32,7 +34,16 @@ let currentWeekOffset = 0;
 let currentData = null;
 let employeeName = 'Сотрудник';
 let allAttendance = {};  // ключ 'YYYY-MM-DD' → [logs]
-let settings = { rDay: 3000, rExtra: 3500, rOt1: 400, rOt2: 800, otLimit: 5, hpd: 8 };
+let settings = { 
+    rDay: 3000, 
+    rExtra: 3500, 
+    rOt1: 400, 
+    rOt2: 800, 
+    otLimit: 5, 
+    hpd: 8,
+    sundayBonusEnabled: false,
+    sundayBonusAmount: 1000
+};
 
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -266,7 +277,8 @@ function updateTimeInputs() {
         const hoursDisplay = item.querySelector('.time-hours strong');
         const attDisplay = item.querySelector('.time-from-attendance');
 
-        item.classList.remove('work-day', 'extra-day');
+        // ★ Сбрасываем все классы
+        item.classList.remove('work-day', 'extra-day', 'sunday-bonus-day');
         attDisplay.style.display = 'none';
         attDisplay.textContent = '';
 
@@ -308,6 +320,11 @@ function updateTimeInputs() {
             const dayIndex = workDays.slice(0, i).filter(Boolean).length;
             item.classList.add('work-day');
             if (dayIndex > 5) item.classList.add('extra-day');
+
+            // ★ ПОДСВЕТКА ВОСКРЕСЕНЬЯ С НАДБАВКОЙ
+            if (i === 6 && settings.sundayBonusEnabled) {
+                item.classList.add('sunday-bonus-day');
+            }
         } else {
             startInput.value = '';
             endInput.value = '';
@@ -404,6 +421,18 @@ function update() {
         document.getElementById('vOt2').textContent = payOt2.toLocaleString() + ' ₽';
     }
 
+    // ★ НАДБАВКА ЗА ВОСКРЕСЕНЬЕ
+    const rowSundayBonus = document.getElementById('rowSundayBonus');
+    if (rowSundayBonus) {
+        if (stats.sundayBonus > 0) {
+            rowSundayBonus.classList.remove('gone');
+            document.getElementById('qSundayBonus').textContent = 'работа в воскресенье';
+            document.getElementById('vSundayBonus').textContent = '+' + stats.sundayBonus.toLocaleString() + ' ₽';
+        } else {
+            rowSundayBonus.classList.add('gone');
+        }
+    }
+
     const scale = Math.max(totalHours, norm, 1);
     document.getElementById('bNorm').style.width = (Math.min(totalHours, norm) / scale * 100) + '%';
     document.getElementById('bOt1').style.width = (ot1 / scale * 100) + '%';
@@ -423,6 +452,10 @@ function update() {
     if (payExtra > 0) parts.push(`<b class="f-n">${extraDaysCount}×${settings.rExtra.toLocaleString()}</b>`);
     if (ot1 > 0) parts.push(`<b class="f-1">${formatHours(ot1)}×${settings.rOt1.toLocaleString()}</b>`);
     if (ot2 > 0) parts.push(`<b class="f-2">${formatHours(ot2)}×${settings.rOt2.toLocaleString()}</b>`);
+    // ★ Добавляем надбавку в формулу
+    if (stats.sundayBonus > 0) {
+        parts.push(`<b style="color:var(--amber);">${stats.sundayBonus.toLocaleString()}₽ (Вс)</b>`);
+    }
     document.getElementById('formula').innerHTML = parts.length
         ? parts.join(' + ') + ` = ${total.toLocaleString()} ₽`
         : '—';
@@ -551,6 +584,30 @@ style.textContent = `
     .day-time-item.extra-day { border-color: var(--amber); background: rgba(255,181,46,.08); }
     .day-time-item.work-day .day-label { color: var(--teal); }
     .day-time-item.extra-day .day-label { color: var(--amber); }
+    
+    /* ★ ПОДСВЕТКА ВОСКРЕСЕНЬЯ С НАДБАВКОЙ */
+    .day-time-item.sunday-bonus-day {
+        border-color: var(--amber) !important;
+        background: rgba(255,181,46,.15) !important;
+        box-shadow: 0 0 12px rgba(255,181,46,.35);
+        position: relative;
+    }
+    .day-time-item.sunday-bonus-day::after {
+        content: '🌟';
+        position: absolute;
+        top: -6px;
+        right: -4px;
+        font-size: .8rem;
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.2); opacity: 0.7; }
+    }
+    .day-time-item.sunday-bonus-day .day-label {
+        color: var(--amber) !important;
+        font-weight: bold;
+    }
 `;
 document.head.appendChild(style);
 

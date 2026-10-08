@@ -572,7 +572,31 @@ window.showEmployeeSettings = function(employeeId) {
         <div class="field"><label>Переработка (до лимита), ₽/ч</label><input type="number" id="set_rOt1" value="${settings.rOt1}" step="50" min="0"></div>
         <div class="field"><label>Переработка (сверх лимита), ₽/ч</label><input type="number" id="set_rOt2" value="${settings.rOt2}" step="50" min="0"></div>
         <div class="field"><label>Лимит дешёвой переработки, ч</label><input type="number" id="set_otLimit" value="${settings.otLimit}" step="0.5" min="0" max="24"></div>
-        <div class="field"><label>PIN-код сотрудника</label><input type="text" id="set_pin" value="${emp.pin || ''}" maxlength="6" inputmode="numeric"></div>
+        
+        <div style="border-top:1px solid var(--line); margin-top:12px; padding-top:12px;">
+            <div style="font-size:.75rem; color:var(--mut); font-weight:600; margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em;">
+                🌟 Надбавка за работу в воскресенье
+            </div>
+            <div class="field" style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                <input type="checkbox" id="set_sundayBonusEnabled" ${settings.sundayBonusEnabled ? 'checked' : ''} 
+                       style="width:auto; cursor:pointer; transform:scale(1.3);">
+                <label for="set_sundayBonusEnabled" style="cursor:pointer; font-size:.9rem; color:var(--txt); margin:0;">
+                    Включить надбавку за воскресенье
+                </label>
+            </div>
+            <div class="field">
+                <label>Сумма надбавки, ₽</label>
+                <input type="number" id="set_sundayBonusAmount" value="${settings.sundayBonusAmount}" step="100" min="0">
+            </div>
+            <div style="font-size:.7rem; color:var(--mut); margin-top:4px;">
+                💡 Если сотрудник работает в воскресенье — к его ЗП прибавится эта сумма
+            </div>
+        </div>
+        
+        <div class="field" style="margin-top:12px; border-top:1px solid var(--line); padding-top:12px;">
+            <label>PIN-код сотрудника</label>
+            <input type="text" id="set_pin" value="${emp.pin || ''}" maxlength="6" inputmode="numeric">
+        </div>
     `;
     actions.innerHTML = `
         <button class="btn btn-amber" id="modalSaveBtn">💾 Сохранить</button>
@@ -587,12 +611,17 @@ window.showEmployeeSettings = function(employeeId) {
             rOt1: parseFloat(document.getElementById('set_rOt1')?.value) || 400,
             rOt2: parseFloat(document.getElementById('set_rOt2')?.value) || 800,
             otLimit: parseFloat(document.getElementById('set_otLimit')?.value) || 5,
+            sundayBonusEnabled: document.getElementById('set_sundayBonusEnabled')?.checked || false,
+            sundayBonusAmount: parseFloat(document.getElementById('set_sundayBonusAmount')?.value) || 1000,
             pin: document.getElementById('set_pin')?.value.trim() || ''
         };
         try {
             await setDoc(doc(db, 'salarySettings', employeeId), {
                 rDay: data.rDay, rExtra: data.rExtra, rOt1: data.rOt1, rOt2: data.rOt2,
-                otLimit: data.otLimit, updatedAt: new Date().toISOString()
+                otLimit: data.otLimit,
+                sundayBonusEnabled: data.sundayBonusEnabled,
+                sundayBonusAmount: data.sundayBonusAmount,
+                updatedAt: new Date().toISOString()
             }, { merge: true });
             if (data.pin) await updateDoc(doc(db, 'salaryEmployees', employeeId), { pin: data.pin });
             modal.classList.remove('active');
@@ -645,6 +674,14 @@ window.viewWeekDetails = function(employeeId, weekKey) {
                 <div style="font-size:1.6rem;font-weight:bold;color:var(--amber);">${stats.total.toLocaleString()} ₽</div>
             </div>
         </div>
+        
+        ${stats.sundayBonus > 0 ? `
+            <div style="background:rgba(255,181,46,.15); padding:10px 14px; border-radius:8px; margin-bottom:12px; border:1px dashed var(--amber); display:flex; justify-content:space-between; align-items:center;">
+                <span style="color:var(--mut); font-size:.8rem;">🌟 Надбавка за воскресенье</span>
+                <span style="color:var(--amber); font-weight:bold; font-size:1.1rem;">+${stats.sundayBonus.toLocaleString()} ₽</span>
+            </div>
+        ` : ''}
+        
         <div style="border-top:1px solid var(--line); padding-top:12px;">
             <div style="color:var(--mut); font-size:.7rem; margin-bottom:8px;">По дням:</div>
             <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">
@@ -653,10 +690,12 @@ window.viewWeekDetails = function(employeeId, weekKey) {
                     const color = src === 'admin' ? 'var(--amber)' : src === 'attendance' ? 'var(--teal)' : 'var(--line)';
                     const bg = src === 'admin' ? 'rgba(255,181,46,.15)' : src === 'attendance' ? 'rgba(62,207,168,.15)' : 'rgba(255,255,255,.05)';
                     const icon = src === 'admin' ? '🔒' : src === 'attendance' ? '📌' : '';
+                    const isSunday = i === 6 && weekData.workDays[i];
                     return `
                         <div style="text-align:center;padding:6px 2px;border-radius:6px;
-                            background:${bg};border:1px solid ${color};">
-                            <div style="font-size:.55rem;color:var(--mut);">${d} ${icon}</div>
+                            background:${isSunday ? 'rgba(255,181,46,.2)' : bg};
+                            border:1px solid ${isSunday ? 'var(--amber)' : color};">
+                            <div style="font-size:.55rem;color:var(--mut);">${d} ${icon}${isSunday ? ' 🌟' : ''}</div>
                             <div style="font-weight:bold;font-size:.85rem;">${weekData.hours[i]}ч</div>
                         </div>
                     `;
