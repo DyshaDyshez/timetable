@@ -42,15 +42,18 @@ let settings = {
 // Для календаря
 let scheduleWeekOffset = 0;
 let allEmployees = [];
-let scheduleData = {};  // { 'employeeId_weekKey': { days: {...} } }
-let employeesAttendance = {}; // { 'employeeId_date': true/false }
+let scheduleData = {};       // { 'employeeId_weekKey': { days: {...} } }
+let employeesAttendance = {}; // { 'employeeId_date': count }
+let attendanceCacheLoaded = false;
 
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 // ============================================
 // УТИЛИТЫ
 // ============================================
-function getUTCDateStr(date) { return new Date(date).toISOString().slice(0, 10); }
+function getUTCDateStr(date) { 
+    return new Date(date).toISOString().slice(0, 10); 
+}
 
 function getWeekKeyUTC(date) {
     const d = new Date(date);
@@ -511,9 +514,12 @@ async function loadScheduleData(weekKey) {
     }
 }
 
-// Загружаем attendance всех сотрудников за неделю
-async function loadAllAttendanceForWeek(weekDates) {
+// ★ Загружаем attendance ВСЕХ сотрудников, но только за нужные недели
+async function loadAllAttendanceForWeeks() {
+    if (attendanceCacheLoaded) return;
+    
     try {
+        console.log('📋 Загружаем attendance всех сотрудников...');
         const snap = await getDocs(collection(db, 'attendance'));
         employeesAttendance = {};
         snap.forEach(d => {
@@ -522,81 +528,12 @@ async function loadAllAttendanceForWeek(weekDates) {
             if (!employeesAttendance[key]) employeesAttendance[key] = 0;
             employeesAttendance[key] += 1;
         });
+        attendanceCacheLoaded = true;
+        console.log('📋 Загружено attendance записей:', snap.size);
     } catch (e) {
         console.error('Ошибка загрузки attendance:', e);
         employeesAttendance = {};
     }
-}
-
-function getDayStatusForEmployee(employeeId, dateObj, weekKey) {
-    const dateStr = getUTCDateStr(dateObj);
-    const dayIndex = dateObj.getUTCDay() === 0 ? 6 : dateObj.getUTCDay() - 1;
-    
-    // 1. Проверяем, прошёл ли день
-    if (isPastDate(dateStr)) {
-        // Ищем смены в attendance
-        const attKey = employeeId + '_' + dateStr;
-        const hasAttendance = employeesAttendance[attKey] > 0;
-        
-        // Также проверяем salaryWeeks
-        const scheduleKey = employeeId + '_' + weekKey;
-        // (в salaryWeeks проверять сложнее, потому что нужно тянуть конкретную неделю)
-        
-        if (hasAttendance) {
-            return { status: 'past-work', editable: false };
-        } else {
-            return { status: 'past-off', editable: false };
-        }
-    }
-    
-    // 2. Будущее или сегодня — из employeeSchedule
-    const scheduleKey = employeeId + '_' + weekKey;
-    const schedule = scheduleData[scheduleKey];
-    
-    if (schedule && schedule.days && schedule.days[dayIndex]) {
-        const val = schedule.days[dayIndex];
-        return { 
-            status: val, // 'work' или 'off'
-            editable: employeeId === EMPLOYEE_ID && !isTodayDate(dateStr) === false || isTodayDate(dateStr),
-            // TODO: проверить точнее
-        };
-    }
-    
-    return { status: 'empty', editable: false };
-}
-
-function getDayStatusFull(employeeId, dateObj, weekKey, canEdit) {
-    const dateStr = getUTCDateStr(dateObj);
-    const dayIndex = dateObj.getUTCDay() === 0 ? 6 : dateObj.getUTCDay() - 1;
-    
-    // Прошлое?
-    if (isPastDate(dateStr)) {
-        const attKey = employeeId + '_' + dateStr;
-        const hasAttendance = employeesAttendance[attKey] > 0;
-        return {
-            status: hasAttendance ? 'past-work' : 'past-off',
-            editable: false,
-            label: hasAttendance ? '🟢' : '🔴'
-        };
-    }
-    
-    // Из расписания
-    const scheduleKey = employeeId + '_' + weekKey;
-    const schedule = scheduleData[scheduleKey];
-    let status = 'empty';
-    
-    if (schedule && schedule.days && schedule.days[dayIndex] !== undefined && schedule.days[dayIndex] !== null) {
-        status = schedule.days[dayIndex];
-    }
-    
-    // Можно ли редактировать?
-    const editable = canEdit; // уже передано как boolean
-    
-    let label = '⚪';
-    if (status === 'work') label = '🟢';
-    else if (status === 'off') label = '🔴';
-    
-    return { status, editable, label };
 }
 
 async function renderSchedule() {
@@ -613,7 +550,7 @@ async function renderSchedule() {
     
     // Загружаем данные
     await loadScheduleData(weekKey);
-    await loadAllAttendanceForWeek(dates);
+    await loadAllAttendanceForWeeks();
     
     // Проверяем, какая неделя — редактируемая
     const today = new Date();
@@ -646,15 +583,13 @@ async function renderSchedule() {
             const dateStr = getUTCDateStr(dateObj);
             const dayIndex = i;
             
-            // Прошёл ли день?
             const isPast = isPastDate(dateStr);
-            const isTodayCol = isTodayDate(dateStr);
             
             let status = 'empty';
             let editable = false;
             
             if (isPast) {
-                // Из attendance
+                // Из attendance — был ли сотрудник в этот день
                 const attKey = emp.id + '_' + dateStr;
                 const hasAtt = employeesAttendance[attKey] > 0;
                 status = hasAtt ? 'past-work' : 'past-off';
@@ -668,7 +603,6 @@ async function renderSchedule() {
                 }
                 
                 // Редактировать может только свои дни, только в текущую или будущие недели
-                // И не сегодняшний день? — по ТЗ можно, оставим возможность
                 editable = isSelf && isEditableWeek;
             }
             
@@ -726,7 +660,6 @@ function initMinimap() {
     
     btn.addEventListener('click', async () => {
         modal.classList.add('active');
-        // Загружаем сотрудников, если ещё не загружены
         if (allEmployees.length === 0) {
             await loadAllEmployees();
         }
@@ -777,10 +710,8 @@ window.openDayPicker = function(event, el) {
     }
     
     const employeeId = el.dataset.employee;
-    const dateStr = el.dataset.date;
     const dayIndex = parseInt(el.dataset.day);
     const weekKey = el.dataset.week;
-    const currentStatus = el.classList.contains('work') ? 'work' : el.classList.contains('off') ? 'off' : 'empty';
     
     const picker = document.createElement('div');
     picker.className = 'day-picker';
@@ -847,8 +778,9 @@ async function saveDayStatus(employeeId, weekKey, dayIndex, status) {
         
         let days = existing.exists() ? (existing.data().days || {}) : {};
         
+        // ★ Ключевое: вместо delete() ставим null
         if (status === 'empty') {
-            delete days[dayIndex];
+            days[dayIndex] = null;
         } else {
             days[dayIndex] = status;
         }
@@ -885,7 +817,7 @@ async function init() {
     await loadSettings();
     await loadAttendance();
     buildUI();
-    initMinimap();  // ★ Инициализация миникарты
+    initMinimap();
     await refreshWeek();
 
     document.getElementById('weekPrev').addEventListener('click', async () => { currentWeekOffset--; await refreshWeek(); });
@@ -898,7 +830,200 @@ async function init() {
         const text = `Зарплата за неделю ${formatDateDisplay(dates[0])}–${formatDateDisplay(dates[6])}: ${total} ₽`;
         try { await navigator.clipboard.writeText(text); } catch (e) {}
     });
+
+        // ★ Инициализация кнопки "Запросить ЗП"
+        initSalaryRequest();
+
     console.log('✅ employee-view готов');
+}
+
+
+// ============================================
+// ★ ЗАПРОС ЗАРПЛАТЫ
+// ============================================
+
+async function initSalaryRequest() {
+    const btn = document.getElementById('requestSalaryBtn');
+    if (!btn) return;
+    
+    btn.addEventListener('click', requestSalary);
+    
+    // Проверяем, не запрошена ли уже за эту неделю
+    await checkExistingRequest();
+}
+
+async function checkExistingRequest() {
+    try {
+        const btn = document.getElementById('requestSalaryBtn');
+        if (!btn) return;
+        
+        const dates = getWeekDatesUTC(currentWeekOffset);
+        const weekKey = getWeekKeyUTC(dates[0]);
+        
+        const q = query(
+            collection(db, 'salaryRequests'),
+            where('employeeId', '==', EMPLOYEE_ID),
+            where('weekKey', '==', weekKey),
+            where('status', '==', 'pending')
+        );
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+            btn.textContent = '⏳ ЗП запрошена';
+            btn.style.background = 'var(--amber)';
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+            btn.style.cursor = 'not-allowed';
+        }
+    } catch (e) {
+        console.warn('Не удалось проверить запрос:', e);
+    }
+}
+
+async function requestSalary() {
+    const btn = document.getElementById('requestSalaryBtn');
+    if (!btn) return;
+    
+    // Получаем данные недели
+    const dates = getWeekDatesUTC(currentWeekOffset);
+    const weekKey = getWeekKeyUTC(dates[0]);
+    const weekRange = `${formatDateDisplay(dates[0])} – ${formatDateDisplay(dates[6])}`;
+    
+    // Считаем зарплату
+    if (!currentData) {
+        alert('❌ Данные ещё не загружены');
+        return;
+    }
+    
+    const stats = calculateWeekPay(currentData, settings);
+    
+    if (stats.days === 0 || stats.total === 0) {
+        alert('❌ Нет данных для запроса зарплаты. Обратитесь к руководителю.');
+        return;
+    }
+    
+    // Проверяем, нет ли уже активного запроса
+    try {
+        const q = query(
+            collection(db, 'salaryRequests'),
+            where('employeeId', '==', EMPLOYEE_ID),
+            where('weekKey', '==', weekKey),
+            where('status', '==', 'pending')
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+            alert('⏳ ЗП уже запрошена за эту неделю. Дождитесь выплаты.');
+            btn.textContent = '⏳ ЗП запрошена';
+            btn.style.background = 'var(--amber)';
+            btn.disabled = true;
+            return;
+        }
+    } catch (e) {
+        console.warn(e);
+    }
+    
+    // Получаем активные авансы
+    let totalAdvances = 0;
+    try {
+        const advQ = query(
+            collection(db, 'salaryAdvances'),
+            where('employeeId', '==', EMPLOYEE_ID),
+            where('status', '==', 'active')
+        );
+        const advSnap = await getDocs(advQ);
+        advSnap.forEach(d => {
+            totalAdvances += d.data().amount || 0;
+        });
+    } catch (e) {
+        console.warn('Ошибка загрузки авансов:', e);
+    }
+    
+    const finalPay = Math.max(0, stats.total - totalAdvances);
+    
+    // Подтверждение
+    const confirmMsg = `💰 Запросить зарплату за неделю?\n\n` +
+        `📅 ${weekRange}\n` +
+        `👤 ${employeeName}\n` +
+        `📊 ${stats.days} дн. / ${stats.totalHours.toFixed(2)} ч\n` +
+        `💵 Зарплата: ${stats.total.toLocaleString()} ₽\n` +
+        (totalAdvances > 0 ? `💳 Авансы: −${totalAdvances.toLocaleString()} ₽\n` : '') +
+        `✅ К выплате: ${finalPay.toLocaleString()} ₽\n\n` +
+        `Администратор получит уведомление.`;
+    
+    if (!confirm(confirmMsg)) return;
+    
+    // Блокируем кнопку
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ Отправка...';
+    
+    try {
+        await setDoc(doc(collection(db, 'salaryRequests')), {
+            employeeId: EMPLOYEE_ID,
+            employeeName: employeeName,
+            weekKey: weekKey,
+            weekRange: weekRange,
+            days: stats.days,
+            totalHours: stats.totalHours,
+            total: stats.total,
+            sundayBonus: stats.sundayBonus || 0,
+            advances: totalAdvances,
+            finalPay: finalPay,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            paidAt: null
+        });
+        
+        console.log('✅ Запрос на ЗП отправлен');
+        btn.textContent = '⏳ ЗП запрошена';
+        btn.style.background = 'var(--amber)';
+        btn.style.cursor = 'not-allowed';
+        showToast('✅ Запрос на зарплату отправлен!');
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка отправки запроса: ' + error.message);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+// Всплывающее уведомление
+function showToast(message) {
+    let el = document.getElementById('toast');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'toast';
+        el.style.cssText = `
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--teal);
+            color: #0c1520;
+            padding: 15px 25px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-size: 1rem;
+            opacity: 0;
+            transition: opacity 0.4s, transform 0.4s;
+            z-index: 99999;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            font-family: var(--mono);
+            pointer-events: none;
+            max-width: 90%;
+            text-align: center;
+        `;
+        document.body.appendChild(el);
+    }
+    el.textContent = message;
+    el.style.opacity = '1';
+    el.style.transform = 'translateX(-50%) translateY(0)';
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(-50%) translateY(20px)';
+    }, 3000);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -36,6 +36,7 @@ let allEmployees = [];
 let allWeeks = {};
 let allAttendance = {};      // ключ: 'employeeId_YYYY-MM-DD' → [logs]
 let allSettings = {};
+let allRequests = {};  // ★ Запросы на ЗП
 let currentSalaryWeek = 0;
 let currentAttWeek = 0;
 let isRendering = false;
@@ -119,6 +120,21 @@ function startListening() {
         window.__allSettings = allSettings;
         scheduleRender();
     }, () => showNotification('❌ Ошибка загрузки настроек', true));
+
+        // ★ СЛУШАТЕЛЬ ЗАПРОСОВ НА ЗП
+        onSnapshot(collection(db, 'salaryRequests'), (snapshot) => {
+            allRequests = {};
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.status === 'pending') {
+                    const key = data.employeeId + '_' + data.weekKey;
+                    allRequests[key] = { id: doc.id, ...data };
+                }
+            });
+            console.log('💰 Активных запросов на ЗП:', Object.keys(allRequests).length);
+            window.__allRequests = allRequests;
+            scheduleRender();
+        }, () => showNotification('❌ Ошибка загрузки запросов', true));
 }
 
 function scheduleRender() {
@@ -331,6 +347,12 @@ function renderSalary() {
     let totalPay = 0, totalCount = 0;
 
     for (const emp of allEmployees) {
+
+                // ★ Проверяем, есть ли запрос на ЗП
+                const requestKey = emp.id + '_' + weekKey;
+                const hasRequest = allRequests[requestKey] !== undefined;
+                const requestData = hasRequest ? allRequests[requestKey] : null;
+
         const weekData = getWeekDataForEmployee(emp.id, weekKey, dates);
 
         if (!weekData.anyData) {
@@ -354,15 +376,36 @@ function renderSalary() {
         else if (hasAdmin) sourceLabel = ' 🔒';
         else if (hasAtt) sourceLabel = ' 📌';
 
-        html += `<tr>
-            <td class="col-employee" title="${emp.name}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${emp.name}${sourceLabel}</td>
+                // ★ Стиль для строки с запросом
+        const rowStyle = hasRequest 
+            ? 'background:rgba(62,207,168,.08); border-left:4px solid var(--teal);' 
+            : '';
+        
+        // ★ Кнопки действий
+        let actionButtons = '';
+        if (hasRequest) {
+            actionButtons = `
+                <button class="btn-sm teal" onclick="window.showRequestDetails('${requestData.id}')" 
+                        title="Показать запрос" 
+                        style="padding:6px 12px; font-weight:bold; animation: requestPulse 1.5s infinite;">
+                    💰 ЗАПРОС!
+                </button>
+            `;
+        } else {
+            actionButtons = `
+                <button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')" title="Настройки">⚙️</button>
+                <button class="btn-sm amber" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')" title="Детали">👁️</button>
+            `;
+        }
+        
+        html += `<tr style="${rowStyle}">
+            <td class="col-employee" title="${emp.name}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${hasRequest ? '💰 ' : ''}${emp.name}${sourceLabel}</td>
             <td style="text-align:center;">${stats.days}</td>
             <td style="text-align:center;">${stats.totalHours.toFixed(1)}</td>
             <td style="text-align:center;">${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</td>
             <td style="text-align:right;font-weight:700;color:var(--amber);font-size:1.05rem;white-space:nowrap;">${stats.total.toLocaleString()} ₽</td>
             <td style="text-align:center;white-space:nowrap;">
-                <button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')" title="Настройки">⚙️</button>
-                <button class="btn-sm amber" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')" title="Детали">👁️</button>
+                ${actionButtons}
             </td>
         </tr>`;
     }
@@ -1199,5 +1242,131 @@ async function sendBitrixReport() {
 
 // Привязываем кнопку
 document.getElementById('sendBitrixBtn')?.addEventListener('click', sendBitrixReport);
+
+
+// ============================================
+// ★ ДЕТАЛИ ЗАПРОСА НА ЗП
+// ============================================
+window.showRequestDetails = function(requestId) {
+    const request = Object.values(allRequests).find(r => r.id === requestId);
+    if (!request) {
+        showNotification('❌ Запрос не найден', true);
+        return;
+    }
+    
+    const emp = allEmployees.find(e => e.id === request.employeeId);
+    const dates = getWeekDatesUTC(currentSalaryWeek);
+    const weekData = getWeekDataForEmployee(request.employeeId, request.weekKey, dates);
+    const settings = getEmployeeSettings(request.employeeId);
+    const stats = calculateWeekPay(weekData, settings);
+    
+    const modal = document.getElementById('modalOverlay');
+    const body = document.getElementById('modalBody');
+    const actions = document.getElementById('modalActions');
+    const title = document.getElementById('modalTitle');
+    const sub = document.getElementById('modalSub');
+    if (!modal || !body) return;
+    
+    title.textContent = `💰 Запрос на ЗП`;
+    sub.textContent = `${request.employeeName} · ${request.weekRange}`;
+    
+    const finalPay = Math.max(0, stats.total - (request.advances || 0));
+    
+    body.innerHTML = `
+        <div style="background:rgba(62,207,168,.1); padding:14px; border-radius:10px; margin-bottom:16px; border:1px solid var(--teal);">
+            <div style="color:var(--teal); font-size:.75rem; font-weight:bold; margin-bottom:8px;">
+                💰 СОТРУДНИК ЗАПРАШИВАЕТ ЗАРПЛАТУ
+            </div>
+            <div style="font-size:.7rem; color:var(--mut);">
+                Запрос создан: ${new Date(request.createdAt).toLocaleString('ru-RU')}
+            </div>
+        </div>
+        
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
+            <div style="background:rgba(255,255,255,.05); padding:12px; border-radius:8px; text-align:center;">
+                <div style="color:var(--mut); font-size:.7rem;">Дней</div>
+                <div style="font-size:1.4rem; font-weight:bold; color:var(--amber2);">${stats.days}</div>
+            </div>
+            <div style="background:rgba(255,255,255,.05); padding:12px; border-radius:8px; text-align:center;">
+                <div style="color:var(--mut); font-size:.7rem;">Часов</div>
+                <div style="font-size:1.4rem; font-weight:bold; color:var(--amber2);">${stats.totalHours.toFixed(1)}</div>
+            </div>
+            <div style="background:rgba(255,255,255,.05); padding:12px; border-radius:8px; text-align:center;">
+                <div style="color:var(--mut); font-size:.7rem;">Переработка</div>
+                <div style="font-size:1.4rem; font-weight:bold; color:${stats.ot > 0 ? 'var(--amber)' : 'var(--mut)'};">${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</div>
+            </div>
+            <div style="background:rgba(255,181,46,.1); padding:12px; border-radius:8px; text-align:center; border:1px solid var(--amber);">
+                <div style="color:var(--mut); font-size:.7rem;">ЗП</div>
+                <div style="font-size:1.6rem; font-weight:bold; color:var(--amber);">${stats.total.toLocaleString()} ₽</div>
+            </div>
+        </div>
+        
+        ${stats.sundayBonus > 0 ? `
+            <div style="background:rgba(255,181,46,.15); padding:10px; border-radius:8px; margin-bottom:12px; border:1px dashed var(--amber); text-align:center;">
+                <span style="color:var(--mut); font-size:.75rem;">🌟 Надбавка за воскресенье:</span>
+                <span style="color:var(--amber); font-weight:bold; margin-left:8px;">+${stats.sundayBonus.toLocaleString()} ₽</span>
+            </div>
+        ` : ''}
+        
+        ${request.advances > 0 ? `
+            <div style="background:rgba(229,72,77,.1); padding:10px; border-radius:8px; margin-bottom:12px; border:1px solid var(--red); text-align:center;">
+                <span style="color:var(--mut); font-size:.75rem;">💳 Активных авансов:</span>
+                <span style="color:var(--red); font-weight:bold; margin-left:8px;">−${request.advances.toLocaleString()} ₽</span>
+                <div style="font-size:.65rem; color:var(--mut); margin-top:4px;">(вычитается из суммы к выплате)</div>
+            </div>
+        ` : ''}
+        
+        <div style="background:rgba(62,207,168,.15); padding:14px; border-radius:10px; border:2px solid var(--teal); text-align:center;">
+            <div style="color:var(--mut); font-size:.75rem; margin-bottom:4px;">К ВЫПЛАТЕ</div>
+            <div style="font-size:2rem; font-weight:bold; color:var(--teal);">${finalPay.toLocaleString()} ₽</div>
+        </div>
+        
+        <div style="border-top:1px solid var(--line); padding-top:12px; margin-top:16px;">
+            <div style="color:var(--mut); font-size:.7rem; margin-bottom:8px;">По дням:</div>
+            <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:4px;">
+                ${['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map((d, i) => {
+                    const src = weekData.daySource[i];
+                    const color = src === 'admin' ? 'var(--amber)' : src === 'attendance' ? 'var(--teal)' : 'var(--line)';
+                    const bg = src === 'admin' ? 'rgba(255,181,46,.15)' : src === 'attendance' ? 'rgba(62,207,168,.15)' : 'rgba(255,255,255,.05)';
+                    const icon = src === 'admin' ? '🔒' : src === 'attendance' ? '📌' : '';
+                    return `
+                        <div style="text-align:center; padding:6px 2px; border-radius:6px; background:${bg}; border:1px solid ${color};">
+                            <div style="font-size:.55rem; color:var(--mut);">${d} ${icon}</div>
+                            <div style="font-weight:bold; font-size:.85rem;">${weekData.hours[i]}ч</div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+    
+    actions.innerHTML = `
+        <button class="btn btn-amber" id="markPaidBtn" style="background:var(--teal); color:#0c1520; font-weight:bold;">
+            ✅ Оплачено
+        </button>
+        <button class="btn btn-ghost" id="closeRequestBtn">Закрыть</button>
+    `;
+    
+    modal.classList.add('active');
+    
+    document.getElementById('markPaidBtn').addEventListener('click', async () => {
+        if (!confirm(`✅ Подтвердить выплату ${finalPay.toLocaleString()} ₽ сотруднику ${request.employeeName}?`)) return;
+        
+        try {
+            await updateDoc(doc(db, 'salaryRequests', requestId), {
+                status: 'paid',
+                paidAt: new Date().toISOString(),
+                paidBy: currentUser?.email || 'admin'
+            });
+            
+            modal.classList.remove('active');
+            showNotification(`✅ Выплата ${request.employeeName} подтверждена!`);
+        } catch (error) {
+            showNotification('❌ Ошибка: ' + error.message, true);
+        }
+    });
+    
+    document.getElementById('closeRequestBtn').addEventListener('click', () => modal.classList.remove('active'));
+};
 
 console.log('✅ Админ-панель загружена');
