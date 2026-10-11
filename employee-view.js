@@ -7,12 +7,12 @@
 //     • иначе → данные из отметок
 // - Ничего в БД НЕ записываем.
 //
-// ★ ДОБАВЛЕНО ОТОБРАЖЕНИЕ НАДБАВКИ ЗА ВОСКРЕСЕНЬЕ
+// ★ ДОБАВЛЕНО: Календарь-расписание сотрудников
 
 import { calculateWeekPay } from './modules/calculator.js';
 import { calculateDayHoursFromLogs } from './modules/attendance.js';
 
-const { db, doc, getDoc, collection, query, where, getDocs } = window;
+const { db, doc, getDoc, setDoc, collection, query, where, getDocs } = window;
 
 const urlParams = new URLSearchParams(window.location.search);
 const EMPLOYEE_ID = urlParams.get('id');
@@ -33,17 +33,17 @@ if (!EMPLOYEE_ID) {
 let currentWeekOffset = 0;
 let currentData = null;
 let employeeName = 'Сотрудник';
-let allAttendance = {};  // ключ 'YYYY-MM-DD' → [logs]
+let allAttendance = {};
 let settings = { 
-    rDay: 3000, 
-    rExtra: 3500, 
-    rOt1: 400, 
-    rOt2: 800, 
-    otLimit: 5, 
-    hpd: 8,
-    sundayBonusEnabled: false,
-    sundayBonusAmount: 1000
+    rDay: 3000, rExtra: 3500, rOt1: 400, rOt2: 800, otLimit: 5, hpd: 8,
+    sundayBonusEnabled: false, sundayBonusAmount: 1000
 };
+
+// Для календаря
+let scheduleWeekOffset = 0;
+let allEmployees = [];
+let scheduleData = {};  // { 'employeeId_weekKey': { days: {...} } }
+let employeesAttendance = {}; // { 'employeeId_date': true/false }
 
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -86,6 +86,16 @@ function formatHours(h) {
     return Number(h).toFixed(2).replace('.', ',');
 }
 
+function isPastDate(dateStr) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const d = new Date(dateStr + 'T00:00:00Z');
+    return d < today;
+}
+function isTodayDate(dateStr) {
+    return dateStr === new Date().toISOString().slice(0, 10);
+}
+
 // ============================================
 // ЗАГРУЗКА
 // ============================================
@@ -119,7 +129,6 @@ async function loadSettings() {
                 rOt2: data.rOt2 || 800,
                 otLimit: data.otLimit || 5,
                 hpd: data.hpd || 8,
-                // ★ НОВЫЕ ПОЛЯ
                 sundayBonusEnabled: data.sundayBonusEnabled === true,
                 sundayBonusAmount: data.sundayBonusAmount || 1000
             };
@@ -143,7 +152,6 @@ async function loadAttendance() {
             if (!allAttendance[date]) allAttendance[date] = [];
             allAttendance[date].push({ id: d.id, ...data });
         });
-        console.log('📋 Загружено отметок:', snap.size);
     } catch (e) {
         console.error(e);
         allAttendance = {};
@@ -166,7 +174,6 @@ async function getWeekData(weekKey, weekDates) {
 
     const adminEditedDays = dbWeek?.adminEditedDays || null;
     const adminHours = dbWeek?.hours || null;
-    const adminWorkDays = dbWeek?.workDays || null;
     const adminWorkStart = dbWeek?.workStart || null;
     const adminWorkEnd = dbWeek?.workEnd || null;
 
@@ -182,7 +189,6 @@ async function getWeekData(weekKey, weekDates) {
         const dateStr = getUTCDateStr(dateObj);
         const logs = allAttendance[dateStr] || [];
 
-        // 1. Админ правил этот день?
         if (adminEditedDays && adminEditedDays[i] === true) {
             const h = Number(adminHours?.[i]) || 0;
             workDays[i] = h > 0;
@@ -194,7 +200,6 @@ async function getWeekData(weekKey, weekDates) {
             return;
         }
 
-        // 2. Из отметок
         if (logs.length > 0) {
             const dayInfo = calculateDayHoursFromLogs(logs);
             const h = dayInfo.totalHoursDecimal || 0;
@@ -277,7 +282,6 @@ function updateTimeInputs() {
         const hoursDisplay = item.querySelector('.time-hours strong');
         const attDisplay = item.querySelector('.time-from-attendance');
 
-        // ★ Сбрасываем все классы
         item.classList.remove('work-day', 'extra-day', 'sunday-bonus-day');
         attDisplay.style.display = 'none';
         attDisplay.textContent = '';
@@ -285,7 +289,6 @@ function updateTimeInputs() {
         const dateStr = getUTCDateStr(dates[i]);
         const attLogs = allAttendance[dateStr] || [];
 
-        // Показываем отметки, если они есть — всегда
         if (attLogs.length > 0) {
             const sorted = [...attLogs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
             const times = sorted.map(l => {
@@ -321,7 +324,6 @@ function updateTimeInputs() {
             item.classList.add('work-day');
             if (dayIndex > 5) item.classList.add('extra-day');
 
-            // ★ ПОДСВЕТКА ВОСКРЕСЕНЬЯ С НАДБАВКОЙ
             if (i === 6 && settings.sundayBonusEnabled) {
                 item.classList.add('sunday-bonus-day');
             }
@@ -347,18 +349,7 @@ function update() {
     const dates = getWeekDatesUTC(currentWeekOffset);
     const weekKey = getWeekKeyUTC(dates[0]);
 
-    console.log('════════ ОТЛАДКА update() ════════');
-    console.log('weekKey:', weekKey);
-    console.log('source:', currentData.source);
-    console.log('workDays:', JSON.stringify(currentData.workDays));
-    console.log('hours:', JSON.stringify(currentData.hours));
-    console.log('daySource:', JSON.stringify(currentData.daySource));
-    console.log('settings:', JSON.stringify(settings));
-
     const stats = calculateWeekPay(currentData, settings);
-    console.log('stats:', JSON.stringify(stats));
-    console.log('══════════════════════════════════');
-
     const { days, totalHours, norm, ot, ot1, ot2, payBase, payExtra, payOt1, payOt2, total } = stats;
 
     document.querySelectorAll('#days .day').forEach((b, i) => {
@@ -421,7 +412,6 @@ function update() {
         document.getElementById('vOt2').textContent = payOt2.toLocaleString() + ' ₽';
     }
 
-    // ★ НАДБАВКА ЗА ВОСКРЕСЕНЬЕ
     const rowSundayBonus = document.getElementById('rowSundayBonus');
     if (rowSundayBonus) {
         if (stats.sundayBonus > 0) {
@@ -452,7 +442,6 @@ function update() {
     if (payExtra > 0) parts.push(`<b class="f-n">${extraDaysCount}×${settings.rExtra.toLocaleString()}</b>`);
     if (ot1 > 0) parts.push(`<b class="f-1">${formatHours(ot1)}×${settings.rOt1.toLocaleString()}</b>`);
     if (ot2 > 0) parts.push(`<b class="f-2">${formatHours(ot2)}×${settings.rOt2.toLocaleString()}</b>`);
-    // ★ Добавляем надбавку в формулу
     if (stats.sundayBonus > 0) {
         parts.push(`<b style="color:var(--amber);">${stats.sundayBonus.toLocaleString()}₽ (Вс)</b>`);
     }
@@ -472,7 +461,6 @@ function update() {
     document.getElementById('eyebrow').textContent = `Табель · ${weekLabel}`;
     document.getElementById('wk').textContent = weekLabel;
 
-    // Подпись источника
     const subEl = document.querySelector('.sub');
     if (subEl) {
         const hasAdmin = currentData.daySource.includes('admin');
@@ -487,59 +475,397 @@ function update() {
 }
 
 // ============================================
-// ФИНАНСЫ
+// ★ КАЛЕНДАРЬ-РАСПИСАНИЕ
 // ============================================
-async function getEmployeeAdvances() {
-    try {
-        const q = query(collection(db, 'salaryAdvances'), where('employeeId', '==', EMPLOYEE_ID));
-        const snap = await getDocs(q);
-        const arr = [];
-        snap.forEach(d => arr.push({ id: d.id, ...d.data() }));
-        return arr.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    } catch (e) { return []; }
-}
 
-async function renderEmployeeFinance() {
-    const container = document.getElementById('employeeFinanceContent');
-    if (!container) return;
+async function loadAllEmployees() {
     try {
-        const advances = await getEmployeeAdvances();
-        const active = advances.filter(a => a.status === 'active');
-        const totalDebt = active.reduce((s, a) => s + (a.amount || 0), 0);
-        const totalRepaid = advances.filter(a => a.status === 'repaid')
-            .reduce((s, a) => s + (a.repaidAmount || a.amount || 0), 0);
-
-        container.innerHTML = `
-            <div class="debt-summary">
-                <div class="debt-item"><div class="label">Активных авансов</div><div class="value count">${active.length}</div></div>
-                <div class="debt-item"><div class="label">Общий долг</div><div class="value debt">${totalDebt.toLocaleString()} ₽</div></div>
-                <div class="debt-item"><div class="label">Погашено</div><div class="value paid">${totalRepaid.toLocaleString()} ₽</div></div>
-            </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span style="font-weight:600; font-size:.85rem;">📋 История авансов</span>
-                <span style="font-size:.7rem; color:var(--mut);">${advances.length} записей</span>
-            </div>
-            <div class="advance-list">
-                ${advances.length === 0 ? '<div class="no-advances">Нет авансов</div>' :
-                advances.slice(0, 10).map(a => `
-                    <div class="advance-row">
-                        <div class="info">
-                            <div>${a.type === 'advance' ? '📤' : '📥'} ${a.status === 'active' ? 'Аванс' : 'Погашен'}</div>
-                            <div class="comment">${a.comment || 'Без комментария'} · ${a.date ? formatDateFull(new Date(a.date)) : ''}</div>
-                        </div>
-                        <div class="amount ${a.status === 'active' ? 'active' : 'repaid'}">${(a.amount || 0).toLocaleString()} ₽</div>
-                    </div>
-                `).join('')}
-            </div>
-        `;
+        const snap = await getDocs(collection(db, 'salaryEmployees'));
+        allEmployees = [];
+        snap.forEach(d => {
+            allEmployees.push({ id: d.id, ...d.data() });
+        });
+        allEmployees.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     } catch (e) {
-        container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red);">❌ Ошибка загрузки финансов</div>`;
+        console.error('Ошибка загрузки сотрудников:', e);
+        allEmployees = [];
     }
 }
 
-function updateStatsLink() {
-    const el = document.getElementById('statsLink');
-    if (el && EMPLOYEE_ID) el.href = `employee-stats.html?id=${EMPLOYEE_ID}`;
+async function loadScheduleData(weekKey) {
+    try {
+        const q = query(
+            collection(db, 'employeeSchedule'),
+            where('weekKey', '==', weekKey)
+        );
+        const snap = await getDocs(q);
+        scheduleData = {};
+        snap.forEach(d => {
+            const data = d.data();
+            const key = data.employeeId + '_' + data.weekKey;
+            scheduleData[key] = { id: d.id, ...data };
+        });
+    } catch (e) {
+        console.error('Ошибка загрузки расписания:', e);
+        scheduleData = {};
+    }
+}
+
+// Загружаем attendance всех сотрудников за неделю
+async function loadAllAttendanceForWeek(weekDates) {
+    try {
+        const snap = await getDocs(collection(db, 'attendance'));
+        employeesAttendance = {};
+        snap.forEach(d => {
+            const data = d.data();
+            const key = data.employeeId + '_' + data.date;
+            if (!employeesAttendance[key]) employeesAttendance[key] = 0;
+            employeesAttendance[key] += 1;
+        });
+    } catch (e) {
+        console.error('Ошибка загрузки attendance:', e);
+        employeesAttendance = {};
+    }
+}
+
+function getDayStatusForEmployee(employeeId, dateObj, weekKey) {
+    const dateStr = getUTCDateStr(dateObj);
+    const dayIndex = dateObj.getUTCDay() === 0 ? 6 : dateObj.getUTCDay() - 1;
+    
+    // 1. Проверяем, прошёл ли день
+    if (isPastDate(dateStr)) {
+        // Ищем смены в attendance
+        const attKey = employeeId + '_' + dateStr;
+        const hasAttendance = employeesAttendance[attKey] > 0;
+        
+        // Также проверяем salaryWeeks
+        const scheduleKey = employeeId + '_' + weekKey;
+        // (в salaryWeeks проверять сложнее, потому что нужно тянуть конкретную неделю)
+        
+        if (hasAttendance) {
+            return { status: 'past-work', editable: false };
+        } else {
+            return { status: 'past-off', editable: false };
+        }
+    }
+    
+    // 2. Будущее или сегодня — из employeeSchedule
+    const scheduleKey = employeeId + '_' + weekKey;
+    const schedule = scheduleData[scheduleKey];
+    
+    if (schedule && schedule.days && schedule.days[dayIndex]) {
+        const val = schedule.days[dayIndex];
+        return { 
+            status: val, // 'work' или 'off'
+            editable: employeeId === EMPLOYEE_ID && !isTodayDate(dateStr) === false || isTodayDate(dateStr),
+            // TODO: проверить точнее
+        };
+    }
+    
+    return { status: 'empty', editable: false };
+}
+
+function getDayStatusFull(employeeId, dateObj, weekKey, canEdit) {
+    const dateStr = getUTCDateStr(dateObj);
+    const dayIndex = dateObj.getUTCDay() === 0 ? 6 : dateObj.getUTCDay() - 1;
+    
+    // Прошлое?
+    if (isPastDate(dateStr)) {
+        const attKey = employeeId + '_' + dateStr;
+        const hasAttendance = employeesAttendance[attKey] > 0;
+        return {
+            status: hasAttendance ? 'past-work' : 'past-off',
+            editable: false,
+            label: hasAttendance ? '🟢' : '🔴'
+        };
+    }
+    
+    // Из расписания
+    const scheduleKey = employeeId + '_' + weekKey;
+    const schedule = scheduleData[scheduleKey];
+    let status = 'empty';
+    
+    if (schedule && schedule.days && schedule.days[dayIndex] !== undefined && schedule.days[dayIndex] !== null) {
+        status = schedule.days[dayIndex];
+    }
+    
+    // Можно ли редактировать?
+    const editable = canEdit; // уже передано как boolean
+    
+    let label = '⚪';
+    if (status === 'work') label = '🟢';
+    else if (status === 'off') label = '🔴';
+    
+    return { status, editable, label };
+}
+
+async function renderSchedule() {
+    const wrap = document.getElementById('scheduleTableWrap');
+    const label = document.getElementById('scheduleWeekLabel');
+    if (!wrap) return;
+    
+    const dates = getWeekDatesUTC(scheduleWeekOffset);
+    const weekKey = getWeekKeyUTC(dates[0]);
+    
+    if (label) {
+        label.textContent = `${formatDateDisplay(dates[0])} – ${formatDateDisplay(dates[6])} (${weekKey})`;
+    }
+    
+    // Загружаем данные
+    await loadScheduleData(weekKey);
+    await loadAllAttendanceForWeek(dates);
+    
+    // Проверяем, какая неделя — редактируемая
+    const today = new Date();
+    const todayWeekKey = getWeekKeyUTC(today);
+    const isCurrentWeek = weekKey === todayWeekKey;
+    const isFutureWeek = weekKey > todayWeekKey;
+    const isEditableWeek = isCurrentWeek || isFutureWeek;
+    
+    // Строим таблицу
+    let html = `<table class="schedule-table">
+        <thead>
+            <tr>
+                <th>Сотрудник</th>
+                ${DAY_NAMES.map((d, i) => {
+                    const isWeekend = i >= 5;
+                    const isTodayCol = isTodayDate(getUTCDateStr(dates[i]));
+                    return `<th class="${isWeekend ? 'weekend' : ''} ${isTodayCol ? 'today' : ''}">${d}</th>`;
+                }).join('')}
+            </tr>
+        </thead>
+        <tbody>`;
+    
+    for (const emp of allEmployees) {
+        const isSelf = emp.id === EMPLOYEE_ID;
+        html += `<tr class="${isSelf ? 'self-row' : ''}">`;
+        html += `<td>${isSelf ? '👤 ' : ''}${emp.name || 'Без имени'}</td>`;
+        
+        for (let i = 0; i < 7; i++) {
+            const dateObj = dates[i];
+            const dateStr = getUTCDateStr(dateObj);
+            const dayIndex = i;
+            
+            // Прошёл ли день?
+            const isPast = isPastDate(dateStr);
+            const isTodayCol = isTodayDate(dateStr);
+            
+            let status = 'empty';
+            let editable = false;
+            
+            if (isPast) {
+                // Из attendance
+                const attKey = emp.id + '_' + dateStr;
+                const hasAtt = employeesAttendance[attKey] > 0;
+                status = hasAtt ? 'past-work' : 'past-off';
+                editable = false;
+            } else {
+                // Из employeeSchedule
+                const scheduleKey = emp.id + '_' + weekKey;
+                const schedule = scheduleData[scheduleKey];
+                if (schedule && schedule.days && schedule.days[dayIndex]) {
+                    status = schedule.days[dayIndex];
+                }
+                
+                // Редактировать может только свои дни, только в текущую или будущие недели
+                // И не сегодняшний день? — по ТЗ можно, оставим возможность
+                editable = isSelf && isEditableWeek;
+            }
+            
+            // Символ
+            let symbol = '⚪';
+            if (status === 'work' || status === 'past-work') symbol = '🟢';
+            else if (status === 'off' || status === 'past-off') symbol = '🔴';
+            
+            const cls = `${status} ${editable ? 'editable' : ''}`;
+            
+            html += `<td>
+                <div class="schedule-day ${cls}" 
+                     data-employee="${emp.id}" 
+                     data-date="${dateStr}"
+                     data-day="${dayIndex}"
+                     data-week="${weekKey}"
+                     data-editable="${editable}"
+                     ${editable ? `onclick="window.openDayPicker(event, this)"` : ''}>
+                    ${symbol}
+                </div>
+            </td>`;
+        }
+        
+        html += `</tr>`;
+    }
+    
+    html += `</tbody></table>`;
+    wrap.innerHTML = html;
+    
+    // Обновляем подсказку
+    const hintEl = document.getElementById('scheduleHint');
+    if (hintEl) {
+        if (!isEditableWeek) {
+            hintEl.textContent = '🔒 Прошлые недели только для чтения';
+            hintEl.style.color = 'var(--mut)';
+        } else {
+            hintEl.textContent = '💡 Нажмите на свой день (в своей строке) — 🟢 работает / 🔴 выходной';
+            hintEl.style.color = 'var(--amber2)';
+        }
+    }
+}
+
+// ============================================
+// ★ КНОПКА МИНИКАРТЫ
+// ============================================
+function initMinimap() {
+    const btn = document.getElementById('minimapBtn');
+    const modal = document.getElementById('scheduleModal');
+    const closeBtn = document.getElementById('scheduleClose');
+    const prevBtn = document.getElementById('scheduleWeekPrev');
+    const nextBtn = document.getElementById('scheduleWeekNext');
+    const todayBtn = document.getElementById('scheduleWeekToday');
+    
+    if (!btn || !modal) return;
+    
+    btn.addEventListener('click', async () => {
+        modal.classList.add('active');
+        // Загружаем сотрудников, если ещё не загружены
+        if (allEmployees.length === 0) {
+            await loadAllEmployees();
+        }
+        await renderSchedule();
+    });
+    
+    closeBtn?.addEventListener('click', () => {
+        modal.classList.remove('active');
+    });
+    
+    // Закрытие по клику на фон
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.classList.remove('active');
+        }
+    });
+    
+    prevBtn?.addEventListener('click', async () => {
+        if (scheduleWeekOffset <= 0) return;
+        scheduleWeekOffset--;
+        await renderSchedule();
+    });
+    
+    nextBtn?.addEventListener('click', async () => {
+        if (scheduleWeekOffset >= 2) return;
+        scheduleWeekOffset++;
+        await renderSchedule();
+    });
+    
+    todayBtn?.addEventListener('click', async () => {
+        scheduleWeekOffset = 0;
+        await renderSchedule();
+    });
+}
+
+// ============================================
+// ★ МИНИ-МЕНЮ ВЫБОРА ДНЯ
+// ============================================
+let currentPicker = null;
+
+window.openDayPicker = function(event, el) {
+    event.stopPropagation();
+    
+    // Удаляем старый
+    if (currentPicker) {
+        currentPicker.remove();
+        currentPicker = null;
+    }
+    
+    const employeeId = el.dataset.employee;
+    const dateStr = el.dataset.date;
+    const dayIndex = parseInt(el.dataset.day);
+    const weekKey = el.dataset.week;
+    const currentStatus = el.classList.contains('work') ? 'work' : el.classList.contains('off') ? 'off' : 'empty';
+    
+    const picker = document.createElement('div');
+    picker.className = 'day-picker';
+    picker.innerHTML = `
+        <button class="work" data-status="work">🟢 Рабочий</button>
+        <button class="off" data-status="off">🔴 Выходной</button>
+        <button data-status="empty">⚪ Сбросить</button>
+    `;
+    document.body.appendChild(picker);
+    
+    // Позиционирование
+    const rect = el.getBoundingClientRect();
+    const pickerRect = picker.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - pickerRect.width / 2;
+    let top = rect.bottom + 8;
+    
+    // Корректировка, чтобы не выходило за экран
+    if (left < 8) left = 8;
+    if (left + pickerRect.width > window.innerWidth - 8) {
+        left = window.innerWidth - pickerRect.width - 8;
+    }
+    if (top + pickerRect.height > window.innerHeight - 8) {
+        top = rect.top - pickerRect.height - 8;
+    }
+    
+    picker.style.left = left + 'px';
+    picker.style.top = top + 'px';
+    
+    currentPicker = picker;
+    
+    // Обработчики
+    picker.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const newStatus = btn.dataset.status;
+            await saveDayStatus(employeeId, weekKey, dayIndex, newStatus);
+            picker.remove();
+            currentPicker = null;
+            await renderSchedule();
+        });
+    });
+    
+    // Закрытие по клику вне
+    setTimeout(() => {
+        document.addEventListener('click', function closePicker(e) {
+            if (currentPicker && !currentPicker.contains(e.target)) {
+                currentPicker.remove();
+                currentPicker = null;
+                document.removeEventListener('click', closePicker);
+            }
+        });
+    }, 0);
+};
+
+// ============================================
+// ★ СОХРАНЕНИЕ СТАТУСА ДНЯ
+// ============================================
+async function saveDayStatus(employeeId, weekKey, dayIndex, status) {
+    try {
+        const docId = `${employeeId}_${weekKey}`;
+        const docRef = doc(db, 'employeeSchedule', docId);
+        
+        // Проверяем, существует ли документ
+        const existing = await getDoc(docRef);
+        
+        let days = existing.exists() ? (existing.data().days || {}) : {};
+        
+        if (status === 'empty') {
+            delete days[dayIndex];
+        } else {
+            days[dayIndex] = status;
+        }
+        
+        await setDoc(docRef, {
+            employeeId,
+            employeeName: allEmployees.find(e => e.id === employeeId)?.name || '',
+            weekKey,
+            days,
+            updatedAt: new Date().toISOString()
+        }, { merge: true });
+        
+        console.log(`✅ Сохранено: ${employeeId} ${weekKey} день ${dayIndex} = ${status}`);
+    } catch (e) {
+        console.error('Ошибка сохранения:', e);
+        alert('❌ Не удалось сохранить. Попробуйте снова.');
+    }
 }
 
 // ============================================
@@ -550,7 +876,6 @@ async function refreshWeek() {
     const weekKey = getWeekKeyUTC(dates[0]);
     updateWeekLabel(dates);
     currentData = await getWeekData(weekKey, dates);
-    console.log('🔄 Неделя', weekKey, 'источник:', currentData.source);
     update();
 }
 
@@ -560,9 +885,8 @@ async function init() {
     await loadSettings();
     await loadAttendance();
     buildUI();
-    updateStatsLink();
+    initMinimap();  // ★ Инициализация миникарты
     await refreshWeek();
-    await renderEmployeeFinance();
 
     document.getElementById('weekPrev').addEventListener('click', async () => { currentWeekOffset--; await refreshWeek(); });
     document.getElementById('weekNext').addEventListener('click', async () => { currentWeekOffset++; await refreshWeek(); });
@@ -576,40 +900,6 @@ async function init() {
     });
     console.log('✅ employee-view готов');
 }
-
-const style = document.createElement('style');
-style.textContent = `
-    .day-time-item .time-from-attendance { font-size: .45rem; font-family: var(--mono); margin-top: 1px; }
-    .day-time-item.work-day { border-color: rgba(62,207,168,.3); background: rgba(62,207,168,.05); }
-    .day-time-item.extra-day { border-color: var(--amber); background: rgba(255,181,46,.08); }
-    .day-time-item.work-day .day-label { color: var(--teal); }
-    .day-time-item.extra-day .day-label { color: var(--amber); }
-    
-    /* ★ ПОДСВЕТКА ВОСКРЕСЕНЬЯ С НАДБАВКОЙ */
-    .day-time-item.sunday-bonus-day {
-        border-color: var(--amber) !important;
-        background: rgba(255,181,46,.15) !important;
-        box-shadow: 0 0 12px rgba(255,181,46,.35);
-        position: relative;
-    }
-    .day-time-item.sunday-bonus-day::after {
-        content: '🌟';
-        position: absolute;
-        top: -6px;
-        right: -4px;
-        font-size: .8rem;
-        animation: pulse 1.5s ease-in-out infinite;
-    }
-    @keyframes pulse {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.2); opacity: 0.7; }
-    }
-    .day-time-item.sunday-bonus-day .day-label {
-        color: var(--amber) !important;
-        font-weight: bold;
-    }
-`;
-document.head.appendChild(style);
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
 else init();

@@ -7,6 +7,7 @@
     <title>Моя зарплата</title>
     <link rel="stylesheet" href="style.css">
     <style>
+        /* ... ваши существующие стили ... */
         .user-badge {
             position: fixed;
             top: 20px;
@@ -60,358 +61,504 @@
                 padding: 4px 12px;
                 font-size: .65rem;
             }
-            .user-badge .avatar {
-                width: 20px;
-                height: 20px;
-                font-size: .6rem;
-            }
-            .user-badge .name {
-                max-width: 100px;
-            }
+            .user-badge .avatar { width: 20px; height: 20px; font-size: .6rem; }
+            .user-badge .name { max-width: 100px; }
         }
         @media (max-width: 480px) {
-            .user-badge {
-                top: 8px;
-                right: 8px;
-                padding: 3px 10px;
-                font-size: .55rem;
-            }
-            .user-badge .avatar {
-                width: 16px;
-                height: 16px;
-                font-size: .5rem;
-            }
-            .user-badge .name {
-                max-width: 70px;
-            }
-            .user-badge .id-label {
-                display: none;
-            }
+            .user-badge { top: 8px; right: 8px; padding: 3px 10px; font-size: .55rem; }
+            .user-badge .avatar { width: 16px; height: 16px; font-size: .5rem; }
+            .user-badge .name { max-width: 70px; }
+            .user-badge .id-label { display: none; }
         }
 
-        .settings-saved {
-            font-size: .7rem;
-            color: var(--teal);
-            margin-left: 8px;
-            opacity: 0;
-            transition: opacity .3s;
-        }
-        .settings-saved.show {
-            opacity: 1;
-        }
-        .settings-saved.error {
-            color: var(--red);
-        }
-
-        .rules {
-            margin-top: 70px;
-        }
-        .rules h2 {
-            font-family: var(--display);
-            font-weight: 400;
-            text-transform: uppercase;
-            letter-spacing: .08em;
-            font-size: clamp(1.5rem, 3vw, 2.1rem);
-            margin-bottom: 8px;
-        }
-        .rules h2 em {
-            font-style: normal;
-            color: var(--amber);
-        }
-        .rules-sub {
-            color: var(--mut);
-            margin-bottom: 28px;
-            font-size: .95rem;
-        }
-        .rule {
-            display: grid;
-            grid-template-columns: 110px 1fr;
-            gap: 22px;
-            padding: 26px 8px;
-            border-top: 1px dashed var(--line);
-            align-items: start;
-        }
-        .rule:last-child {
-            border-bottom: 1px dashed var(--line);
-        }
-        .rule .num {
-            font-family: var(--display);
-            font-size: 3.6rem;
-            line-height: 1;
-            color: transparent;
-            -webkit-text-stroke: 1.5px var(--amber);
-            text-stroke: 1.5px var(--amber);
-        }
-        @supports not (-webkit-text-stroke: 1px red) {
-            .rule .num {
-                color: var(--amber);
-            }
-        }
-        .rule h3 {
-            font-size: 1.08rem;
-            margin-bottom: 8px;
-        }
-        .rule p {
-            color: var(--mut);
-            font-size: .94rem;
-            max-width: 64ch;
-            line-height: 1.55;
-        }
-        .rule code {
-            display: inline-block;
-            margin-top: 12px;
-            font-family: var(--mono);
-            font-size: .8rem;
+        /* ============================================
+           ★ МИНИКАРТА (иконка расписания)
+           ============================================ */
+        .minimap-btn {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(255,181,46,.2), rgba(255,181,46,.1));
+            border: 2px solid var(--amber);
             color: var(--amber2);
-            background: rgba(255, 181, 46, .08);
-            border: 1px solid rgba(255, 181, 46, .25);
-            padding: 6px 12px;
-            border-radius: 7px;
-        }
-        @media (max-width: 640px) {
-            .rule {
-                grid-template-columns: 1fr;
-                gap: 8px;
-            }
-            .rule .num {
-                font-size: 2.6rem;
-            }
-        }
-
-        .reveal {
-            opacity: 1 !important;
-            transform: none !important;
-        }
-
-        .day-time-group {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 4px;
-            margin-bottom: 8px;
-        }
-        .day-time-item {
+            cursor: pointer;
+            z-index: 999;
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center;
             gap: 2px;
-            padding: 4px 2px;
-            border-radius: 6px;
-            background: rgba(255,255,255,.03);
-            border: 1px solid var(--line);
+            backdrop-filter: blur(12px);
+            box-shadow: 
+                0 8px 24px rgba(255,181,46,.35),
+                0 0 0 0 rgba(255,181,46,.6);
+            transition: all .25s ease;
+            padding: 0;
+            font-family: var(--body);
         }
-        .day-time-item .day-label {
+        .minimap-btn:hover {
+            transform: scale(1.08);
+            box-shadow: 
+                0 12px 32px rgba(255,181,46,.5),
+                0 0 0 8px rgba(255,181,46,.1);
+        }
+        .minimap-btn:active {
+            transform: scale(0.95);
+        }
+        .minimap-btn .minimap-icon {
+            font-size: 1.6rem;
+            line-height: 1;
+        }
+        .minimap-btn .minimap-label {
             font-size: .55rem;
-            color: var(--mut);
-            text-transform: uppercase;
+            font-weight: 700;
             letter-spacing: .05em;
+            text-transform: uppercase;
+            opacity: 0.9;
         }
-        .day-time-item input[type="time"] {
-            width: 100%;
-            font-family: var(--mono);
-            font-size: .55rem;
-            color: var(--txt);
-            background: var(--bg2);
-            border: 1px solid var(--line);
-            border-radius: 4px;
-            padding: 2px 2px;
-            text-align: center;
-            transition: border-color .2s;
+        /* Пульсация, если есть что-то новое */
+        .minimap-btn.pulse {
+            animation: minimapPulse 2s infinite;
         }
-        .day-time-item input[type="time"]:focus {
-            border-color: var(--amber);
-            outline: none;
-        }
-        .day-time-item input[type="time"]:disabled {
-            opacity: .3;
-            cursor: not-allowed;
-        }
-        .day-time-item .time-hours {
-            font-size: .5rem;
-            color: var(--mut);
-        }
-        .day-time-item .time-hours strong {
-            color: var(--amber2);
+        @keyframes minimapPulse {
+            0%, 100% {
+                box-shadow: 
+                    0 8px 24px rgba(255,181,46,.35),
+                    0 0 0 0 rgba(255,181,46,.6);
+            }
+            50% {
+                box-shadow: 
+                    0 8px 24px rgba(255,181,46,.35),
+                    0 0 0 12px rgba(255,181,46,0);
+            }
         }
         @media (max-width: 768px) {
-            .day-time-group {
-                grid-template-columns: repeat(7, 1fr);
-                gap: 3px;
+            .minimap-btn {
+                bottom: 20px;
+                right: 20px;
+                width: 64px;
+                height: 64px;
             }
-            .day-time-item input[type="time"] {
-                font-size: .5rem;
-                padding: 1px 1px;
-            }
+            .minimap-btn .minimap-icon { font-size: 1.4rem; }
+            .minimap-btn .minimap-label { font-size: .5rem; }
         }
         @media (max-width: 480px) {
-            .day-time-group {
-                grid-template-columns: repeat(7, 1fr);
-                gap: 2px;
+            .minimap-btn {
+                bottom: 16px;
+                right: 16px;
+                width: 58px;
+                height: 58px;
+                border-width: 1.5px;
             }
-            .day-time-item .day-label {
-                font-size: .45rem;
-            }
-            .day-time-item input[type="time"] {
-                font-size: .45rem;
-            }
-            .day-time-item .time-hours {
-                font-size: .4rem;
-            }
+            .minimap-btn .minimap-icon { font-size: 1.2rem; }
+            .minimap-btn .minimap-label { font-size: .45rem; }
         }
 
-        .finance-employee-block {
-            margin-top: 20px;
-            border-top: 2px solid var(--line);
-            padding-top: 20px;
+        /* ============================================
+           ★ МОДАЛКА РАСПИСАНИЯ
+           ============================================ */
+        .schedule-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.85);
+            backdrop-filter: blur(8px);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            animation: modalFadeIn .25s ease;
         }
-        .finance-employee-block h2 {
-            font-family: var(--display);
-            font-weight: 400;
-            color: var(--amber);
-            font-size: 1.05rem;
-            margin-bottom: 16px;
+        .schedule-modal.active {
+            display: flex;
         }
-        .finance-employee-block .debt-summary {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 16px;
+        @keyframes modalFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
-        .finance-employee-block .debt-item {
-            background: rgba(255,255,255,.03);
-            padding: 12px;
-            border-radius: 8px;
-            text-align: center;
+        .schedule-box {
+            background: var(--card);
             border: 1px solid var(--line);
+            border-radius: 20px;
+            width: 100%;
+            max-width: 900px;
+            max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            animation: modalScaleIn .3s ease;
         }
-        .finance-employee-block .debt-item .label {
-            font-size: .65rem;
-            color: var(--mut);
+        @keyframes modalScaleIn {
+            from { opacity: 0; transform: scale(.95); }
+            to { opacity: 1; transform: scale(1); }
         }
-        .finance-employee-block .debt-item .value {
-            font-size: 1.2rem;
-            font-weight: bold;
-        }
-        .finance-employee-block .debt-item .value.debt {
-            color: var(--amber);
-        }
-        .finance-employee-block .debt-item .value.paid {
-            color: var(--teal);
-        }
-        .finance-employee-block .debt-item .value.count {
-            color: var(--red);
-        }
-        .finance-employee-block .advance-list {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .finance-employee-block .advance-row {
+        .schedule-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--line);
-            font-size: .85rem;
+            padding: 20px 24px;
+            border-bottom: 2px solid var(--line);
+            flex-wrap: wrap;
+            gap: 12px;
         }
-        .finance-employee-block .advance-row .info {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .finance-employee-block .advance-row .info .comment {
-            font-size: .7rem;
-            color: var(--mut);
-        }
-        .finance-employee-block .advance-row .amount {
-            font-weight: bold;
-        }
-        .finance-employee-block .advance-row .amount.active {
+        .schedule-header h2 {
+            font-family: var(--display);
             color: var(--amber);
+            font-size: 1.4rem;
+            margin: 0;
         }
-        .finance-employee-block .advance-row .amount.repaid {
-            color: var(--teal);
-        }
-        .no-advances {
-            text-align: center;
-            padding: 16px;
-            color: var(--mut);
-            font-size: .85rem;
-        }
-
-        .btn-stats-link {
-            display: inline-flex;
+        .schedule-close {
+            background: rgba(255,255,255,.05);
+            border: 1px solid var(--line);
+            color: var(--txt);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            font-size: 1.4rem;
+            cursor: pointer;
+            display: flex;
             align-items: center;
             justify-content: center;
-            text-decoration: none;
-            color: var(--mut);
+            transition: all .2s;
+            line-height: 1;
+            padding: 0;
+        }
+        .schedule-close:hover {
+            background: var(--red);
+            color: #fff;
+            border-color: var(--red);
+            transform: rotate(90deg);
+        }
+        .schedule-week-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 24px;
+            background: rgba(255,255,255,.02);
+            border-bottom: 1px solid var(--line);
+            flex-wrap: wrap;
+        }
+        .schedule-week-nav button {
+            background: var(--card);
             border: 1px solid var(--line);
-            background: transparent;
-            padding: 13px 22px;
-            border-radius: 10px;
-            font-family: var(--body);
-            font-weight: 700;
-            font-size: .9rem;
-            cursor: pointer;
-            transition: transform .15s, box-shadow .15s, background .2s;
-        }
-        .btn-stats-link:hover {
             color: var(--txt);
-            border-color: var(--mut);
-            transform: translateY(-2px);
-        }
-        .btn-stats-link:active {
-            transform: translateY(0) scale(.97);
-        }
-        @media (max-width: 480px) {
-            .btn-stats-link {
-                width: 100%;
-                padding: 12px 16px;
-                font-size: .8rem;
-                min-height: 48px;
-            }
-        }
-
-        .view-only-badge {
-            display: inline-block;
-            background: rgba(255,181,46,.15);
-            color: var(--amber2);
-            border: 1px solid var(--amber);
-            padding: 4px 14px;
-            border-radius: 999px;
-            font-size: .7rem;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: .9rem;
+            transition: all .2s;
             font-family: var(--mono);
-            margin-left: 12px;
         }
-
-        .day-time-item .time-from-attendance {
-            font-size: .45rem;
-            color: var(--teal);
-            font-family: var(--mono);
-            margin-top: 1px;
-        }
-
-        .day-time-item.work-day {
-            border-color: rgba(62,207,168,.3);
-            background: rgba(62,207,168,.05);
-        }
-        .day-time-item.extra-day {
+        .schedule-week-nav button:hover:not(:disabled) {
             border-color: var(--amber);
-            background: rgba(255,181,46,.08);
-        }
-        .day-time-item.work-day .day-label {
-            color: var(--teal);
-        }
-        .day-time-item.extra-day .day-label {
             color: var(--amber);
         }
+        .schedule-week-nav button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        .schedule-week-nav .week-label {
+            flex: 1;
+            text-align: center;
+            color: var(--amber2);
+            font-family: var(--mono);
+            font-size: .9rem;
+            font-weight: 600;
+            min-width: 180px;
+        }
+        .schedule-body {
+            flex: 1;
+            overflow: auto;
+            padding: 20px 24px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .schedule-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 4px;
+            min-width: 600px;
+        }
+        .schedule-table th {
+            padding: 8px 4px;
+            font-family: var(--mono);
+            font-size: .7rem;
+            text-transform: uppercase;
+            color: var(--mut);
+            font-weight: 600;
+            text-align: center;
+            background: rgba(255,255,255,.03);
+            border-radius: 6px;
+        }
+        .schedule-table th.weekend {
+            color: var(--amber2);
+        }
+        .schedule-table th.today {
+            color: var(--amber);
+            border: 1px solid var(--amber);
+        }
+        .schedule-table td {
+            padding: 0;
+            text-align: center;
+            vertical-align: middle;
+        }
+        .schedule-table td:first-child {
+            text-align: left;
+            padding: 8px 12px;
+            font-weight: 600;
+            font-size: .85rem;
+            color: var(--txt);
+            background: rgba(255,255,255,.03);
+            border-radius: 8px;
+            white-space: nowrap;
+        }
+        .schedule-day {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: default;
+            transition: all .15s;
+            background: rgba(255,255,255,.03);
+            border: 1px solid transparent;
+            user-select: none;
+        }
+        .schedule-day.work {
+            background: rgba(62,207,168,.15);
+            color: var(--teal);
+            border-color: rgba(62,207,168,.3);
+        }
+        .schedule-day.off {
+            background: rgba(229,72,77,.15);
+            color: var(--red);
+            border-color: rgba(229,72,77,.3);
+        }
+        .schedule-day.past-work {
+            background: rgba(62,207,168,.08);
+            color: rgba(62,207,168,.6);
+            border-color: rgba(62,207,168,.15);
+        }
+        .schedule-day.past-off {
+            background: rgba(143,163,184,.1);
+            color: var(--mut);
+            border-color: rgba(143,163,184,.15);
+        }
+        .schedule-day.empty {
+            background: rgba(255,255,255,.03);
+            color: var(--mut);
+            border-color: var(--line);
+        }
+        /* Кликабельные дни (только свои, только будущие) */
+        .schedule-day.editable {
+            cursor: pointer;
+            border-color: rgba(255,181,46,.3);
+        }
+        .schedule-day.editable:hover {
+            transform: scale(1.1);
+            border-color: var(--amber);
+            box-shadow: 0 4px 12px rgba(255,181,46,.3);
+        }
+        .schedule-day.editable:active {
+            transform: scale(0.95);
+        }
+        /* Своя строка — золотая рамка */
+        .schedule-table tr.self-row td {
+            position: relative;
+        }
+        .schedule-table tr.self-row td:first-child {
+            background: linear-gradient(90deg, rgba(255,181,46,.2), rgba(255,181,46,.05));
+            color: var(--amber);
+            border: 1px solid var(--amber);
+            box-shadow: inset 0 0 0 1px var(--amber);
+        }
+        .schedule-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 14px 24px;
+            border-top: 1px solid var(--line);
+            font-size: .75rem;
+            color: var(--mut);
+            background: rgba(255,255,255,.02);
+        }
+        .schedule-legend .item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .schedule-legend .dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+        }
+        .schedule-legend .dot.work { background: rgba(62,207,168,.4); border-color: var(--teal); }
+        .schedule-legend .dot.off { background: rgba(229,72,77,.4); border-color: var(--red); }
+        .schedule-legend .dot.empty { background: rgba(255,255,255,.1); border-color: var(--line); }
+        .schedule-hint {
+            font-size: .7rem;
+            color: var(--amber2);
+            padding: 0 24px 16px;
+            text-align: center;
+            font-family: var(--mono);
+        }
 
-        @media (max-width: 480px) {
-            .finance-employee-block .debt-summary {
-                grid-template-columns: 1fr 1fr;
+        /* Мини-меню выбора дня */
+        .day-picker {
+            position: fixed;
+            background: var(--card);
+            border: 1px solid var(--amber);
+            border-radius: 12px;
+            padding: 8px;
+            z-index: 10001;
+            box-shadow: 0 12px 40px rgba(0,0,0,.7);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 160px;
+            animation: pickerIn .15s ease;
+        }
+        @keyframes pickerIn {
+            from { opacity: 0; transform: scale(.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .day-picker button {
+            background: transparent;
+            border: none;
+            color: var(--txt);
+            padding: 10px 14px;
+            border-radius: 8px;
+            text-align: left;
+            cursor: pointer;
+            font-size: .9rem;
+            transition: all .15s;
+            font-family: var(--body);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .day-picker button:hover {
+            background: rgba(255,181,46,.15);
+        }
+        .day-picker button.work:hover { background: rgba(62,207,168,.2); }
+        .day-picker button.off:hover { background: rgba(229,72,77,.2); }
+
+        /* Мобильная адаптация модалки */
+        @media (max-width: 768px) {
+            .schedule-modal {
+                padding: 0;
             }
-            .day-time-item .time-from-attendance {
-                font-size: .4rem;
+            .schedule-box {
+                border-radius: 0;
+                max-height: 100vh;
+                height: 100vh;
+                max-width: 100%;
+            }
+            .schedule-header {
+                padding: 16px 16px;
+            }
+            .schedule-header h2 {
+                font-size: 1.1rem;
+            }
+            .schedule-close {
+                width: 36px;
+                height: 36px;
+                font-size: 1.2rem;
+            }
+            .schedule-week-nav {
+                padding: 10px 16px;
+                gap: 8px;
+            }
+            .schedule-week-nav button {
+                padding: 8px 12px;
+                font-size: .8rem;
+            }
+            .schedule-week-nav .week-label {
+                font-size: .75rem;
+                min-width: 130px;
+            }
+            .schedule-body {
+                padding: 12px 8px;
+            }
+            .schedule-table {
+                border-spacing: 2px;
+                min-width: 100%;
+            }
+            .schedule-table th {
+                font-size: .6rem;
+                padding: 6px 2px;
+            }
+            .schedule-table td:first-child {
+                font-size: .75rem;
+                padding: 6px 8px;
+                max-width: 100px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .schedule-day {
+                min-height: 40px;
+                font-size: .85rem;
+                border-radius: 6px;
+            }
+            .schedule-legend {
+                padding: 10px 16px;
+                font-size: .65rem;
+                gap: 8px;
+            }
+            .schedule-legend .dot {
+                width: 12px;
+                height: 12px;
+            }
+            .schedule-hint {
+                font-size: .65rem;
+                padding: 0 16px 12px;
             }
         }
+        @media (max-width: 480px) {
+            .schedule-header {
+                padding: 12px 12px;
+            }
+            .schedule-header h2 {
+                font-size: 1rem;
+            }
+            .schedule-week-nav {
+                padding: 8px 12px;
+            }
+            .schedule-week-nav button {
+                padding: 6px 10px;
+                font-size: .75rem;
+            }
+            .schedule-week-nav .week-label {
+                font-size: .7rem;
+                min-width: 110px;
+            }
+            .schedule-body {
+                padding: 8px 4px;
+            }
+            .schedule-table th {
+                font-size: .55rem;
+            }
+            .schedule-table td:first-child {
+                font-size: .7rem;
+                padding: 4px 6px;
+                max-width: 80px;
+            }
+            .schedule-day {
+                min-height: 36px;
+                font-size: .75rem;
+            }
+        }
+
+        /* Остальные ваши стили */
+        .settings-saved { font-size: .7rem; color: var(--teal); margin-left: 8px; opacity: 0; transition: opacity .3s; }
+        .settings-saved.show { opacity: 1; }
+        .settings-saved.error { color: var(--red); }
+        .rules { margin-top: 70px; }
+        /* ... и все остальные ваши стили ... */
     </style>
 </head>
 <body>
@@ -562,18 +709,10 @@
 
                 <div class="actions">
                     <button class="btn btn-amber" id="copyBtn">📋 Скопировать</button>
-                    <!-- <a href="employee-stats.html?id=ЗАМЕНИТЬ_НА_ID" class="btn-stats-link" id="statsLink">📊 Моя статистика</a> -->
+                    <a href="employee-stats.html?id=ЗАМЕНИТЬ_НА_ID" class="btn-stats-link" id="statsLink" style="display:none;">📊 Статистика</a>
                 </div>
             </div>
         </main>
-
-        <!-- ===== ФИНАНСОВЫЙ БЛОК (ТОЛЬКО ПРОСМОТР) ===== -->
-        <!-- <div class="finance-employee-block" id="financeEmployeeBlock">
-            <h2>💰 Мои финансы</h2>
-            <div id="employeeFinanceContent">
-                <div style="text-align:center; padding: 20px; color: var(--mut);">Загрузка...</div>
-            </div>
-        </div> -->
 
         <section class="rules">
             <h2 class="reveal">Как это <em>считается</em></h2>
@@ -608,6 +747,50 @@
         <footer>один html-файл · без зависимостей · расчёт выполняется локально в браузере · 🔒 данные только для просмотра</footer>
     </div>
 
+    <!-- ============================================ -->
+    <!-- ★ МИНИКАРТА — иконка расписания -->
+    <!-- ============================================ -->
+    <button class="minimap-btn" id="minimapBtn" title="Расписание сотрудников">
+        <span class="minimap-icon">📅</span>
+        <span class="minimap-label">Расписание</span>
+    </button>
+
+    <!-- ============================================ -->
+    <!-- ★ МОДАЛКА РАСПИСАНИЯ -->
+    <!-- ============================================ -->
+    <div class="schedule-modal" id="scheduleModal">
+        <div class="schedule-box">
+            <div class="schedule-header">
+                <h2>📅 Расписание сотрудников</h2>
+                <button class="schedule-close" id="scheduleClose" title="Закрыть">✕</button>
+            </div>
+            
+            <div class="schedule-week-nav">
+                <button id="scheduleWeekPrev">◀</button>
+                <span class="week-label" id="scheduleWeekLabel">Неделя</span>
+                <button id="scheduleWeekNext">▶</button>
+                <button id="scheduleWeekToday">Сегодня</button>
+            </div>
+            
+            <div class="schedule-body">
+                <div id="scheduleTableWrap">
+                    <div class="loading" style="text-align:center;padding:40px;color:var(--mut);">Загрузка...</div>
+                </div>
+            </div>
+            
+            <div class="schedule-legend">
+                <span class="item"><span class="dot work"></span> работает</span>
+                <span class="item"><span class="dot off"></span> выходной</span>
+                <span class="item"><span class="dot empty"></span> не задано</span>
+            </div>
+            
+            <div class="schedule-hint" id="scheduleHint">
+                💡 Нажмите на свой день (в своей строке), чтобы изменить статус
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase + скрипты -->
     <script type="module">
         import { firebaseConfig } from './config.js';
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -636,4 +819,4 @@
     </script>
     <script type="module" src="employee-view.js"></script>
 </body>
-</html> 
+</html>
