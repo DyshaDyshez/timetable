@@ -318,6 +318,9 @@ function getWeekDataForEmployee(employeeId, weekKey, weekDates) {
 // ============================================
 // РЕНДЕР ЗАРПЛАТЫ
 // ============================================
+// ============================================
+// РЕНДЕР ЗАРПЛАТЫ (адаптивный: таблица + карточки)
+// ============================================
 function renderSalary() {
     const wrap = document.getElementById('salaryTableWrap');
     const label = document.getElementById('salaryWeekLabel');
@@ -326,7 +329,60 @@ function renderSalary() {
     const { start, end, weekKey, dates } = getWeekRange(currentSalaryWeek);
     if (label) label.textContent = `${formatDateShort(start)} – ${formatDateShort(end)} (${weekKey})`;
 
-    let html = `<table style="table-layout:fixed;width:100%;">
+    // ===== Собираем данные один раз =====
+    const rows = [];
+    let totalPay = 0, totalCount = 0;
+
+    for (const emp of allEmployees) {
+        const requestKey = emp.id + '_' + weekKey;
+        const hasRequest = allRequests[requestKey] !== undefined;
+        const requestData = hasRequest ? allRequests[requestKey] : null;
+
+        const weekData = getWeekDataForEmployee(emp.id, weekKey, dates);
+
+        if (!weekData.anyData && !hasRequest) {
+            rows.push({ emp, weekData, hasRequest: false, requestData: null, noData: true });
+            continue;
+        }
+
+        if (!weekData.anyData && hasRequest) {
+            rows.push({
+                emp, weekData, hasRequest: true, requestData,
+                noData: false,
+                stats: {
+                    days: requestData.days || 0,
+                    totalHours: requestData.totalHours || 0,
+                    ot: 0,
+                    total: requestData.finalPay || requestData.total || 0
+                },
+                sourceLabel: ''
+            });
+            totalCount++;
+            continue;
+        }
+
+        const settings = getEmployeeSettings(emp.id);
+        const stats = calculateWeekPay(weekData, settings);
+
+        totalPay += stats.total;
+        totalCount++;
+
+        const hasAdmin = weekData.daySource.includes('admin');
+        const hasAtt = weekData.daySource.includes('attendance');
+        let sourceLabel = '';
+        if (hasAdmin && hasAtt) sourceLabel = ' 🔒📌';
+        else if (hasAdmin) sourceLabel = ' 🔒';
+        else if (hasAtt) sourceLabel = ' 📌';
+
+        rows.push({
+            emp, weekData, hasRequest, requestData,
+            noData: false,
+            stats, sourceLabel
+        });
+    }
+
+    // ===== Desktop: таблица =====
+    let tableHTML = `<table class="salary-table">
         <colgroup>
             <col style="width:32%;">
             <col style="width:10%;">
@@ -344,44 +400,21 @@ function renderSalary() {
             <th style="text-align:center;">Действия</th>
         </tr></thead><tbody>`;
 
-    let totalPay = 0, totalCount = 0;
+    for (const row of rows) {
+        const { emp, hasRequest, requestData, noData, stats, sourceLabel } = row;
 
-    for (const emp of allEmployees) {
-
-                // ★ Проверяем, есть ли запрос на ЗП
-                const requestKey = emp.id + '_' + weekKey;
-                const hasRequest = allRequests[requestKey] !== undefined;
-                const requestData = hasRequest ? allRequests[requestKey] : null;
-
-        const weekData = getWeekDataForEmployee(emp.id, weekKey, dates);
-
-        if (!weekData.anyData) {
-            html += `<tr>
+        if (noData) {
+            tableHTML += `<tr>
                 <td class="col-employee" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${emp.name || 'Без имени'}</td>
                 <td colspan="5" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td>
             </tr>`;
             continue;
         }
 
-        const settings = getEmployeeSettings(emp.id);
-        const stats = calculateWeekPay(weekData, settings);
-
-        totalPay += stats.total;
-        totalCount++;
-
-        const hasAdmin = weekData.daySource.includes('admin');
-        const hasAtt = weekData.daySource.includes('attendance');
-        let sourceLabel = '';
-        if (hasAdmin && hasAtt) sourceLabel = ' 🔒📌';
-        else if (hasAdmin) sourceLabel = ' 🔒';
-        else if (hasAtt) sourceLabel = ' 📌';
-
-                // ★ Стиль для строки с запросом
         const rowStyle = hasRequest 
             ? 'background:rgba(62,207,168,.08); border-left:4px solid var(--teal);' 
             : '';
         
-        // ★ Кнопки действий
         let actionButtons = '';
         if (hasRequest) {
             actionButtons = `
@@ -398,7 +431,7 @@ function renderSalary() {
             `;
         }
         
-        html += `<tr style="${rowStyle}">
+        tableHTML += `<tr style="${rowStyle}">
             <td class="col-employee" title="${emp.name}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${hasRequest ? '💰 ' : ''}${emp.name}${sourceLabel}</td>
             <td style="text-align:center;">${stats.days}</td>
             <td style="text-align:center;">${stats.totalHours.toFixed(1)}</td>
@@ -410,13 +443,89 @@ function renderSalary() {
         </tr>`;
     }
 
-    html += `<tr style="border-top:2px solid var(--amber);">
+    tableHTML += `<tr style="border-top:2px solid var(--amber);">
         <td><b style="color:var(--amber);">📊 ИТОГО</b></td>
         <td colspan="3" style="text-align:center;font-size:.8rem;color:var(--mut);">${totalCount} сотрудников</td>
         <td style="text-align:right;font-weight:700;color:var(--amber);font-size:1.1rem;white-space:nowrap;">${totalPay.toLocaleString()} ₽</td>
         <td></td>
     </tr></tbody></table>`;
-    wrap.innerHTML = html;
+
+    // ===== Mobile: карточки =====
+    let cardsHTML = '';
+    for (const row of rows) {
+        const { emp, hasRequest, requestData, noData, stats, sourceLabel } = row;
+
+        if (noData) {
+            cardsHTML += `
+                <div class="salary-card">
+                    <div class="card-header">
+                        <div class="card-name">${emp.name || 'Без имени'}</div>
+                    </div>
+                    <div class="card-no-data">Нет данных</div>
+                    <div class="card-actions">
+                        <button class="btn-settings" onclick="window.showEmployeeSettings('${emp.id}')">⚙️ Настройки</button>
+                        <button class="btn-details" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')">👁️ Детали</button>
+                    </div>
+                </div>
+            `;
+            continue;
+        }
+
+        const cardClass = hasRequest ? 'salary-card has-request' : 'salary-card';
+        
+        const actions = hasRequest
+            ? `<button class="btn-request-pulse" onclick="window.showRequestDetails('${requestData.id}')">
+                   💰 ЗАПРОС!
+               </button>`
+            : `<button class="btn-settings" onclick="window.showEmployeeSettings('${emp.id}')">⚙️ Настройки</button>
+               <button class="btn-details" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')">👁️ Детали</button>`;
+
+        cardsHTML += `
+            <div class="${cardClass}">
+                <div class="card-header">
+                    <div class="card-name">${emp.name}${sourceLabel}</div>
+                    <div class="card-pay">${stats.total.toLocaleString()} ₽</div>
+                </div>
+                <div class="card-stats">
+                    <div class="stat-item">
+                        <div class="stat-label">Дней</div>
+                        <div class="stat-value">${stats.days}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Часов</div>
+                        <div class="stat-value">${stats.totalHours.toFixed(1)}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Перераб.</div>
+                        <div class="stat-value ${stats.ot > 0 ? 'amber' : 'mut'}">
+                            ${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}
+                        </div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    ${actions}
+                </div>
+            </div>
+        `;
+    }
+
+    // ===== Итого-карточка для мобилки =====
+    cardsHTML += `
+        <div class="salary-card" style="background:linear-gradient(135deg, rgba(255,181,46,.12), rgba(255,181,46,.02)); border-color:var(--amber);">
+            <div class="card-header">
+                <div class="card-name" style="color:var(--amber);">📊 ИТОГО</div>
+                <div class="card-pay" style="font-size:1.2rem;">${totalPay.toLocaleString()} ₽</div>
+            </div>
+            <div style="font-size:.75rem; color:var(--mut); text-align:center;">
+                ${totalCount} сотрудников
+            </div>
+        </div>
+    `;
+
+    wrap.innerHTML = `
+        ${tableHTML}
+        <div class="salary-cards">${cardsHTML}</div>
+    `;
 }
 
 // ============================================
@@ -1368,5 +1477,85 @@ window.showRequestDetails = function(requestId) {
     
     document.getElementById('closeRequestBtn').addEventListener('click', () => modal.classList.remove('active'));
 };
+
+// ============================================
+// ★ БАННЕР ВСЕХ АКТИВНЫХ ЗАПРОСОВ
+// ============================================
+function renderRequestsBanner() {
+    const banner = document.getElementById('requestsBanner');
+    const text = document.getElementById('requestsBannerText');
+    const sub = document.getElementById('requestsBannerSub');
+    const btn = document.getElementById('requestsBannerBtn');
+    if (!banner) return;
+    
+    const requests = Object.values(allRequests);
+    
+    if (requests.length === 0) {
+        banner.classList.remove('active');
+        return;
+    }
+    
+    banner.classList.add('active');
+    
+    const total = requests.reduce((sum, r) => sum + (r.finalPay || 0), 0);
+    
+    text.innerHTML = `💰 ${requests.length} ${pluralizeRequests(requests.length)} на ЗП
+        <small>Общая сумма: ${total.toLocaleString()} ₽</small>`;
+    sub.textContent = requests.map(r => `${r.employeeName} (${r.weekRange})`).join(' · ');
+    
+    btn.onclick = () => {
+        if (requests.length === 1) {
+            window.showRequestDetails(requests[0].id);
+        } else {
+            showRequestsList(requests);
+        }
+    };
+}
+
+function pluralizeRequests(n) {
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return 'активный запрос';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'активных запроса';
+    return 'активных запросов';
+}
+
+// Список всех запросов
+function showRequestsList(requests) {
+    const modal = document.getElementById('modalOverlay');
+    const body = document.getElementById('modalBody');
+    const actions = document.getElementById('modalActions');
+    const title = document.getElementById('modalTitle');
+    const sub = document.getElementById('modalSub');
+    if (!modal || !body) return;
+    
+    title.textContent = '💰 Активные запросы';
+    sub.textContent = `Всего: ${requests.length}`;
+    
+    body.innerHTML = requests.map(r => `
+        <div style="background:rgba(62,207,168,.08); border:1px solid var(--teal); 
+                    border-radius:10px; padding:12px; margin-bottom:10px;
+                    display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:0;">
+                <div style="font-weight:bold;">${r.employeeName}</div>
+                <div style="font-size:.75rem; color:var(--mut);">${r.weekRange} · ${r.days} дн. / ${r.totalHours?.toFixed(1) || '?'} ч</div>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-weight:bold; color:var(--teal); font-size:1.1rem; font-family:var(--mono);">
+                    ${(r.finalPay || 0).toLocaleString()} ₽
+                </div>
+                <button class="btn-sm teal" style="margin-top:6px; padding:8px 16px; min-height:36px;"
+                        onclick="document.getElementById('modalOverlay').classList.remove('active'); 
+                                 window.showRequestDetails('${r.id}')">
+                    Открыть →
+                </button>
+            </div>
+        </div>
+    `).join('');
+    
+    actions.innerHTML = `<button class="btn btn-ghost" id="closeListBtn">Закрыть</button>`;
+    modal.classList.add('active');
+    document.getElementById('closeListBtn').addEventListener('click', () => modal.classList.remove('active'));
+}
 
 console.log('✅ Админ-панель загружена');

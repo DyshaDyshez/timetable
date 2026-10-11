@@ -2,10 +2,16 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
     <title>Админ-панель</title>
     <link rel="stylesheet" href="style.css">
     <style>
+        :root {
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --safe-top: env(safe-area-inset-top, 0px);
+        }
+
         body {
             padding: 20px;
             min-height: 100vh;
@@ -70,6 +76,8 @@
         .logout-btn:hover {
             filter: brightness(1.1);
         }
+
+        /* ===== ВКЛАДКИ ===== */
         .tabs {
             display: flex;
             gap: 4px;
@@ -113,20 +121,23 @@
             from { opacity: 0; transform: translateY(8px); }
             to { opacity: 1; transform: translateY(0); }
         }
+
+        /* ===== ТАБЛИЦА ЗАРПЛАТЫ (desktop) ===== */
         .table-wrap {
             overflow-x: auto;
             background: var(--card);
             border-radius: 12px;
             border: 1px solid var(--line);
             padding: 4px;
+            -webkit-overflow-scrolling: touch;
         }
-        table {
+        table.salary-table {
             width: 100%;
             border-collapse: collapse;
             font-size: .85rem;
             min-width: 700px;
         }
-        th {
+        table.salary-table th {
             text-align: left;
             padding: 12px 12px;
             border-bottom: 2px solid var(--line);
@@ -141,38 +152,141 @@
             background: var(--card);
             z-index: 2;
         }
-        td {
+        table.salary-table td {
             padding: 10px 12px;
             border-bottom: 1px solid var(--line);
             vertical-align: middle;
         }
-        tr:hover td {
+        table.salary-table tr:hover td {
             background: rgba(255,255,255,.03);
         }
         .col-employee {
             font-weight: 600;
             min-width: 120px;
         }
-        .col-pay {
+
+        /* ===== КАРТОЧКИ СОТРУДНИКОВ (mobile) ===== */
+        .salary-cards {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .salary-card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .salary-card.has-request {
+            background: linear-gradient(135deg, rgba(62,207,168,.1), rgba(62,207,168,.02));
+            border-color: var(--teal);
+            box-shadow: 0 0 0 1px rgba(62,207,168,.2), 0 8px 24px rgba(62,207,168,.15);
+        }
+        .salary-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .salary-card .card-name {
             font-weight: 700;
+            font-size: 1rem;
+            color: var(--txt);
+            line-height: 1.3;
+            flex: 1;
+            min-width: 0;
+            word-break: break-word;
+        }
+        .salary-card.has-request .card-name::before {
+            content: '💰 ';
+        }
+        .salary-card .card-pay {
+            font-weight: 700;
+            font-size: 1.1rem;
             color: var(--amber);
             white-space: nowrap;
+            font-family: var(--mono);
         }
-        .status-badge {
-            display: inline-block;
-            padding: 2px 12px;
-            border-radius: 999px;
-            font-size: .7rem;
+        .salary-card .card-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .salary-card .stat-item {
+            background: rgba(255,255,255,.03);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 8px 4px;
+            text-align: center;
+        }
+        .salary-card .stat-item .stat-label {
+            font-size: .6rem;
+            color: var(--mut);
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            margin-bottom: 2px;
+        }
+        .salary-card .stat-item .stat-value {
+            font-size: .95rem;
+            font-weight: bold;
+            color: var(--txt);
+            font-family: var(--mono);
+        }
+        .salary-card .stat-item .stat-value.amber { color: var(--amber); }
+        .salary-card .stat-item .stat-value.mut { color: var(--mut); }
+
+        .salary-card .card-no-data {
+            text-align: center;
+            padding: 16px;
+            color: var(--mut);
+            font-size: .85rem;
+            background: rgba(255,255,255,.02);
+            border-radius: 8px;
+        }
+
+        .salary-card .card-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 2px;
+        }
+        .salary-card .card-actions button {
+            flex: 1;
+            min-height: 44px;
+            border-radius: 10px;
+            border: none;
             font-weight: 600;
+            font-size: .85rem;
+            cursor: pointer;
+            transition: .15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
-        .status-badge.paid {
-            background: rgba(62,207,168,.2);
-            color: var(--teal);
+        .salary-card .card-actions button:active {
+            transform: scale(.97);
         }
-        .status-badge.unpaid {
-            background: rgba(229,72,77,.2);
-            color: var(--red);
+        .salary-card .btn-request-pulse {
+            background: var(--teal);
+            color: #0c1520;
+            animation: requestPulse 1.5s infinite;
+            font-weight: bold;
+            font-size: .9rem;
         }
+        .salary-card .btn-settings {
+            background: rgba(255,255,255,.05);
+            color: var(--txt);
+            border: 1px solid var(--line) !important;
+        }
+        .salary-card .btn-details {
+            background: var(--amber);
+            color: #241d10;
+        }
+
+        /* ===== КНОПКИ ===== */
         .btn-sm {
             padding: 4px 12px;
             border-radius: 6px;
@@ -209,9 +323,8 @@
             background: var(--red);
             color: #fff;
         }
-        .btn-sm.red:hover {
-            filter: brightness(1.1);
-        }
+
+        /* ===== МОДАЛКИ ===== */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -219,15 +332,19 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,.7);
-            backdrop-filter: blur(4px);
+            background: rgba(0,0,0,.75);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
             z-index: 1000;
             padding: 20px;
             align-items: center;
             justify-content: center;
+            opacity: 0;
+            transition: opacity .25s;
         }
         .modal-overlay.active {
             display: flex;
+            opacity: 1;
         }
         .modal-box {
             background: var(--card);
@@ -239,15 +356,18 @@
             overflow-y: auto;
             border: 1px solid var(--line);
             animation: modalIn .3s ease;
+            -webkit-overflow-scrolling: touch;
         }
         @keyframes modalIn {
-            from { opacity: 0; transform: scale(.95); }
-            to { opacity: 1; transform: scale(1); }
+            from { opacity: 0; transform: scale(.95) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
         }
         .modal-box h2 {
             font-family: var(--display);
             color: var(--amber);
             margin-bottom: 4px;
+            font-weight: 400;
+            letter-spacing: .04em;
         }
         .modal-box .sub {
             color: var(--mut);
@@ -267,16 +387,18 @@
         .modal-box .field input,
         .modal-box .field select {
             width: 100%;
-            padding: 10px 12px;
+            padding: 12px;
             border-radius: 8px;
             border: 1px solid var(--line);
             background: var(--bg2);
             color: var(--txt);
-            font-size: .95rem;
+            font-size: 1rem;
+            min-height: 44px;
         }
         .modal-box .field input:focus,
         .modal-box .field select:focus {
             outline: 2px solid var(--amber);
+            outline-offset: 0;
         }
         .modal-actions {
             display: flex;
@@ -287,6 +409,7 @@
         .modal-actions .btn {
             flex: 1;
             min-width: 100px;
+            min-height: 48px;
             padding: 12px;
             border-radius: 10px;
             border: none;
@@ -294,39 +417,32 @@
             cursor: pointer;
             transition: .2s;
             text-align: center;
+            font-size: .9rem;
         }
         .modal-actions .btn-amber {
             background: var(--amber);
             color: #241d10;
-        }
-        .modal-actions .btn-amber:hover {
-            filter: brightness(1.1);
         }
         .modal-actions .btn-ghost {
             background: transparent;
             color: var(--mut);
             border: 1px solid var(--line);
         }
-        .modal-actions .btn-ghost:hover {
-            border-color: var(--mut);
-            color: var(--txt);
-        }
         .modal-actions .btn-red {
             background: var(--red);
             color: #fff;
         }
-        .modal-actions .btn-red:hover {
-            filter: brightness(1.1);
-        }
+
+        /* ===== ПОСЕЩАЕМОСТЬ ===== */
         .attendance-grid {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 8px;
         }
         .attendance-day {
             background: var(--card2);
-            border-radius: 8px;
-            padding: 10px 14px;
+            border-radius: 10px;
+            padding: 12px 14px;
             border: 1px solid var(--line);
         }
         .attendance-day .day-header {
@@ -336,7 +452,7 @@
             font-weight: 600;
             font-size: .85rem;
             color: var(--amber2);
-            margin-bottom: 6px;
+            margin-bottom: 8px;
         }
         .attendance-day .day-header .date {
             color: var(--mut);
@@ -347,7 +463,7 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 6px 0;
+            padding: 8px 0;
             border-bottom: 1px solid rgba(255,255,255,.05);
             flex-wrap: wrap;
         }
@@ -362,14 +478,14 @@
         .attendance-row .time-group {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             flex-wrap: wrap;
         }
         .attendance-row .time-group .time-badge {
             display: inline-flex;
             align-items: center;
             gap: 4px;
-            padding: 2px 10px;
+            padding: 4px 10px;
             border-radius: 999px;
             font-size: .75rem;
             font-family: var(--mono);
@@ -377,9 +493,6 @@
             border: 1px solid var(--line);
             cursor: pointer;
             transition: .2s;
-        }
-        .attendance-row .time-group .time-badge:hover {
-            border-color: var(--amber);
         }
         .attendance-row .time-group .time-badge.in {
             color: var(--teal);
@@ -389,86 +502,88 @@
             color: var(--red);
             border-color: rgba(229,72,77,.3);
         }
-        .attendance-row .time-group .time-badge .edit-hint {
-            font-size: .5rem;
-            color: var(--mut);
-            opacity: 0;
-            transition: .2s;
-        }
-        .attendance-row .time-group .time-badge:hover .edit-hint {
-            opacity: 1;
-        }
         .attendance-row .actions {
             display: flex;
             gap: 4px;
             margin-left: auto;
-        }
-        .attendance-row .actions .btn-sm {
-            font-size: .65rem;
-            padding: 2px 8px;
         }
         .no-data {
             text-align: center;
             padding: 40px;
             color: var(--mut);
         }
+
+        /* ===== СЕЛЕКТОР НЕДЕЛИ ===== */
         .week-selector {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
             margin-bottom: 16px;
             flex-wrap: wrap;
         }
-        .week-selector button {
+        .week-selector .week-nav {
+            display: flex;
+            align-items: center;
+            gap: 6px;
             background: var(--card);
             border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 4px;
+        }
+        .week-selector button {
+            background: transparent;
+            border: 1px solid var(--line);
             color: var(--txt);
-            padding: 6px 14px;
+            padding: 8px 14px;
             border-radius: 8px;
             cursor: pointer;
             font-size: .85rem;
             transition: .2s;
+            min-height: 40px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .week-selector .week-nav button {
+            border: none;
+            padding: 6px 12px;
+            min-height: 36px;
         }
         .week-selector button:hover {
             border-color: var(--amber);
+            color: var(--amber);
         }
         .week-selector .week-label {
             font-weight: 600;
             color: var(--amber2);
             font-family: var(--mono);
-            font-size: .9rem;
-            min-width: 120px;
+            font-size: .85rem;
+            min-width: 140px;
             text-align: center;
+            padding: 0 8px;
         }
+
         .loading {
             text-align: center;
             color: var(--mut);
             padding: 40px;
         }
-        .debug-btn {
-            background: rgba(255,181,46,.15);
-            color: var(--amber);
-            border: 1px solid var(--amber);
-            padding: 4px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: .7rem;
-            transition: .2s;
-        }
-        .debug-btn:hover {
-            background: rgba(255,181,46,.25);
-        }
+
         .bitrix-btn {
             background: var(--amber) !important;
             color: #241d10 !important;
             border: none !important;
-            padding: 8px 20px !important;
+            padding: 10px 20px !important;
             border-radius: 8px !important;
             cursor: pointer !important;
             font-weight: bold !important;
             font-size: .85rem !important;
             transition: all 0.2s !important;
-            margin-left: 8px !important;
+            min-height: 40px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 6px !important;
         }
         .bitrix-btn:hover {
             filter: brightness(1.1) !important;
@@ -479,65 +594,312 @@
             cursor: not-allowed !important;
             transform: none !important;
         }
+
+        /* ===== БАННЕР ЗАПРОСОВ ЗП ===== */
+        .requests-banner {
+            background: linear-gradient(90deg, rgba(62,207,168,.18), rgba(62,207,168,.04));
+            border: 1px solid var(--teal);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            display: none;
+            animation: bannerPulse 2s infinite;
+        }
+        .requests-banner.active {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .requests-banner .banner-icon {
+            font-size: 1.3rem;
+            animation: requestPulse 1.5s infinite;
+            flex-shrink: 0;
+        }
+        .requests-banner .banner-text {
+            flex: 1;
+            min-width: 200px;
+            color: var(--txt);
+            font-weight: 600;
+            font-size: .9rem;
+        }
+        .requests-banner .banner-text small {
+            display: block;
+            font-weight: 400;
+            color: var(--mut);
+            font-size: .72rem;
+            margin-top: 2px;
+        }
+        .requests-banner .banner-btn {
+            background: var(--teal);
+            color: #0c1520;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: .82rem;
+            transition: .2s;
+            min-height: 40px;
+            flex-shrink: 0;
+        }
+        .requests-banner .banner-btn:hover {
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+        }
+
+        @keyframes requestPulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(62,207,168,.7); }
+            50% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(62,207,168,0); }
+        }
+        @keyframes bannerPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(62,207,168,.35); }
+            50% { box-shadow: 0 0 24px 4px rgba(62,207,168,.2); }
+        }
+
+        /* ============================================================ */
+        /* ============ МОБИЛЬНАЯ АДАПТАЦИЯ =========================== */
+        /* ============================================================ */
+
         @media (max-width: 768px) {
+            body {
+                padding: 12px 12px calc(12px + var(--safe-bottom));
+            }
+            .dashboard-container {
+                max-width: 100%;
+            }
+
+            /* Хедер */
             .dashboard-header {
                 flex-direction: column;
-                align-items: flex-start;
+                align-items: stretch;
+                gap: 12px;
+                margin-bottom: 16px;
+                padding-bottom: 12px;
+            }
+            .dashboard-header h1 {
+                font-size: 1.4rem;
+                text-align: left;
+            }
+            .dashboard-header .header-actions {
+                width: 100%;
+                justify-content: space-between;
+                gap: 8px;
+                flex-wrap: nowrap;
+            }
+            .dashboard-header .user-info {
+                display: none;
+            }
+            .btn-back, .logout-btn {
+                flex: 1;
+                min-height: 44px;
+                font-size: .82rem;
+                padding: 10px 12px;
+                justify-content: center;
+            }
+
+            /* Вкладки */
+            .tabs {
+                gap: 3px;
+                padding: 3px;
+                margin-bottom: 14px;
             }
             .tab-btn {
-                font-size: .75rem;
-                padding: 8px 14px;
-                min-width: 80px;
+                flex: 1;
+                min-width: 0;
+                padding: 12px 8px;
+                font-size: .8rem;
+                min-height: 48px;
             }
-            table {
-                font-size: .75rem;
-                min-width: 500px;
+
+            /* Селектор недели */
+            .week-selector {
+                gap: 8px;
+                margin-bottom: 12px;
             }
-            th, td {
-                padding: 6px 8px;
+            .week-selector .week-nav {
+                flex: 1;
+                justify-content: space-between;
+                order: 1;
+                min-width: 100%;
+            }
+            .week-selector .week-nav .week-label {
+                flex: 1;
+                min-width: 0;
+                font-size: .75rem;
+                padding: 0 4px;
+            }
+            .week-selector .week-nav button {
+                min-height: 40px;
+                min-width: 40px;
+                padding: 8px 12px;
+                font-size: .9rem;
+            }
+            .week-selector #refreshSalaryBtn,
+            .week-selector #refreshAttBtn,
+            .week-selector #attWeekToday {
+                order: 2;
+                flex: 1;
+                min-height: 44px;
+                padding: 10px 12px;
+                font-size: .78rem;
+                border-radius: 10px;
+            }
+            .week-selector .bitrix-btn {
+                order: 3;
+                flex: 1 1 100%;
+                min-height: 46px;
+                font-size: .82rem !important;
+                padding: 12px 16px !important;
+            }
+
+            /* Таблица → карточки */
+            .table-wrap {
+                background: transparent;
+                border: none;
+                padding: 0;
+                border-radius: 0;
+            }
+            table.salary-table {
+                display: none;
+            }
+            .salary-cards {
+                display: flex;
+            }
+
+            /* Модалки — снизу */
+            .modal-overlay {
+                padding: 0;
+                align-items: flex-end;
+            }
+            .modal-box {
+                max-width: 100%;
+                width: 100%;
+                border-radius: 20px 20px 0 0;
+                max-height: 92vh;
+                padding: 22px 18px calc(22px + var(--safe-bottom));
+                animation: modalSlideUp .3s ease;
+            }
+            @keyframes modalSlideUp {
+                from { transform: translateY(100%); }
+                to { transform: translateY(0); }
+            }
+            .modal-box h2 {
+                font-size: 1.15rem;
+            }
+            .modal-actions .btn {
+                min-height: 50px;
+                font-size: .9rem;
+            }
+
+            /* Посещаемость */
+            .attendance-day {
+                padding: 10px 12px;
             }
             .attendance-row {
                 flex-direction: column;
                 align-items: stretch;
-                gap: 4px;
+                gap: 6px;
+                padding: 8px 0;
             }
             .attendance-row .emp-name {
-                min-width: auto;
+                min-width: 0;
+                font-size: .88rem;
+            }
+            .attendance-row .time-group {
+                gap: 4px;
+            }
+            .attendance-row .time-group .time-badge {
+                font-size: .7rem;
+                padding: 3px 8px;
             }
             .attendance-row .actions {
                 margin-left: 0;
+                justify-content: flex-end;
             }
-            .modal-box {
-                padding: 20px 16px;
+
+            /* Баннер запросов */
+            .requests-banner {
+                padding: 12px;
+                gap: 10px;
             }
-        }
-        @media (max-width: 480px) {
-            .tab-btn {
-                font-size: .7rem;
-                padding: 6px 10px;
-                min-width: 60px;
-                flex: 1 1 auto;
+            .requests-banner .banner-text {
+                font-size: .82rem;
+                min-width: 0;
+                flex: 1 1 100%;
             }
-            .tabs {
-                gap: 2px;
-                padding: 2px;
-            }
-            .week-selector .week-label {
-                font-size: .75rem;
-                min-width: 80px;
+            .requests-banner .banner-btn {
+                width: 100%;
+                min-height: 44px;
+                font-size: .85rem;
             }
         }
 
-        @keyframes requestPulse {
-    0%, 100% {
-        transform: scale(1);
-        box-shadow: 0 0 0 0 rgba(62,207,168,.7);
-    }
-    50% {
-        transform: scale(1.05);
-        box-shadow: 0 0 0 8px rgba(62,207,168,0);
-    }
-}
+        @media (max-width: 480px) {
+            body {
+                padding: 8px 8px calc(8px + var(--safe-bottom));
+            }
+            .dashboard-header h1 {
+                font-size: 1.2rem;
+            }
+            .tab-btn {
+                font-size: .72rem;
+                padding: 10px 4px;
+                min-height: 44px;
+            }
+            .week-selector .week-nav .week-label {
+                font-size: .7rem;
+            }
+            .week-selector .week-nav button {
+                padding: 6px 10px;
+                font-size: .8rem;
+                min-width: 36px;
+            }
+            .week-selector #refreshSalaryBtn,
+            .week-selector #refreshAttBtn,
+            .week-selector #attWeekToday {
+                font-size: .72rem;
+                padding: 8px 10px;
+            }
+
+            .salary-card {
+                padding: 12px;
+            }
+            .salary-card .card-name {
+                font-size: .95rem;
+            }
+            .salary-card .card-pay {
+                font-size: 1rem;
+            }
+            .salary-card .stat-item {
+                padding: 6px 2px;
+            }
+            .salary-card .stat-item .stat-value {
+                font-size: .85rem;
+            }
+            .salary-card .card-actions button {
+                font-size: .78rem;
+                min-height: 42px;
+            }
+
+            .modal-box {
+                padding: 18px 14px calc(18px + var(--safe-bottom));
+            }
+            .modal-box h2 {
+                font-size: 1.05rem;
+            }
+            .modal-box .field input,
+            .modal-box .field select {
+                font-size: .9rem;
+                padding: 10px;
+                min-height: 42px;
+            }
+            .modal-actions .btn {
+                min-height: 46px;
+                font-size: .85rem;
+                min-width: 0;
+            }
+        }
     </style>
 </head>
 <body>
@@ -552,6 +914,16 @@
             </div>
         </header>
 
+        <!-- ★ БАННЕР ЗАПРОСОВ -->
+        <div class="requests-banner" id="requestsBanner">
+            <span class="banner-icon">💰</span>
+            <div class="banner-text" id="requestsBannerText">
+                Сотрудники запрашивают зарплату
+                <small id="requestsBannerSub"></small>
+            </div>
+            <button class="banner-btn" id="requestsBannerBtn">Показать все</button>
+        </div>
+
         <div class="tabs">
             <button class="tab-btn active" data-tab="salary">💰 Зарплата</button>
             <button class="tab-btn" data-tab="attendance">📋 Посещаемость</button>
@@ -560,12 +932,13 @@
         <!-- ЗАРПЛАТА -->
         <div class="tab-content active" id="tabSalary">
             <div class="week-selector">
-                <button id="salaryWeekPrev">◀</button>
-                <span class="week-label" id="salaryWeekLabel">Неделя</span>
-                <button id="salaryWeekNext">▶</button>
-                <button class="btn-sm amber" id="refreshSalaryBtn" style="padding:8px 20px;font-size:.85rem;">🔄 Обновить</button>
+                <div class="week-nav">
+                    <button id="salaryWeekPrev" aria-label="Предыдущая неделя">◀</button>
+                    <span class="week-label" id="salaryWeekLabel">Неделя</span>
+                    <button id="salaryWeekNext" aria-label="Следующая неделя">▶</button>
+                </div>
+                <button id="refreshSalaryBtn">🔄 Обновить</button>
                 <button class="bitrix-btn" id="sendBitrixBtn">📤 Отправить в Битрикс24</button>
-                <!-- <button class="bitrix-btn" id="exportReportBtn" style="margin-left:8px;">📤 Экспорт отчёта</button> -->
             </div>
             <div class="table-wrap" id="salaryTableWrap">
                 <div class="loading" id="salaryLoading">Загрузка...</div>
@@ -575,12 +948,13 @@
         <!-- ПОСЕЩАЕМОСТЬ -->
         <div class="tab-content" id="tabAttendance">
             <div class="week-selector">
-                <button id="attWeekPrev">◀</button>
-                <span class="week-label" id="attWeekLabel">Неделя</span>
-                <button id="attWeekNext">▶</button>
-                <button id="attWeekToday" style="border-color:var(--amber);color:var(--amber);">Сегодня</button>
-                <button class="btn-sm teal" id="refreshAttBtn" style="padding:8px 20px;font-size:.85rem;margin-left:auto;">🔄 Обновить</button>
-                <!-- <button class="debug-btn" id="debugAttBtn" style="margin-left:8px;">🐞 Отладка</button> -->
+                <div class="week-nav">
+                    <button id="attWeekPrev" aria-label="Предыдущая неделя">◀</button>
+                    <span class="week-label" id="attWeekLabel">Неделя</span>
+                    <button id="attWeekNext" aria-label="Следующая неделя">▶</button>
+                </div>
+                <button id="attWeekToday">📅 Сегодня</button>
+                <button id="refreshAttBtn">🔄 Обновить</button>
             </div>
             <div id="attendanceContent">
                 <div class="loading">Загрузка...</div>
@@ -613,7 +987,7 @@
                 </div>
                 <div class="field">
                     <label>Часы работы</label>
-                    <input type="number" id="editDayHours" step="0.5" min="0" max="24" placeholder="Например: 8">
+                    <input type="number" id="editDayHours" step="0.5" min="0" max="24" placeholder="Например: 8" inputmode="decimal">
                 </div>
                 <div class="field">
                     <label>Время начала (опционально)</label>
@@ -623,9 +997,9 @@
                     <label>Время окончания (опционально)</label>
                     <input type="time" id="editDayEnd" value="17:00">
                 </div>
-                <div style="font-size:.7rem;color:var(--mut);margin-top:8px;">
-                    💡 Если часы = 0 — день станет нерабочим.
-                    <br>Если часы > 0 — день станет рабочим с указанными часами.
+                <div style="font-size:.72rem;color:var(--mut);margin-top:8px;line-height:1.5;">
+                    💡 Если часы = 0 — день станет нерабочим.<br>
+                    Если часы > 0 — день станет рабочим с указанными часами.
                 </div>
             </div>
             <div class="modal-actions">
@@ -636,19 +1010,5 @@
     </div>
 
     <script type="module" src="admin-dashboard.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const debugBtn = document.getElementById('debugAttBtn');
-            if (debugBtn) {
-                debugBtn.addEventListener('click', () => {
-                    if (window.debugAttendance) {
-                        window.debugAttendance();
-                    } else {
-                        console.log('⏳ Функция отладки еще не загружена');
-                    }
-                });
-            }
-        });
-    </script>
 </body>
 </html>

@@ -335,13 +335,395 @@
             .finance-employee-block .debt-summary { grid-template-columns: 1fr 1fr; }
             .day-time-item .time-from-attendance { font-size: .4rem; }
         }
+
+        /* ============================================ */
+        /* ★ МОДАЛКА «ЗАПРОСИТЬ ЗП» */
+        /* ============================================ */
+        .salary-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .78);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            z-index: 99998;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            opacity: 0;
+            transition: opacity .25s ease;
+        }
+        .salary-modal-overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+        .salary-modal-overlay.closing {
+            opacity: 0;
+        }
+        .salary-modal {
+            background: linear-gradient(180deg, #16232f 0%, #101c2b 100%);
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            width: 100%;
+            max-width: 440px;
+            max-height: 92vh;
+            overflow-y: auto;
+            box-shadow: 0 32px 80px rgba(0, 0, 0, .7), 0 0 0 1px rgba(62, 207, 168, .08);
+            transform: translateY(20px) scale(.96);
+            opacity: 0;
+            transition: transform .3s cubic-bezier(.2, .9, .3, 1.05), opacity .25s ease;
+            position: relative;
+        }
+        .salary-modal-overlay.active .salary-modal {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+
+        /* Верхняя полоса-акцент */
+        .salary-modal::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--teal), var(--amber));
+            border-radius: 20px 20px 0 0;
+        }
+
+        .salary-modal-header {
+            padding: 26px 24px 18px;
+            text-align: center;
+            border-bottom: 1px solid var(--line);
+        }
+        .salary-modal-icon {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 14px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(62, 207, 168, .25), rgba(62, 207, 168, .05));
+            border: 2px solid var(--teal);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            animation: salaryPulse 2.4s ease-in-out infinite;
+        }
+        @keyframes salaryPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(62, 207, 168, .5); }
+            50% { box-shadow: 0 0 0 12px rgba(62, 207, 168, 0); }
+        }
+        .salary-modal-title {
+            font-family: var(--display);
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            font-size: 1.3rem;
+            color: var(--txt);
+            margin-bottom: 6px;
+        }
+        .salary-modal-title em {
+            font-style: normal;
+            color: var(--teal);
+        }
+        .salary-modal-sub {
+            font-size: .78rem;
+            color: var(--mut);
+            font-family: var(--mono);
+        }
+
+        .salary-modal-body {
+            padding: 20px 24px;
+        }
+
+        /* Строка с периодом */
+        .salary-period {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, .04);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            font-family: var(--mono);
+            font-size: .82rem;
+            color: var(--amber2);
+        }
+        .salary-period .period-icon {
+            font-size: 1rem;
+        }
+
+        /* Сетка деталей */
+        .salary-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .salary-detail-item {
+            background: rgba(255, 255, 255, .03);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+        }
+        .salary-detail-item .detail-label {
+            font-size: .62rem;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: var(--mut);
+            margin-bottom: 4px;
+        }
+        .salary-detail-item .detail-value {
+            font-family: var(--mono);
+            font-size: 1.05rem;
+            font-weight: bold;
+            color: var(--amber2);
+        }
+
+        /* Блок "К выплате" */
+        .salary-final {
+            background: linear-gradient(135deg, rgba(62, 207, 168, .18), rgba(62, 207, 168, .05));
+            border: 2px solid var(--teal);
+            border-radius: 14px;
+            padding: 18px;
+            text-align: center;
+            margin-bottom: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+        .salary-final::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent 40%, rgba(255, 255, 255, .06) 50%, transparent 60%);
+            animation: shine 3s linear infinite;
+            pointer-events: none;
+        }
+        @keyframes shine {
+            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+        }
+        .salary-final .final-label {
+            font-size: .7rem;
+            text-transform: uppercase;
+            letter-spacing: .1em;
+            color: var(--mut);
+            margin-bottom: 6px;
+        }
+        .salary-final .final-value {
+            font-family: var(--mono);
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--teal);
+            line-height: 1;
+        }
+        .salary-final .final-value .cur {
+            font-size: .6em;
+            opacity: .8;
+            margin-left: 4px;
+        }
+
+        /* Строки "аванс", "надбавка" */
+        .salary-extra-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: .8rem;
+        }
+        .salary-extra-row.bonus {
+            background: rgba(255, 181, 46, .1);
+            border: 1px dashed rgba(255, 181, 46, .4);
+        }
+        .salary-extra-row.bonus .extra-value { color: var(--amber); font-weight: bold; }
+        .salary-extra-row.advance {
+            background: rgba(229, 72, 77, .1);
+            border: 1px solid rgba(229, 72, 77, .4);
+        }
+        .salary-extra-row.advance .extra-value { color: var(--red); font-weight: bold; }
+        .salary-extra-row .extra-label { color: var(--mut); }
+        .salary-extra-row .extra-value { font-family: var(--mono); }
+
+        /* По дням */
+        .salary-days {
+            border-top: 1px solid var(--line);
+            padding-top: 14px;
+            margin-top: 4px;
+        }
+        .salary-days .days-title {
+            font-size: .68rem;
+            color: var(--mut);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+        }
+        .salary-days .days-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+        .salary-days .day-cell {
+            text-align: center;
+            padding: 6px 2px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, .03);
+            border: 1px solid var(--line);
+            font-family: var(--mono);
+        }
+        .salary-days .day-cell.work {
+            background: rgba(62, 207, 168, .12);
+            border-color: rgba(62, 207, 168, .35);
+        }
+        .salary-days .day-cell.sunday {
+            background: rgba(255, 181, 46, .18);
+            border-color: var(--amber);
+        }
+        .salary-days .day-cell .day-name {
+            font-size: .55rem;
+            color: var(--mut);
+            margin-bottom: 2px;
+        }
+        .salary-days .day-cell .day-hours {
+            font-size: .8rem;
+            font-weight: bold;
+            color: var(--txt);
+        }
+        .salary-days .day-cell.sunday .day-name { color: var(--amber); }
+
+        /* Футер с кнопками */
+        .salary-modal-footer {
+            padding: 16px 24px 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border-top: 1px solid var(--line);
+        }
+        .salary-modal-btn {
+            width: 100%;
+            min-height: 52px;
+            border-radius: 12px;
+            border: none;
+            font-family: var(--body);
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform .15s, filter .2s, box-shadow .2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .salary-modal-btn:active {
+            transform: scale(.97);
+        }
+        .salary-modal-btn.confirm {
+            background: linear-gradient(135deg, var(--teal), #2eb894);
+            color: #0c1520;
+            box-shadow: 0 8px 24px rgba(62, 207, 168, .35);
+        }
+        .salary-modal-btn.confirm:hover {
+            filter: brightness(1.08);
+            box-shadow: 0 12px 32px rgba(62, 207, 168, .5);
+        }
+        .salary-modal-btn.cancel {
+            background: transparent;
+            color: var(--mut);
+            border: 1px solid var(--line);
+        }
+        .salary-modal-btn.cancel:hover {
+            color: var(--txt);
+            border-color: var(--mut);
+        }
+        .salary-modal-btn:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .salary-modal-hint {
+            text-align: center;
+            font-size: .68rem;
+            color: var(--mut);
+            margin-top: 4px;
+            line-height: 1.5;
+        }
+
+        /* Адаптив под мобилки */
+        @media (max-width: 480px) {
+            .salary-modal-overlay {
+                padding: 0;
+                align-items: flex-end;
+            }
+            .salary-modal {
+                max-width: 100%;
+                max-height: 95vh;
+                border-radius: 24px 24px 0 0;
+                transform: translateY(100%);
+            }
+            .salary-modal-overlay.active .salary-modal {
+                transform: translateY(0);
+            }
+            .salary-modal::before {
+                border-radius: 24px 24px 0 0;
+            }
+            .salary-modal-header {
+                padding: 22px 20px 16px;
+            }
+            .salary-modal-icon {
+                width: 52px;
+                height: 52px;
+                font-size: 1.5rem;
+                margin-bottom: 10px;
+            }
+            .salary-modal-title { font-size: 1.15rem; }
+            .salary-modal-sub { font-size: .72rem; }
+            .salary-modal-body { padding: 16px 18px; }
+            .salary-period {
+                padding: 9px 14px;
+                font-size: .76rem;
+                margin-bottom: 14px;
+            }
+            .salary-details { gap: 8px; margin-bottom: 14px; }
+            .salary-detail-item { padding: 10px; }
+            .salary-detail-item .detail-value { font-size: .95rem; }
+            .salary-final { padding: 16px; margin-bottom: 14px; }
+            .salary-final .final-value { font-size: 1.75rem; }
+            .salary-extra-row { font-size: .75rem; padding: 7px 10px; }
+            .salary-days .days-grid { gap: 3px; }
+            .salary-days .day-cell { padding: 5px 1px; }
+            .salary-days .day-cell .day-hours { font-size: .72rem; }
+            .salary-modal-footer { padding: 14px 18px 20px; }
+            .salary-modal-btn {
+                min-height: 50px;
+                font-size: .95rem;
+                border-radius: 10px;
+            }
+            .salary-modal-hint { font-size: .62rem; }
+        }
+
+        @media (max-width: 360px) {
+            .salary-modal-header { padding: 18px 16px 14px; }
+            .salary-modal-icon { width: 46px; height: 46px; font-size: 1.3rem; }
+            .salary-modal-title { font-size: 1.05rem; }
+            .salary-modal-body { padding: 14px 14px; }
+            .salary-final .final-value { font-size: 1.55rem; }
+            .salary-modal-footer { padding: 12px 14px 18px; }
+            .salary-modal-btn { min-height: 46px; font-size: .88rem; }
+        }
     </style>
 
     <!-- ============================================ -->
-    <!-- ★ КАЛЕНДАРЬ-РАСПИСАНИЕ (отдельный блок, не конфликтует с основным) -->
+    <!-- ★ КАЛЕНДАРЬ-РАСПИСАНИЕ -->
     <!-- ============================================ -->
     <style>
-        /* Миникарта */
         .minimap-btn {
             position: fixed;
             bottom: 24px;
@@ -379,7 +761,6 @@
             opacity: 0.9;
         }
 
-        /* Модалка расписания */
         .schedule-modal {
             display: none;
             position: fixed;
@@ -599,7 +980,6 @@
             font-family: var(--mono);
         }
 
-        /* Мини-меню выбора дня */
         .day-picker {
             position: fixed;
             background: var(--card);
@@ -866,6 +1246,75 @@
         </section>
 
         <footer>один html-файл · без зависимостей · расчёт выполняется локально в браузере · 🔒 данные только для просмотра</footer>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- ★ МОДАЛКА «ЗАПРОСИТЬ ЗП» -->
+    <!-- ============================================ -->
+    <div class="salary-modal-overlay" id="salaryModalOverlay">
+        <div class="salary-modal" id="salaryModal">
+            <div class="salary-modal-header">
+                <div class="salary-modal-icon">💰</div>
+                <div class="salary-modal-title">Запросить <em>зарплату</em>?</div>
+                <div class="salary-modal-sub" id="salaryModalSub">Проверьте данные перед отправкой</div>
+            </div>
+
+            <div class="salary-modal-body">
+                <div class="salary-period">
+                    <span class="period-icon">📅</span>
+                    <span id="salaryModalPeriod">—</span>
+                </div>
+
+                <div class="salary-details">
+                    <div class="salary-detail-item">
+                        <div class="detail-label">Дней</div>
+                        <div class="detail-value" id="salaryModalDays">0</div>
+                    </div>
+                    <div class="salary-detail-item">
+                        <div class="detail-label">Часов</div>
+                        <div class="detail-value" id="salaryModalHours">0</div>
+                    </div>
+                </div>
+
+                <!-- Надбавка за воскресенье (если есть) -->
+                <div class="salary-extra-row bonus" id="salaryModalBonusRow" style="display: none;">
+                    <span class="extra-label">🌟 Надбавка за воскресенье</span>
+                    <span class="extra-value" id="salaryModalBonus">+0 ₽</span>
+                </div>
+
+                <!-- Авансы (если есть) -->
+                <div class="salary-extra-row advance" id="salaryModalAdvanceRow" style="display: none;">
+                    <span class="extra-label">💳 Активные авансы</span>
+                    <span class="extra-value" id="salaryModalAdvance">−0 ₽</span>
+                </div>
+
+                <!-- К выплате -->
+                <div class="salary-final">
+                    <div class="final-label">К выплате</div>
+                    <div class="final-value">
+                        <span id="salaryModalFinal">0</span><span class="cur">₽</span>
+                    </div>
+                </div>
+
+                <!-- По дням -->
+                <div class="salary-days">
+                    <div class="days-title">По дням</div>
+                    <div class="days-grid" id="salaryModalDaysGrid"></div>
+                </div>
+            </div>
+
+            <div class="salary-modal-footer">
+                <button class="salary-modal-btn confirm" id="salaryModalConfirm">
+                    💰 Запросить
+                </button>
+                <button class="salary-modal-btn cancel" id="salaryModalCancel">
+                    Отмена
+                </button>
+                <div class="salary-modal-hint">
+                    Администратор получит уведомление и подтвердит выплату
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- ============================================ -->
