@@ -810,27 +810,37 @@
             font-size: 1.4rem;
             margin: 0;
         }
-                .schedule-close {
-            position: absolute;   /* ★ приклеена к углу */
-            top: 12px;
-            right: 12px;
-            background: rgba(255,255,255,.06);
+        .schedule-close {
+            position: fixed;    /* ★ приклеена к вьюпорту, не к модалке */
+            top: max(12px, env(safe-area-inset-top, 0px));
+            right: max(12px, env(safe-area-inset-right, 0px));
+            background: rgba(20, 30, 45, .92);
             border: 1px solid var(--line);
             color: var(--txt);
-            width: 44px;
-            height: 44px;
+            width: 48px;
+            height: 48px;
             border-radius: 50%;
-            font-size: 1.3rem;
+            font-size: 1.4rem;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all .2s;
+            transition: transform .15s, background .2s;
             line-height: 1;
             padding: 0;
-            z-index: 10;
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
+            z-index: 10002;      /* ★ выше всей модалки (у неё 10000) */
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 6px 20px rgba(0,0,0,.5);
+            /* Скрываем, пока расписание закрыто */
+            visibility: hidden;
+            opacity: 0;
+        }
+        /* Показываем кнопку только когда модалка открыта */
+        .schedule-modal.active ~ .schedule-close,
+        .schedule-modal.active .schedule-close {
+            visibility: visible;
+            opacity: 1;
         }
         .schedule-close:hover {
             background: var(--red);
