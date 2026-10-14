@@ -479,65 +479,349 @@
             cursor: not-allowed !important;
             transform: none !important;
         }
+
+        /* ===== РАСПИСАНИЕ ===== */
+        .schedule-summary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(62,207,168,.1);
+            border: 1px solid rgba(62,207,168,.35);
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-size: .8rem;
+            color: var(--teal);
+            font-family: var(--mono);
+            font-weight: 600;
+        }
+        .schedule-summary .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--teal);
+            animation: pulseDot 2s infinite;
+        }
+        @keyframes pulseDot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .35; }
+        }
+
+        .schedule-table-wrap {
+            overflow-x: auto;
+            background: var(--card);
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            padding: 8px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .schedule-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 4px;
+            min-width: 640px;
+        }
+        .schedule-table th {
+            padding: 8px 4px;
+            font-family: var(--mono);
+            font-size: .7rem;
+            text-transform: uppercase;
+            color: var(--mut);
+            font-weight: 600;
+            text-align: center;
+            background: rgba(255,255,255,.03);
+            border-radius: 6px;
+            position: static;
+            border-bottom: none;
+        }
+        .schedule-table th.weekend { color: var(--amber2); }
+        .schedule-table th.today { color: var(--amber); border: 1px solid var(--amber); }
+        .schedule-table td {
+            padding: 0;
+            text-align: center;
+            vertical-align: middle;
+            border-bottom: none;
+        }
+        .schedule-table td:first-child {
+            text-align: left;
+            padding: 8px 12px;
+            font-weight: 600;
+            font-size: .85rem;
+            color: var(--txt);
+            background: rgba(255,255,255,.03);
+            border-radius: 8px;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: .2s;
+        }
+        .schedule-table td:first-child:hover {
+            background: rgba(255,181,46,.12);
+            color: var(--amber2);
+        }
+        .schedule-day {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all .15s;
+            background: rgba(255,255,255,.03);
+            border: 1px solid transparent;
+            user-select: none;
+        }
+        .schedule-day.work {
+            background: rgba(62,207,168,.15);
+            color: var(--teal);
+            border-color: rgba(62,207,168,.3);
+        }
+        .schedule-day.off {
+            background: rgba(229,72,77,.15);
+            color: var(--red);
+            border-color: rgba(229,72,77,.3);
+        }
+        .schedule-day.past-work {
+            background: rgba(62,207,168,.08);
+            color: rgba(62,207,168,.6);
+            border-color: rgba(62,207,168,.15);
+        }
+        .schedule-day.past-off {
+            background: rgba(143,163,184,.1);
+            color: var(--mut);
+            border-color: rgba(143,163,184,.15);
+        }
+        .schedule-day.empty {
+            background: rgba(255,255,255,.03);
+            color: var(--mut);
+            border-color: var(--line);
+        }
+        .schedule-day.editable {
+            cursor: pointer;
+            border-color: rgba(255,181,46,.3);
+        }
+        .schedule-day.editable:hover {
+            transform: scale(1.1);
+            border-color: var(--amber);
+            box-shadow: 0 4px 12px rgba(255,181,46,.3);
+        }
+        .schedule-day.editable:active { transform: scale(0.95); }
+        .schedule-day.locked {
+            cursor: not-allowed;
+            opacity: .7;
+        }
+
+        .schedule-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 14px 4px 4px;
+            font-size: .75rem;
+            color: var(--mut);
+        }
+        .schedule-legend .item { display: inline-flex; align-items: center; gap: 6px; }
+        .schedule-legend .dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+        }
+        .schedule-legend .dot.work { background: rgba(62,207,168,.4); border-color: var(--teal); }
+        .schedule-legend .dot.off { background: rgba(229,72,77,.4); border-color: var(--red); }
+        .schedule-legend .dot.empty { background: rgba(255,255,255,.1); border-color: var(--line); }
+        .schedule-legend .dot.past { background: rgba(143,163,184,.2); border-color: rgba(143,163,184,.4); }
+
+        .schedule-hint {
+            font-size: .7rem;
+            color: var(--amber2);
+            padding: 12px 4px 0;
+            text-align: center;
+            font-family: var(--mono);
+        }
+
+        .day-picker {
+            position: fixed;
+            background: var(--card);
+            border: 1px solid var(--amber);
+            border-radius: 12px;
+            padding: 8px;
+            z-index: 10001;
+            box-shadow: 0 12px 40px rgba(0,0,0,.7);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 180px;
+        }
+        .day-picker button {
+            background: transparent;
+            border: none;
+            color: var(--txt);
+            padding: 10px 14px;
+            border-radius: 8px;
+            text-align: left;
+            cursor: pointer;
+            font-size: .9rem;
+            font-family: var(--body);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all .15s;
+        }
+        .day-picker button:hover { background: rgba(255,181,46,.15); }
+        .day-picker button.work:hover { background: rgba(62,207,168,.2); }
+        .day-picker button.off:hover { background: rgba(229,72,77,.2); }
+
+        /* ===== БАННЕР ЗАПРОСОВ ===== */
+        .requests-banner {
+            background: linear-gradient(90deg, rgba(62,207,168,.18), rgba(62,207,168,.04));
+            border: 1px solid var(--teal);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            display: none;
+            animation: bannerPulse 2s infinite;
+        }
+        .requests-banner.active {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .requests-banner .banner-icon {
+            font-size: 1.3rem;
+            animation: requestPulse 1.5s infinite;
+            flex-shrink: 0;
+        }
+        .requests-banner .banner-text {
+            flex: 1;
+            min-width: 200px;
+            color: var(--txt);
+            font-weight: 600;
+            font-size: .9rem;
+        }
+        .requests-banner .banner-text small {
+            display: block;
+            font-weight: 400;
+            color: var(--mut);
+            font-size: .72rem;
+            margin-top: 2px;
+        }
+        .requests-banner .banner-btn {
+            background: var(--teal);
+            color: #0c1520;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: .82rem;
+            transition: .2s;
+            min-height: 40px;
+            flex-shrink: 0;
+        }
+        .requests-banner .banner-btn:hover {
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+        }
+        @keyframes bannerPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(62,207,168,.35); }
+            50% { box-shadow: 0 0 24px 4px rgba(62,207,168,.2); }
+        }
+
+        @keyframes requestPulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(62,207,168,.7);
+            }
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 0 0 8px rgba(62,207,168,0);
+            }
+        }
+
+        /* ===== МОБИЛЬНАЯ АДАПТАЦИЯ ===== */
         @media (max-width: 768px) {
+            body { padding: 12px; }
             .dashboard-header {
                 flex-direction: column;
-                align-items: flex-start;
+                align-items: stretch;
             }
+            .dashboard-header h1 { font-size: 1.4rem; }
             .tab-btn {
                 font-size: .75rem;
-                padding: 8px 14px;
-                min-width: 80px;
+                padding: 10px 10px;
+                min-width: 0;
+                flex: 1;
             }
-            table {
-                font-size: .75rem;
-                min-width: 500px;
-            }
-            th, td {
-                padding: 6px 8px;
-            }
+            table { font-size: .75rem; min-width: 500px; }
+            th, td { padding: 6px 8px; }
             .attendance-row {
                 flex-direction: column;
                 align-items: stretch;
                 gap: 4px;
             }
-            .attendance-row .emp-name {
-                min-width: auto;
+            .attendance-row .emp-name { min-width: auto; }
+            .attendance-row .actions { margin-left: 0; }
+            .modal-box { padding: 20px 16px; }
+
+            .week-selector {
+                gap: 6px;
             }
-            .attendance-row .actions {
-                margin-left: 0;
+            .week-selector button {
+                padding: 8px 12px;
+                min-height: 40px;
             }
-            .modal-box {
-                padding: 20px 16px;
+            .week-selector .week-label {
+                font-size: .78rem;
+                min-width: 100px;
+            }
+
+            .schedule-table {
+                min-width: 560px;
+                border-spacing: 3px;
+            }
+            .schedule-table th { font-size: .62rem; padding: 6px 2px; }
+            .schedule-table td:first-child {
+                font-size: .75rem;
+                padding: 6px 8px;
+                max-width: 110px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .schedule-day { min-height: 40px; font-size: .85rem; border-radius: 6px; }
+            .schedule-legend { font-size: .68rem; gap: 8px; }
+            .schedule-legend .dot { width: 12px; height: 12px; }
+
+            .requests-banner {
+                padding: 12px;
+                gap: 8px;
+            }
+            .requests-banner .banner-text {
+                font-size: .82rem;
+                min-width: 0;
+                flex: 1 1 100%;
+            }
+            .requests-banner .banner-btn {
+                width: 100%;
+                min-height: 44px;
             }
         }
         @media (max-width: 480px) {
+            body { padding: 8px; }
             .tab-btn {
                 font-size: .7rem;
-                padding: 6px 10px;
-                min-width: 60px;
-                flex: 1 1 auto;
+                padding: 8px 4px;
             }
-            .tabs {
-                gap: 2px;
-                padding: 2px;
-            }
-            .week-selector .week-label {
-                font-size: .75rem;
-                min-width: 80px;
-            }
-        }
+            .tabs { gap: 2px; padding: 2px; }
+            .week-selector .week-label { font-size: .72rem; min-width: 90px; }
 
-        @keyframes requestPulse {
-    0%, 100% {
-        transform: scale(1);
-        box-shadow: 0 0 0 0 rgba(62,207,168,.7);
-    }
-    50% {
-        transform: scale(1.05);
-        box-shadow: 0 0 0 8px rgba(62,207,168,0);
-    }
-}
+            .schedule-table { min-width: 500px; border-spacing: 2px; }
+            .schedule-table th { font-size: .55rem; padding: 4px 1px; }
+            .schedule-table td:first-child {
+                font-size: .7rem;
+                padding: 4px 6px;
+                max-width: 90px;
+            }
+            .schedule-day { min-height: 36px; font-size: .78rem; }
+        }
     </style>
 </head>
 <body>
@@ -552,9 +836,19 @@
             </div>
         </header>
 
+        <div class="requests-banner" id="requestsBanner">
+            <span class="banner-icon">💰</span>
+            <div class="banner-text" id="requestsBannerText">
+                Сотрудники запрашивают зарплату
+                <small id="requestsBannerSub"></small>
+            </div>
+            <button class="banner-btn" id="requestsBannerBtn">Показать все</button>
+        </div>
+
         <div class="tabs">
             <button class="tab-btn active" data-tab="salary">💰 Зарплата</button>
             <button class="tab-btn" data-tab="attendance">📋 Посещаемость</button>
+            <button class="tab-btn" data-tab="schedule">📅 Расписание</button>
         </div>
 
         <!-- ЗАРПЛАТА -->
@@ -565,7 +859,6 @@
                 <button id="salaryWeekNext">▶</button>
                 <button class="btn-sm amber" id="refreshSalaryBtn" style="padding:8px 20px;font-size:.85rem;">🔄 Обновить</button>
                 <button class="bitrix-btn" id="sendBitrixBtn">📤 Отправить в Битрикс24</button>
-                <!-- <button class="bitrix-btn" id="exportReportBtn" style="margin-left:8px;">📤 Экспорт отчёта</button> -->
             </div>
             <div class="table-wrap" id="salaryTableWrap">
                 <div class="loading" id="salaryLoading">Загрузка...</div>
@@ -580,10 +873,35 @@
                 <button id="attWeekNext">▶</button>
                 <button id="attWeekToday" style="border-color:var(--amber);color:var(--amber);">Сегодня</button>
                 <button class="btn-sm teal" id="refreshAttBtn" style="padding:8px 20px;font-size:.85rem;margin-left:auto;">🔄 Обновить</button>
-                <!-- <button class="debug-btn" id="debugAttBtn" style="margin-left:8px;">🐞 Отладка</button> -->
             </div>
             <div id="attendanceContent">
                 <div class="loading">Загрузка...</div>
+            </div>
+        </div>
+
+        <!-- РАСПИСАНИЕ -->
+        <div class="tab-content" id="tabSchedule">
+            <div class="week-selector">
+                <button id="schedWeekPrev">◀</button>
+                <span class="week-label" id="schedWeekLabel">Неделя</span>
+                <button id="schedWeekNext">▶</button>
+                <button id="schedWeekToday" style="border-color:var(--amber);color:var(--amber);">Сегодня</button>
+                <span class="schedule-summary" id="schedSummary" style="margin-left:auto;">
+                    <span class="dot"></span>
+                    <span id="schedSummaryText">Сегодня: —</span>
+                </span>
+            </div>
+            <div class="schedule-table-wrap" id="scheduleTableWrap">
+                <div class="loading">Загрузка...</div>
+            </div>
+            <div class="schedule-legend">
+                <span class="item"><span class="dot work"></span> работает</span>
+                <span class="item"><span class="dot off"></span> выходной</span>
+                <span class="item"><span class="dot empty"></span> не задано</span>
+                <span class="item"><span class="dot past"></span> прошлое (по отметкам)</span>
+            </div>
+            <div class="schedule-hint">
+                💡 Клик по дню (сегодня/будущее) — изменить статус. Прошлое — только просмотр.
             </div>
         </div>
     </div>
@@ -636,19 +954,5 @@
     </div>
 
     <script type="module" src="admin-dashboard.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const debugBtn = document.getElementById('debugAttBtn');
-            if (debugBtn) {
-                debugBtn.addEventListener('click', () => {
-                    if (window.debugAttendance) {
-                        window.debugAttendance();
-                    } else {
-                        console.log('⏳ Функция отладки еще не загружена');
-                    }
-                });
-            }
-        });
-    </script>
 </body>
 </html>

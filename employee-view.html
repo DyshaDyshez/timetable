@@ -724,41 +724,45 @@
     <!-- ★ КАЛЕНДАРЬ-РАСПИСАНИЕ -->
     <!-- ============================================ -->
     <style>
-        .minimap-btn {
+                .minimap-btn {
             position: fixed;
-            bottom: 24px;
-            right: 24px;
-            width: 72px;
-            height: 72px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, rgba(255,181,46,.2), rgba(255,181,46,.1));
-            border: 2px solid var(--amber);
+            top: 20px;
+            left: 20px;
+            width: auto;
+            min-width: 60px;
+            height: 44px;
+            padding: 0 14px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, rgba(255,181,46,.2), rgba(255,181,46,.08));
+            border: 1.5px solid var(--amber);
             color: var(--amber2);
             cursor: pointer;
-            z-index: 999;
-            display: flex;
-            flex-direction: column;
+            z-index: 100;
+            display: inline-flex;
+            flex-direction: row;
             align-items: center;
             justify-content: center;
-            gap: 2px;
+            gap: 6px;
             backdrop-filter: blur(12px);
-            box-shadow: 0 8px 24px rgba(255,181,46,.35);
-            transition: all .25s ease;
-            padding: 0;
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 6px 20px rgba(255,181,46,.3);
+            transition: transform .2s, box-shadow .2s, background .2s;
             font-family: var(--body);
+            font-weight: 700;
         }
         .minimap-btn:hover {
-            transform: scale(1.08);
-            box-shadow: 0 12px 32px rgba(255,181,46,.5);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 28px rgba(255,181,46,.45);
+            background: linear-gradient(135deg, rgba(255,181,46,.3), rgba(255,181,46,.12));
         }
-        .minimap-btn:active { transform: scale(0.95); }
-        .minimap-btn .minimap-icon { font-size: 1.6rem; line-height: 1; }
+        .minimap-btn:active { transform: translateY(0) scale(0.96); }
+        .minimap-btn .minimap-icon { font-size: 1.1rem; line-height: 1; }
         .minimap-btn .minimap-label {
-            font-size: .55rem;
+            font-size: .7rem;
             font-weight: 700;
-            letter-spacing: .05em;
+            letter-spacing: .04em;
             text-transform: uppercase;
-            opacity: 0.9;
+            opacity: 0.95;
         }
 
         .schedule-modal {
@@ -784,30 +788,39 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            position: relative; /* ★ для абсолютного позиционирования кнопки закрытия */
         }
         .schedule-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 20px 24px;
+            padding: 20px 64px 20px 24px; /* ★ справа больше — место под кнопку ✕ */
             border-bottom: 2px solid var(--line);
             flex-wrap: wrap;
             gap: 12px;
+            position: sticky;
+            top: 0;
+            background: var(--card);
+            z-index: 5;
         }
+
         .schedule-header h2 {
             font-family: var(--display);
             color: var(--amber);
             font-size: 1.4rem;
             margin: 0;
         }
-        .schedule-close {
-            background: rgba(255,255,255,.05);
+                .schedule-close {
+            position: absolute;   /* ★ приклеена к углу */
+            top: 12px;
+            right: 12px;
+            background: rgba(255,255,255,.06);
             border: 1px solid var(--line);
             color: var(--txt);
-            width: 40px;
-            height: 40px;
+            width: 44px;
+            height: 44px;
             border-radius: 50%;
-            font-size: 1.4rem;
+            font-size: 1.3rem;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -815,12 +828,18 @@
             transition: all .2s;
             line-height: 1;
             padding: 0;
+            z-index: 10;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
         }
         .schedule-close:hover {
             background: var(--red);
             color: #fff;
             border-color: var(--red);
             transform: rotate(90deg);
+        }
+        .schedule-close:active {
+            transform: rotate(90deg) scale(0.9);
         }
 
         .schedule-week-nav {
@@ -1013,9 +1032,15 @@
         .day-picker button.off:hover { background: rgba(229,72,77,.2); }
 
         @media (max-width: 768px) {
-            .minimap-btn { bottom: 20px; right: 20px; width: 64px; height: 64px; }
-            .minimap-btn .minimap-icon { font-size: 1.4rem; }
-            .minimap-btn .minimap-label { font-size: .5rem; }
+            .minimap-btn {
+                top: 12px;
+                left: 12px;
+                height: 40px;
+                padding: 0 12px;
+                min-width: 52px;
+            }
+            .minimap-btn .minimap-icon { font-size: 1rem; }
+            .minimap-btn .minimap-label { font-size: .62rem; }
 
             .schedule-modal { padding: 0; }
             .schedule-box {
@@ -1024,9 +1049,17 @@
                 height: 100vh;
                 max-width: 100%;
             }
-            .schedule-header { padding: 16px 16px; }
+            .schedule-header {
+                padding: 16px 60px 16px 16px;
+            }
             .schedule-header h2 { font-size: 1.1rem; }
-            .schedule-close { width: 36px; height: 36px; font-size: 1.2rem; }
+            .schedule-close {
+                top: 10px;
+                right: 10px;
+                width: 42px;
+                height: 42px;
+                font-size: 1.25rem;
+            }
             .schedule-week-nav { padding: 10px 16px; gap: 8px; }
             .schedule-week-nav button { padding: 8px 12px; font-size: .8rem; }
             .schedule-week-nav .week-label { font-size: .75rem; min-width: 130px; }
@@ -1043,9 +1076,16 @@
             .schedule-hint { font-size: .65rem; padding: 0 16px 12px; }
         }
         @media (max-width: 480px) {
-            .minimap-btn { bottom: 16px; right: 16px; width: 58px; height: 58px; border-width: 1.5px; }
-            .minimap-btn .minimap-icon { font-size: 1.2rem; }
-            .minimap-btn .minimap-label { font-size: .45rem; }
+            .minimap-btn {
+                top: 8px;
+                left: 8px;
+                height: 36px;
+                padding: 0 10px;
+                min-width: 46px;
+                border-width: 1px;
+            }
+            .minimap-btn .minimap-icon { font-size: .9rem; }
+            .minimap-btn .minimap-label { font-size: .55rem; }
 
             .schedule-header { padding: 12px 12px; }
             .schedule-header h2 { font-size: 1rem; }
