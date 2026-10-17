@@ -1062,15 +1062,15 @@ async function sendBitrixSalaryRequestNotification({ employeeName, finalPay, wee
             return;
         }
 
-        // Формируем ссылки
+               // Формируем ссылки
         const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
         const dashboardUrl = `${baseUrl}admin-dashboard.html`;
         const employeeUrl = `${baseUrl}employee-view.html?id=${EMPLOYEE_ID}`;
 
-        // Формируем сообщение
-        // Формат: "ЗАПРОС ЗП (ссылка на дашборд) \n Имя (ссылка на employee-view), Период, Сумма"
-        const message = `[ЗАПРОС ЗП](${dashboardUrl})\n` +
-            `👤 [${employeeName}](${employeeUrl})\n` +
+        // Формируем сообщение (BB-код для Битрикс24)
+        // Обрати внимание: весь текст внутри обратных кавычек ` `
+        const message = `[URL=${dashboardUrl}]ЗАПРОС ЗП[/URL]\n` +
+            `👤 [URL=${employeeUrl}]${employeeName}[/URL]\n` +
             `📅 ${weekRange}\n` +
             `💵 ${finalPay.toLocaleString()} ₽`;
 
