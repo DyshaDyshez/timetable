@@ -1,14 +1,3 @@
-// employee-view.js
-// Просмотр зарплаты сотрудником (только чтение).
-//
-// ЛОГИКА (совпадает с admin-dashboard.js):
-// - Для каждого дня отдельно:
-//     • adminEditedDays[i] === true → данные админа (в т.ч. 0ч = отмена дня)
-//     • иначе → данные из отметок
-// - Ничего в БД НЕ записываем.
-//
-// ★ ДОБАВЛЕНО: Календарь-расписание сотрудников
-// ★ ДОБАВЛЕНО: Красивая модалка «Запросить ЗП»
 
 import { calculateWeekPay } from './modules/calculator.js';
 import { calculateDayHoursFromLogs } from './modules/attendance.js';
@@ -649,19 +638,30 @@ function initMinimap() {
     
     btn.addEventListener('click', async () => {
         modal.classList.add('active');
+        document.body.classList.add('schedule-open'); // для fixed-кнопки закрытия
         if (allEmployees.length === 0) {
             await loadAllEmployees();
         }
         await renderSchedule();
     });
     
-    closeBtn?.addEventListener('click', () => {
+    const closeSchedule = () => {
         modal.classList.remove('active');
-    });
+        document.body.classList.remove('schedule-open');
+    };
+    
+    closeBtn?.addEventListener('click', closeSchedule);
     
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
-            modal.classList.remove('active');
+            closeSchedule();
+        }
+    });
+    
+    // Закрытие по Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('active')) {
+            closeSchedule();
         }
     });
     
@@ -812,7 +812,7 @@ async function init() {
 }
 
 // ============================================
-// ★ ЗАПРОС ЗАРПЛАТЫ (новая версия с модалкой)
+// ★ ЗАПРОС ЗАРПЛАТЫ (с отправкой в Битрикс)
 // ============================================
 
 function initSalaryModal() {
@@ -975,6 +975,7 @@ async function confirmSalaryRequest() {
     confirmBtn.textContent = '⏳ Отправка...';
     
     try {
+        // 1. Сохраняем в Firebase
         await setDoc(doc(collection(db, 'salaryRequests')), {
             employeeId: EMPLOYEE_ID,
             employeeName: employeeName,
@@ -993,7 +994,19 @@ async function confirmSalaryRequest() {
         
         console.log('✅ Запрос на ЗП отправлен');
         
-        // Обновляем кнопку на странице
+        // 2. Отправляем в Битрикс
+        try {
+            await sendBitrixSalaryRequestNotification({
+                employeeName,
+                finalPay,
+                weekRange
+            });
+        } catch (bitrixError) {
+            console.warn('⚠️ Не удалось отправить в Битрикс:', bitrixError);
+            // Не прерываем процесс, т.к. запись в БД уже создана
+        }
+        
+        // 3. Обновляем кнопку на странице
         const mainBtn = document.getElementById('requestSalaryBtn');
         if (mainBtn) {
             mainBtn.textContent = '⏳ ЗП запрошена';
@@ -1003,7 +1016,6 @@ async function confirmSalaryRequest() {
         }
         
         closeSalaryModal();
-        
         setTimeout(() => showToast('✅ Запрос на зарплату отправлен!'), 250);
         
     } catch (error) {
@@ -1012,6 +1024,69 @@ async function confirmSalaryRequest() {
         cancelBtn.disabled = false;
         confirmBtn.textContent = '💰 Запросить';
         showToast('❌ Ошибка: ' + error.message);
+    }
+}
+
+// ============================================
+// ★ ОТПРАВКА УВЕДОМЛЕНИЯ В БИТРИКС24
+// ============================================
+async function sendBitrixSalaryRequestNotification({ employeeName, finalPay, weekRange }) {
+    try {
+        // Получаем настройки Битрикса
+        const bitrixRef = doc(db, 'settings', 'bitrix24');
+        const bitrixSnap = await getDoc(bitrixRef);
+
+        if (!bitrixSnap.exists()) {
+            console.warn('❌ Настройки Битрикс24 не найдены');
+            return;
+        }
+
+        const bitrixData = bitrixSnap.data();
+        const webhook = bitrixData.webhook;
+        const chatId = bitrixData.chatId || 'chat1104';
+
+        if (!webhook) {
+            console.warn('❌ Вебхук Битрикс24 не указан');
+            return;
+        }
+
+        // Формируем ссылки
+        const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
+        const dashboardUrl = `${baseUrl}admin-dashboard.html`;
+        const employeeUrl = `${baseUrl}employee-view.html?id=${EMPLOYEE_ID}`;
+
+        // Формируем сообщение
+        // Формат: "ЗАПРОС ЗП (ссылка на дашборд) \n Имя (ссылка на employee-view), Период, Сумма"
+        const message = `[ЗАПРОС ЗП](${dashboardUrl})\n` +
+            `👤 [${employeeName}](${employeeUrl})\n` +
+            `📅 ${weekRange}\n` +
+            `💵 ${finalPay.toLocaleString()} ₽`;
+
+        // Отправляем
+        const url = webhook + 'im.message.add.json';
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                DIALOG_ID: chatId,
+                MESSAGE: message
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.error) {
+            throw new Error(result.error_description || result.error);
+        }
+
+        console.log('✅ Уведомление о ЗП отправлено в Битрикс');
+    } catch (error) {
+        console.error('❌ Ошибка отправки в Битрикс:', error);
+        throw error;
     }
 }
 
