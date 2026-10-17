@@ -1057,7 +1057,7 @@ async function sendBitrixSalaryRequestNotification({ employeeName, finalPay, wee
 
         // Формируем сообщение
         // Формат: "ЗАПРОС ЗП (ссылка на дашборд) \n Имя (ссылка на employee-view), Период, Сумма"
-        const message = `[URL=${dashboardUrl}][ЗАПРОС ЗП][/URL]\n` +
+       const message = `[URL=${dashboardUrl}][ЗАПРОС ЗП][/URL]\n` +
             `👤 [URL=${employeeUrl}]${employeeName}[/URL]\n` +
             `📅 ${weekRange}\n` +
             `💵 ${finalPay.toLocaleString()} ₽`;
