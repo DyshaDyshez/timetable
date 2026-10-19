@@ -9,6 +9,7 @@
 //
 // + КНОПКА ОТПРАВКИ В BITRIX24
 // + ★ ВКЛАДКА РАСПИСАНИЕ (просмотр + редактирование всех сотрудников)
+// + ★ КОЛОНКА СТАТУС (Ожидает / Оплачено)
 
 import { firebaseConfig } from './config.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -134,12 +135,12 @@ function startListening() {
         allRequests = {};
         snapshot.forEach(doc => {
             const data = doc.data();
-            if (data.status === 'pending') {
+            if (data.status === 'pending' || data.status === 'paid') {
                 const key = data.employeeId + '_' + data.weekKey;
                 allRequests[key] = { id: doc.id, ...data };
             }
         });
-        console.log('💰 Активных запросов на ЗП:', Object.keys(allRequests).length);
+        console.log('💰 Загружено запросов (всего):', Object.keys(allRequests).length);
         window.__allRequests = allRequests;
         scheduleRender();
     }, () => showNotification('❌ Ошибка загрузки запросов', true));
@@ -343,7 +344,7 @@ function getWeekDataForEmployee(employeeId, weekKey, weekDates) {
 }
 
 // ============================================
-// РЕНДЕР ЗАРПЛАТЫ
+// РЕНДЕР ЗАРПЛАТЫ (с колонкой Статус)
 // ============================================
 function renderSalary() {
     const wrap = document.getElementById('salaryTableWrap');
@@ -358,16 +359,18 @@ function renderSalary() {
 
     for (const emp of allEmployees) {
         const requestKey = emp.id + '_' + weekKey;
-        const hasRequest = allRequests[requestKey] !== undefined;
-        const requestData = hasRequest ? allRequests[requestKey] : null;
+        const requestData = allRequests[requestKey] || null; 
+        const hasRequest = requestData !== null;
 
         const weekData = getWeekDataForEmployee(emp.id, weekKey, dates);
 
+        // Нет данных И нет запроса — пропускаем (кроме строки "Нет данных")
         if (!weekData.anyData && !hasRequest) {
             rows.push({ emp, weekData, hasRequest: false, requestData: null, noData: true });
             continue;
         }
 
+        // Нет данных, но ЕСТЬ запрос — рисуем только запрос
         if (!weekData.anyData && hasRequest) {
             rows.push({
                 emp, weekData, hasRequest: true, requestData,
@@ -384,6 +387,7 @@ function renderSalary() {
             continue;
         }
 
+        // Нормальный расчёт
         const settings = getEmployeeSettings(emp.id);
         const stats = calculateWeekPay(weekData, settings);
 
@@ -404,14 +408,16 @@ function renderSalary() {
         });
     }
 
+    // ===== Desktop: таблица =====
     let tableHTML = `<table style="table-layout:fixed;width:100%;">
         <colgroup>
-            <col style="width:32%;">
+            <col style="width:26%;">
+            <col style="width:8%;">
+            <col style="width:9%;">
             <col style="width:10%;">
-            <col style="width:11%;">
-            <col style="width:12%;">
-            <col style="width:20%;">
+            <col style="width:16%;">
             <col style="width:15%;">
+            <col style="width:16%;">
         </colgroup>
         <thead><tr>
             <th>Сотрудник</th>
@@ -419,6 +425,7 @@ function renderSalary() {
             <th style="text-align:center;">Часов</th>
             <th style="text-align:center;">Перераб.</th>
             <th style="text-align:right;">Зарплата</th>
+            <th style="text-align:center;">Статус</th>
             <th style="text-align:center;">Действия</th>
         </tr></thead><tbody>`;
 
@@ -428,17 +435,33 @@ function renderSalary() {
         if (noData) {
             tableHTML += `<tr>
                 <td class="col-employee" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${emp.name || 'Без имени'}</td>
-                <td colspan="5" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td>
+                <td colspan="6" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td>
             </tr>`;
             continue;
         }
 
+        const isPaid = hasRequest && requestData.status === 'paid';
         const rowStyle = hasRequest 
-            ? 'background:rgba(62,207,168,.08); border-left:4px solid var(--teal);' 
+            ? (isPaid ? 'background:rgba(255,255,255,.02);' : 'background:rgba(62,207,168,.08); border-left:4px solid var(--teal);')
             : '';
         
-        let actionButtons = '';
+        // Стиль для суммы
+        const payStyle = isPaid 
+            ? 'text-decoration:line-through; opacity:0.5;' 
+            : 'color:var(--amber);';
+
+        // Статус
+        let statusBadge = '<span style="color:var(--mut); font-size:.8rem;">—</span>';
         if (hasRequest) {
+            if (isPaid) {
+                statusBadge = `<span style="background:rgba(62,207,168,.15); color:var(--teal); padding:4px 10px; border-radius:99px; font-size:.75rem; font-weight:bold;">✅ Оплачено</span>`;
+            } else {
+                statusBadge = `<span style="background:rgba(255,181,46,.15); color:var(--amber2); padding:4px 10px; border-radius:99px; font-size:.75rem; font-weight:bold;">⏳ Ожидает</span>`;
+            }
+        }
+
+        let actionButtons = '';
+        if (hasRequest && !isPaid) {
             actionButtons = `
                 <button class="btn-sm teal" onclick="window.showRequestDetails('${requestData.id}')" 
                         title="Показать запрос" 
@@ -458,7 +481,8 @@ function renderSalary() {
             <td style="text-align:center;">${stats.days}</td>
             <td style="text-align:center;">${stats.totalHours.toFixed(1)}</td>
             <td style="text-align:center;">${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</td>
-            <td style="text-align:right;font-weight:700;color:var(--amber);font-size:1.05rem;white-space:nowrap;">${stats.total.toLocaleString()} ₽</td>
+            <td style="text-align:right;font-weight:700;font-size:1.05rem;white-space:nowrap; ${payStyle}">${stats.total.toLocaleString()} ₽</td>
+            <td style="text-align:center;">${statusBadge}</td>
             <td style="text-align:center;white-space:nowrap;">
                 ${actionButtons}
             </td>
@@ -469,9 +493,101 @@ function renderSalary() {
         <td><b style="color:var(--amber);">📊 ИТОГО</b></td>
         <td colspan="3" style="text-align:center;font-size:.8rem;color:var(--mut);">${totalCount} сотрудников</td>
         <td style="text-align:right;font-weight:700;color:var(--amber);font-size:1.1rem;white-space:nowrap;">${totalPay.toLocaleString()} ₽</td>
-        <td></td>
+        <td colspan="2"></td>
     </tr></tbody></table>`;
-    wrap.innerHTML = tableHTML;
+
+    // ===== Mobile: карточки =====
+    let cardsHTML = '';
+    for (const row of rows) {
+        const { emp, hasRequest, requestData, noData, stats, sourceLabel } = row;
+
+        if (noData) {
+            cardsHTML += `
+                <div class="salary-card">
+                    <div class="card-header">
+                        <div class="card-name">${emp.name || 'Без имени'}</div>
+                    </div>
+                    <div class="card-no-data">Нет данных</div>
+                    <div class="card-actions">
+                        <button class="btn-settings" onclick="window.showEmployeeSettings('${emp.id}')">⚙️ Настройки</button>
+                        <button class="btn-details" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')">👁️ Детали</button>
+                    </div>
+                </div>
+            `;
+            continue;
+        }
+
+        const isPaid = hasRequest && requestData.status === 'paid';
+        const cardClass = hasRequest 
+            ? (isPaid ? 'salary-card' : 'salary-card has-request') 
+            : 'salary-card';
+        
+        const payStyle = isPaid 
+            ? 'text-decoration:line-through; opacity:0.5;' 
+            : '';
+
+        let statusBadge = '';
+        if (hasRequest) {
+            if (isPaid) {
+                statusBadge = `<span style="background:rgba(62,207,168,.15); color:var(--teal); padding:3px 10px; border-radius:99px; font-size:.7rem; font-weight:bold;">✅ Оплачено</span>`;
+            } else {
+                statusBadge = `<span style="background:rgba(255,181,46,.15); color:var(--amber2); padding:3px 10px; border-radius:99px; font-size:.7rem; font-weight:bold;">⏳ Ожидает</span>`;
+            }
+        }
+
+        const actions = (hasRequest && !isPaid)
+            ? `<button class="btn-request-pulse" onclick="window.showRequestDetails('${requestData.id}')">
+                   💰 ЗАПРОС!
+               </button>`
+            : `<button class="btn-settings" onclick="window.showEmployeeSettings('${emp.id}')">⚙️ Настройки</button>
+               <button class="btn-details" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')">👁️ Детали</button>`;
+
+        cardsHTML += `
+            <div class="${cardClass}">
+                <div class="card-header">
+                    <div class="card-name">${emp.name}${sourceLabel}</div>
+                    <div class="card-pay" style="${payStyle}">${stats.total.toLocaleString()} ₽</div>
+                </div>
+                ${statusBadge ? `<div style="margin-bottom:4px;">${statusBadge}</div>` : ''}
+                <div class="card-stats">
+                    <div class="stat-item">
+                        <div class="stat-label">Дней</div>
+                        <div class="stat-value">${stats.days}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Часов</div>
+                        <div class="stat-value">${stats.totalHours.toFixed(1)}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Перераб.</div>
+                        <div class="stat-value ${stats.ot > 0 ? 'amber' : 'mut'}">
+                            ${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}
+                        </div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    ${actions}
+                </div>
+            </div>
+        `;
+    }
+
+    // ===== Итого-карточка =====
+    cardsHTML += `
+        <div class="salary-card" style="background:linear-gradient(135deg, rgba(255,181,46,.12), rgba(255,181,46,.02)); border-color:var(--amber);">
+            <div class="card-header">
+                <div class="card-name" style="color:var(--amber);">📊 ИТОГО</div>
+                <div class="card-pay" style="font-size:1.2rem;">${totalPay.toLocaleString()} ₽</div>
+            </div>
+            <div style="font-size:.75rem; color:var(--mut); text-align:center;">
+                ${totalCount} сотрудников
+            </div>
+        </div>
+    `;
+
+    wrap.innerHTML = `
+        ${tableHTML}
+    `;
 }
 
 // ============================================
@@ -1405,7 +1521,8 @@ function renderRequestsBanner() {
     const btn = document.getElementById('requestsBannerBtn');
     if (!banner) return;
 
-    const requests = Object.values(allRequests);
+    // ★ Берем ТОЛЬКО те, что ожидают оплаты
+    const requests = Object.values(allRequests).filter(r => r.status === 'pending');
 
     if (requests.length === 0) {
         banner.classList.remove('active');
@@ -1698,6 +1815,10 @@ window.showRequestDetails = function(requestId) {
             
             modal.classList.remove('active');
             showNotification(`✅ Выплата ${request.employeeName} подтверждена!`);
+            
+            // ★ Перерисовываем таблицу, чтобы статус обновился СРАЗУ
+            if (typeof renderSalary === 'function') renderSalary();
+            if (typeof renderRequestsBanner === 'function') renderRequestsBanner();
         } catch (error) {
             showNotification('❌ Ошибка: ' + error.message, true);
         }
