@@ -443,6 +443,38 @@ function update() {
     void stamp.offsetWidth;
     stamp.classList.add('pop');
 
+    // ★ ДОБАВЛЕНО: Вычет 20% для конкретного сотрудника
+    const totalRow = document.querySelector('.total-row');
+    if (totalRow) {
+        let netSalaryBlock = document.getElementById('netSalaryBlock');
+        if (EMPLOYEE_ID === 'UD6ZrvVxPkm4CmKGWDiX') {
+            if (!netSalaryBlock) {
+                netSalaryBlock = document.createElement('div');
+                netSalaryBlock.id = 'netSalaryBlock';
+                netSalaryBlock.style.cssText = `
+                    background: rgba(255, 181, 46, 0.12);
+                    border: 1px dashed var(--amber);
+                    border-radius: 8px;
+                    padding: 12px 16px;
+                    margin-top: 12px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    font-family: var(--mono);
+                `;
+                netSalaryBlock.innerHTML = `
+                    <span style="font-size: 0.85rem; font-weight: 600; color: var(--amber2);">💰 ЗП - 20% (на руки)</span>
+                    <span id="netSalaryValue" style="font-size: 1.2rem; font-weight: bold; color: var(--amber);"></span>
+                `;
+                totalRow.parentNode.insertBefore(netSalaryBlock, totalRow.nextSibling);
+            }
+            const netTotal = total * 0.8;
+            document.getElementById('netSalaryValue').textContent = Math.round(netTotal).toLocaleString() + ' ₽';
+        } else if (netSalaryBlock) {
+            netSalaryBlock.remove();
+        }
+    }
+
     const parts = [];
     if (payBase > 0) parts.push(`<b class="f-n">${days}×${settings.rDay.toLocaleString()}</b>`);
     if (payExtra > 0) parts.push(`<b class="f-n">${extraDaysCount}×${settings.rExtra.toLocaleString()}</b>`);
