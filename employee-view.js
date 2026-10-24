@@ -41,6 +41,13 @@ let settings = {
     sundayBonusEnabled: false, sundayBonusAmount: 1000
 };
 
+// ★ СПИСОК СОТРУДНИКОВ С ВЫЧЕТОМ 20%
+const DEDUCTION_EMPLOYEES = [
+    'UD6ZrvVxPkm4CmKGWDiX', '69bXsB9wPyUjffVUuLFN', 'Ko5LMP5SQKGfFoB4yIx7', 'U4x9Kr0bpfdx7naoulpM', 'nbBjsOTTSRIO6aBsslAN', 'ZflATZ6egxRkx5fhpJ5o' // Андрей
+    // сюда добавляй новые ID через запятую:
+    // 'Es8V40MRBaxZpFCSmK0j',
+];
+
 // Для календаря
 let scheduleWeekOffset = 0;
 let allEmployees = [];
@@ -443,11 +450,11 @@ function update() {
     void stamp.offsetWidth;
     stamp.classList.add('pop');
 
-    // ★ ДОБАВЛЕНО: Вычет 20% для конкретного сотрудника
+       // ★ ДОБАВЛЕНО: Вычет 20% (по списку ID)
     const totalRow = document.querySelector('.total-row');
     if (totalRow) {
         let netSalaryBlock = document.getElementById('netSalaryBlock');
-        if (EMPLOYEE_ID === 'UD6ZrvVxPkm4CmKGWDiX') {
+        if (DEDUCTION_EMPLOYEES.includes(EMPLOYEE_ID)) {
             if (!netSalaryBlock) {
                 netSalaryBlock = document.createElement('div');
                 netSalaryBlock.id = 'netSalaryBlock';
@@ -462,14 +469,13 @@ function update() {
                     align-items: center;
                     font-family: var(--mono);
                 `;
-                netSalaryBlock.innerHTML = `
-                    <span style="font-size: 0.85rem; font-weight: 600; color: var(--amber2);">💰 ЗП - 20% (на руки)</span>
-                    <span id="netSalaryValue" style="font-size: 1.2rem; font-weight: bold; color: var(--amber);"></span>
-                `;
                 totalRow.parentNode.insertBefore(netSalaryBlock, totalRow.nextSibling);
             }
             const netTotal = total * 0.8;
-            document.getElementById('netSalaryValue').textContent = Math.round(netTotal).toLocaleString() + ' ₽';
+            netSalaryBlock.innerHTML = `
+                <span style="font-size: 0.85rem; font-weight: 600; color: var(--amber2);">💰 ЗП - 20% (на руки)</span>
+                <span style="font-size: 1.2rem; font-weight: bold; color: var(--amber);">${Math.round(netTotal).toLocaleString()} ₽</span>
+            `;
         } else if (netSalaryBlock) {
             netSalaryBlock.remove();
         }
