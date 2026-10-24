@@ -8,8 +8,9 @@
 // - updatedBy: 'admin' ставится, если админ вообще трогал неделю.
 //
 // + КНОПКА ОТПРАВКИ В BITRIX24
-// + ★ ВКЛАДКА РАСПИСАНИЕ (просмотр + редактирование всех сотрудников)
+// + ★ ВКЛАДКА РАСПИСАНИЕ
 // + ★ КОЛОНКА СТАТУС (Ожидает / Оплачено)
+// + ★ КОЛОНКА «−20%» и скрытое управление вычетом
 
 import { firebaseConfig } from './config.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -25,6 +26,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { calculateWeekPay } from './modules/calculator.js';
 import { calculateDayHoursFromLogs } from './modules/attendance.js';
+import { DEDUCTION_EMPLOYEES, DEDUCTION_RATE, hasDeduction } from './modules/deductions.js';
 
 // ============================================
 // ИНИЦИАЛИЗАЦИЯ
@@ -36,17 +38,17 @@ const auth = getAuth(app);
 let currentUser = null;
 let allEmployees = [];
 let allWeeks = {};
-let allAttendance = {};      // ключ: 'employeeId_YYYY-MM-DD' → [logs]
+let allAttendance = {};
 let allSettings = {};
-let allRequests = {};        // ★ Запросы на ЗП
-let allSchedules = {};       // ★ Расписание сотрудников
+let allRequests = {};
+let allSchedules = {};
 let currentSalaryWeek = 0;
 let currentAttWeek = 0;
-let currentScheduleWeek = 0; // ★
+let currentScheduleWeek = 0;
 let isRendering = false;
 let renderTimeout = null;
 let isSaving = false;
-let scheduleTableReady = false; // ★ — была ли вкладка расписания открыта хоть раз
+let scheduleTableReady = false;
 
 // ============================================
 // АВТОРИЗАЦИЯ
@@ -74,9 +76,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         const target = document.getElementById('tab' + btn.dataset.tab.charAt(0).toUpperCase() + btn.dataset.tab.slice(1));
         if (target) target.classList.add('active');
-        if (btn.dataset.tab === 'attendance') {
-            renderAttendance();
-        }
+        if (btn.dataset.tab === 'attendance') renderAttendance();
         if (btn.dataset.tab === 'schedule') {
             scheduleTableReady = true;
             renderSchedule();
@@ -130,7 +130,6 @@ function startListening() {
         scheduleRender();
     }, () => showNotification('❌ Ошибка загрузки настроек', true));
 
-    // ★ СЛУШАТЕЛЬ ЗАПРОСОВ НА ЗП
     onSnapshot(collection(db, 'salaryRequests'), (snapshot) => {
         allRequests = {};
         snapshot.forEach(doc => {
@@ -140,12 +139,10 @@ function startListening() {
                 allRequests[key] = { id: doc.id, ...data };
             }
         });
-        console.log('💰 Загружено запросов (всего):', Object.keys(allRequests).length);
         window.__allRequests = allRequests;
         scheduleRender();
     }, () => showNotification('❌ Ошибка загрузки запросов', true));
 
-    // ★ СЛУШАТЕЛЬ РАСПИСАНИЯ
     onSnapshot(collection(db, 'employeeSchedule'), (snapshot) => {
         allSchedules = {};
         snapshot.forEach(doc => {
@@ -153,7 +150,6 @@ function startListening() {
             const key = data.employeeId + '_' + data.weekKey;
             allSchedules[key] = { id: doc.id, ...data };
         });
-        console.log('📅 Загружено расписаний:', Object.keys(allSchedules).length);
         window.__allSchedules = allSchedules;
         scheduleRender();
     }, () => showNotification('❌ Ошибка загрузки расписания', true));
@@ -200,13 +196,15 @@ function getEmployeeSettings(employeeId) {
             otLimit: s.otLimit || 5,
             hpd: s.hpd || 8,
             sundayBonusEnabled: s.sundayBonusEnabled === true,
-            sundayBonusAmount: s.sundayBonusAmount || 1000
+            sundayBonusAmount: s.sundayBonusAmount || 1000,
+            deductionDisabled: s.deductionDisabled === true
         };
     }
     return { 
         rDay: 3000, rExtra: 3500, rOt1: 400, rOt2: 800, otLimit: 5, hpd: 8,
         sundayBonusEnabled: false,
-        sundayBonusAmount: 1000
+        sundayBonusAmount: 1000,
+        deductionDisabled: false
     };
 }
 
@@ -344,7 +342,7 @@ function getWeekDataForEmployee(employeeId, weekKey, weekDates) {
 }
 
 // ============================================
-// РЕНДЕР ЗАРПЛАТЫ (с колонкой Статус)
+// РЕНДЕР ЗАРПЛАТЫ (с колонкой Статус и −20%)
 // ============================================
 function renderSalary() {
     const wrap = document.getElementById('salaryTableWrap');
@@ -355,7 +353,7 @@ function renderSalary() {
     if (label) label.textContent = `${formatDateShort(start)} – ${formatDateShort(end)} (${weekKey})`;
 
     const rows = [];
-    let totalPay = 0, totalCount = 0;
+    let totalPay = 0, totalCount = 0, totalNet = 0, totalDeduction = 0;
 
     for (const emp of allEmployees) {
         const requestKey = emp.id + '_' + weekKey;
@@ -364,14 +362,16 @@ function renderSalary() {
 
         const weekData = getWeekDataForEmployee(emp.id, weekKey, dates);
 
-        // Нет данных И нет запроса — пропускаем (кроме строки "Нет данных")
         if (!weekData.anyData && !hasRequest) {
             rows.push({ emp, weekData, hasRequest: false, requestData: null, noData: true });
             continue;
         }
 
-        // Нет данных, но ЕСТЬ запрос — рисуем только запрос
         if (!weekData.anyData && hasRequest) {
+            const settings0 = getEmployeeSettings(emp.id);
+            const ded0 = hasDeduction(emp.id, settings0);
+            const gross0 = requestData.finalPay || requestData.total || 0;
+            const net0 = ded0 ? gross0 * (1 - DEDUCTION_RATE) : gross0;
             rows.push({
                 emp, weekData, hasRequest: true, requestData,
                 noData: false,
@@ -379,19 +379,27 @@ function renderSalary() {
                     days: requestData.days || 0,
                     totalHours: requestData.totalHours || 0,
                     ot: 0,
-                    total: requestData.finalPay || requestData.total || 0
+                    total: gross0
                 },
+                hasDed: ded0,
+                netValue: net0,
                 sourceLabel: ''
             });
             totalCount++;
+            totalPay += gross0;
+            if (ded0) { totalDeduction += gross0 - net0; }
+            totalNet += net0;
             continue;
         }
 
-        // Нормальный расчёт
         const settings = getEmployeeSettings(emp.id);
         const stats = calculateWeekPay(weekData, settings);
+        const hasDed = hasDeduction(emp.id, settings);
+        const netValue = hasDed ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
 
         totalPay += stats.total;
+        totalNet += netValue;
+        if (hasDed) totalDeduction += stats.total - netValue;
         totalCount++;
 
         const hasAdmin = weekData.daySource.includes('admin');
@@ -404,20 +412,23 @@ function renderSalary() {
         rows.push({
             emp, weekData, hasRequest, requestData,
             noData: false,
-            stats, sourceLabel
+            stats, sourceLabel,
+            hasDed,
+            netValue
         });
     }
 
     // ===== Desktop: таблица =====
     let tableHTML = `<table style="table-layout:fixed;width:100%;">
         <colgroup>
-            <col style="width:26%;">
+            <col style="width:24%;">
+            <col style="width:7%;">
             <col style="width:8%;">
             <col style="width:9%;">
-            <col style="width:10%;">
-            <col style="width:16%;">
             <col style="width:15%;">
-            <col style="width:16%;">
+            <col style="width:13%;">
+            <col style="width:12%;">
+            <col style="width:12%;">
         </colgroup>
         <thead><tr>
             <th>Сотрудник</th>
@@ -425,17 +436,18 @@ function renderSalary() {
             <th style="text-align:center;">Часов</th>
             <th style="text-align:center;">Перераб.</th>
             <th style="text-align:right;">Зарплата</th>
+            <th style="text-align:right;">−20% (к выплате)</th>
             <th style="text-align:center;">Статус</th>
             <th style="text-align:center;">Действия</th>
         </tr></thead><tbody>`;
 
     for (const row of rows) {
-        const { emp, hasRequest, requestData, noData, stats, sourceLabel } = row;
+        const { emp, hasRequest, requestData, noData, stats, sourceLabel, hasDed, netValue } = row;
 
         if (noData) {
             tableHTML += `<tr>
                 <td class="col-employee" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${emp.name || 'Без имени'}</td>
-                <td colspan="6" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td>
+                <td colspan="7" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td>
             </tr>`;
             continue;
         }
@@ -445,12 +457,14 @@ function renderSalary() {
             ? (isPaid ? 'background:rgba(255,255,255,.02);' : 'background:rgba(62,207,168,.08); border-left:4px solid var(--teal);')
             : '';
         
-        // Стиль для суммы
         const payStyle = isPaid 
             ? 'text-decoration:line-through; opacity:0.5;' 
             : 'color:var(--amber);';
 
-        // Статус
+        const netCell = hasDed
+            ? `<span style="font-weight:700;color:var(--teal);white-space:nowrap; ${isPaid ? 'text-decoration:line-through; opacity:.5;' : ''}">${Math.round(netValue).toLocaleString()} ₽</span>`
+            : `<span style="color:var(--mut);">—</span>`;
+
         let statusBadge = '<span style="color:var(--mut); font-size:.8rem;">—</span>';
         if (hasRequest) {
             if (isPaid) {
@@ -482,6 +496,7 @@ function renderSalary() {
             <td style="text-align:center;">${stats.totalHours.toFixed(1)}</td>
             <td style="text-align:center;">${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</td>
             <td style="text-align:right;font-weight:700;font-size:1.05rem;white-space:nowrap; ${payStyle}">${stats.total.toLocaleString()} ₽</td>
+            <td style="text-align:right;">${netCell}</td>
             <td style="text-align:center;">${statusBadge}</td>
             <td style="text-align:center;white-space:nowrap;">
                 ${actionButtons}
@@ -493,13 +508,14 @@ function renderSalary() {
         <td><b style="color:var(--amber);">📊 ИТОГО</b></td>
         <td colspan="3" style="text-align:center;font-size:.8rem;color:var(--mut);">${totalCount} сотрудников</td>
         <td style="text-align:right;font-weight:700;color:var(--amber);font-size:1.1rem;white-space:nowrap;">${totalPay.toLocaleString()} ₽</td>
-        <td colspan="2"></td>
+        <td style="text-align:right;font-weight:700;color:var(--teal);font-size:1.1rem;white-space:nowrap;">${Math.round(totalNet).toLocaleString()} ₽</td>
+        <td colspan="2" style="text-align:right;font-size:.7rem;color:var(--mut);">вычет: −${Math.round(totalDeduction).toLocaleString()} ₽</td>
     </tr></tbody></table>`;
 
     // ===== Mobile: карточки =====
     let cardsHTML = '';
     for (const row of rows) {
-        const { emp, hasRequest, requestData, noData, stats, sourceLabel } = row;
+        const { emp, hasRequest, requestData, noData, stats, sourceLabel, hasDed, netValue } = row;
 
         if (noData) {
             cardsHTML += `
@@ -542,12 +558,19 @@ function renderSalary() {
             : `<button class="btn-settings" onclick="window.showEmployeeSettings('${emp.id}')">⚙️ Настройки</button>
                <button class="btn-details" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')">👁️ Детали</button>`;
 
+        const netLine = hasDed
+            ? `<div style="margin-top:6px;font-size:.8rem;color:var(--teal);font-weight:600; ${isPaid ? 'opacity:.5;text-decoration:line-through;' : ''}">
+                   💰 К выплате (−20%): ${Math.round(netValue).toLocaleString()} ₽
+               </div>`
+            : '';
+
         cardsHTML += `
             <div class="${cardClass}">
                 <div class="card-header">
                     <div class="card-name">${emp.name}${sourceLabel}</div>
                     <div class="card-pay" style="${payStyle}">${stats.total.toLocaleString()} ₽</div>
                 </div>
+                ${netLine}
                 ${statusBadge ? `<div style="margin-bottom:4px;">${statusBadge}</div>` : ''}
                 <div class="card-stats">
                     <div class="stat-item">
@@ -572,15 +595,17 @@ function renderSalary() {
         `;
     }
 
-    // ===== Итого-карточка =====
     cardsHTML += `
         <div class="salary-card" style="background:linear-gradient(135deg, rgba(255,181,46,.12), rgba(255,181,46,.02)); border-color:var(--amber);">
             <div class="card-header">
                 <div class="card-name" style="color:var(--amber);">📊 ИТОГО</div>
                 <div class="card-pay" style="font-size:1.2rem;">${totalPay.toLocaleString()} ₽</div>
             </div>
-            <div style="font-size:.75rem; color:var(--mut); text-align:center;">
-                ${totalCount} сотрудников
+            <div style="font-size:.75rem; color:var(--teal); text-align:center; font-weight:600;">
+                к выплате (−20%): ${Math.round(totalNet).toLocaleString()} ₽
+            </div>
+            <div style="font-size:.7rem; color:var(--mut); text-align:center; margin-top:4px;">
+                ${totalCount} сотрудников · вычет −${Math.round(totalDeduction).toLocaleString()} ₽
             </div>
         </div>
     `;
@@ -770,7 +795,6 @@ function renderSchedule() {
     const todayWeekKey = getWeekKeyUTC(today);
     const todayStr = today.toISOString().slice(0, 10);
 
-    // Считаем, кто работает сегодня (для счётчика)
     let todayWorkCount = 0;
     let todayTotal = allEmployees.length;
     for (const emp of allEmployees) {
@@ -807,7 +831,6 @@ function renderSchedule() {
         <tbody>`;
 
     for (const emp of allEmployees) {
-        const empEscaped = (emp.name || 'Без имени').replace(/'/g, "\\'");
         html += `<tr>`;
         html += `<td title="${emp.name || 'Без имени'}" onclick="window.openAsEmployee('${emp.id}')">👤 ${emp.name || 'Без имени'}</td>`;
 
@@ -822,14 +845,12 @@ function renderSchedule() {
             let editable = false;
 
             if (isPast) {
-                // Прошлое — только просмотр из attendance
                 const attKey = emp.id + '_' + dateStr;
                 const attLogs = allAttendance[attKey] || [];
                 const hasAtt = attLogs.length > 0;
                 status = hasAtt ? 'past-work' : 'past-off';
                 editable = false;
             } else {
-                // Сегодня и будущее — из employeeSchedule
                 const scheduleKey = emp.id + '_' + weekKey;
                 const schedule = allSchedules[scheduleKey];
                 if (schedule && schedule.days && schedule.days[dayIndex]) {
@@ -991,11 +1012,15 @@ document.getElementById('schedWeekToday')?.addEventListener('click', () => { cur
 
 // ============================================
 // НАСТРОЙКИ СОТРУДНИКА (модалка)
+// — с СКРЫТЫМ управлением вычетом (details, свёрнуто)
 // ============================================
 window.showEmployeeSettings = function(employeeId) {
     const emp = allEmployees.find(e => e.id === employeeId);
     if (!emp) return;
     const settings = getEmployeeSettings(employeeId);
+    const isDeductionListed = DEDUCTION_EMPLOYEES.includes(employeeId);
+    const deductionActive = hasDeduction(employeeId, settings);
+
     const modal = document.getElementById('modalOverlay');
     const body = document.getElementById('modalBody');
     const title = document.getElementById('modalTitle');
@@ -1005,6 +1030,33 @@ window.showEmployeeSettings = function(employeeId) {
 
     title.textContent = `⚙️ Настройки ${emp.name}`;
     sub.textContent = 'Ставки и параметры расчёта';
+
+    // Скрытый блок управления вычетом — только для сотрудников из списка,
+    // и только чтобы «убрать вычет» (без афиширования процента)
+    const deductionBlock = isDeductionListed
+        ? `
+        <details style="margin-top:12px; border-top:1px solid var(--line); padding-top:12px;">
+            <summary style="cursor:pointer; font-size:.75rem; color:var(--mut); font-weight:600; text-transform:uppercase; letter-spacing:.05em; user-select:none;">
+                Дополнительно
+            </summary>
+            <div style="margin-top:10px; padding:10px 12px; background:rgba(62,207,168,.06); border:1px dashed var(--line); border-radius:8px;">
+                <div style="font-size:.72rem; color:var(--mut); margin-bottom:8px;">
+                    Управление удержанием для этого сотрудника.
+                </div>
+                <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:.85rem;">
+                    <input type="checkbox" id="set_deductionDisabled" ${settings.deductionDisabled ? 'checked' : ''}
+                           style="width:auto; cursor:pointer; transform:scale(1.3);">
+                    <span>Убрать вычет 20% (выплачивать полную сумму)</span>
+                </label>
+                <div style="font-size:.65rem; color:var(--mut); margin-top:6px;">
+                    Если отмечено — удержание к этому сотруднику не применяется,
+                    пока галочка стоит. Влияет и на сотрудника, и на дашборд.
+                </div>
+            </div>
+        </details>
+        `
+        : '';
+
     body.innerHTML = `
         <div class="field"><label>Базовая ставка (день 1–5), ₽</label><input type="number" id="set_rDay" value="${settings.rDay}" step="100" min="0"></div>
         <div class="field"><label>Повышенная ставка (день 6–7), ₽</label><input type="number" id="set_rExtra" value="${settings.rExtra}" step="100" min="0"></div>
@@ -1036,6 +1088,8 @@ window.showEmployeeSettings = function(employeeId) {
             <label>PIN-код сотрудника</label>
             <input type="text" id="set_pin" value="${emp.pin || ''}" maxlength="6" inputmode="numeric">
         </div>
+
+        ${deductionBlock}
     `;
     actions.innerHTML = `
         <button class="btn btn-amber" id="modalSaveBtn">💾 Сохранить</button>
@@ -1052,16 +1106,23 @@ window.showEmployeeSettings = function(employeeId) {
             otLimit: parseFloat(document.getElementById('set_otLimit')?.value) || 5,
             sundayBonusEnabled: document.getElementById('set_sundayBonusEnabled')?.checked || false,
             sundayBonusAmount: parseFloat(document.getElementById('set_sundayBonusAmount')?.value) || 1000,
-            pin: document.getElementById('set_pin')?.value.trim() || ''
+            pin: document.getElementById('set_pin')?.value.trim() || '',
+            deductionDisabled: isDeductionListed
+                ? (document.getElementById('set_deductionDisabled')?.checked || false)
+                : undefined
         };
         try {
-            await setDoc(doc(db, 'salarySettings', employeeId), {
+            const payload = {
                 rDay: data.rDay, rExtra: data.rExtra, rOt1: data.rOt1, rOt2: data.rOt2,
                 otLimit: data.otLimit,
                 sundayBonusEnabled: data.sundayBonusEnabled,
                 sundayBonusAmount: data.sundayBonusAmount,
                 updatedAt: new Date().toISOString()
-            }, { merge: true });
+            };
+            if (isDeductionListed && data.deductionDisabled !== undefined) {
+                payload.deductionDisabled = data.deductionDisabled;
+            }
+            await setDoc(doc(db, 'salarySettings', employeeId), payload, { merge: true });
             if (data.pin) await updateDoc(doc(db, 'salaryEmployees', employeeId), { pin: data.pin });
             modal.classList.remove('active');
             showNotification('✅ Настройки сохранены');
@@ -1083,6 +1144,8 @@ window.viewWeekDetails = function(employeeId, weekKey) {
     const weekData = getWeekDataForEmployee(employeeId, weekKey, dates);
     const settings = getEmployeeSettings(employeeId);
     const stats = calculateWeekPay(weekData, settings);
+    const hasDed = hasDeduction(employeeId, settings);
+    const netValue = hasDed ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
 
     const modal = document.getElementById('modalOverlay');
     const body = document.getElementById('modalBody');
@@ -1109,10 +1172,17 @@ window.viewWeekDetails = function(employeeId, weekKey) {
                 <div style="font-size:1.4rem;font-weight:bold;color:${stats.ot > 0 ? 'var(--amber)' : 'var(--mut)'};">${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</div>
             </div>
             <div style="background:rgba(255,181,46,.1);padding:12px;border-radius:8px;text-align:center;border:1px solid var(--amber);">
-                <div style="color:var(--mut);font-size:.7rem;">Итого</div>
+                <div style="color:var(--mut);font-size:.7rem;">Итого (до вычета)</div>
                 <div style="font-size:1.6rem;font-weight:bold;color:var(--amber);">${stats.total.toLocaleString()} ₽</div>
             </div>
         </div>
+
+        ${hasDed ? `
+            <div style="background:rgba(62,207,168,.12); padding:12px 14px; border-radius:8px; margin-bottom:12px; border:1px dashed var(--teal); display:flex; justify-content:space-between; align-items:center;">
+                <span style="color:var(--teal); font-size:.8rem; font-weight:600;">💰 −20% к выплате</span>
+                <span style="color:var(--teal); font-weight:bold; font-size:1.2rem;">${Math.round(netValue).toLocaleString()} ₽</span>
+            </div>
+        ` : ''}
         
         ${stats.sundayBonus > 0 ? `
             <div style="background:rgba(255,181,46,.15); padding:10px 14px; border-radius:8px; margin-bottom:12px; border:1px dashed var(--amber); display:flex; justify-content:space-between; align-items:center;">
@@ -1521,7 +1591,6 @@ function renderRequestsBanner() {
     const btn = document.getElementById('requestsBannerBtn');
     if (!banner) return;
 
-    // ★ Берем ТОЛЬКО те, что ожидают оплаты
     const requests = Object.values(allRequests).filter(r => r.status === 'pending');
 
     if (requests.length === 0) {
@@ -1531,10 +1600,14 @@ function renderRequestsBanner() {
 
     banner.classList.add('active');
 
-    const total = requests.reduce((sum, r) => sum + (r.finalPay || 0), 0);
+    // К выплате: netPay (после вычета), если есть, иначе finalPay
+    const total = requests.reduce((sum, r) => {
+        const amount = (typeof r.netPay === 'number') ? r.netPay : (r.finalPay || 0);
+        return sum + amount;
+    }, 0);
 
     text.innerHTML = `💰 ${requests.length} ${pluralizeRequests(requests.length)} на ЗП
-        <small>Общая сумма: ${total.toLocaleString()} ₽</small>`;
+        <small>Общая сумма к выплате: ${Math.round(total).toLocaleString()} ₽</small>`;
     sub.textContent = requests.map(r => `${r.employeeName} (${r.weekRange})`).join(' · ');
 
     btn.onclick = () => {
@@ -1565,17 +1638,23 @@ function showRequestsList(requests) {
     title.textContent = '💰 Активные запросы';
     sub.textContent = `Всего: ${requests.length}`;
 
-    body.innerHTML = requests.map(r => `
+    body.innerHTML = requests.map(r => {
+        const amount = (typeof r.netPay === 'number') ? r.netPay : (r.finalPay || 0);
+        const dedBadge = r.deductionApplied
+            ? `<div style="font-size:.65rem; color:var(--teal); margin-top:2px;">после вычета −20%</div>`
+            : '';
+        return `
         <div style="background:rgba(62,207,168,.08); border:1px solid var(--teal); 
                     border-radius:10px; padding:12px; margin-bottom:10px;
                     display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
             <div style="flex:1; min-width:0;">
                 <div style="font-weight:bold;">${r.employeeName}</div>
                 <div style="font-size:.75rem; color:var(--mut);">${r.weekRange} · ${r.days} дн. / ${r.totalHours?.toFixed(1) || '?'} ч</div>
+                ${dedBadge}
             </div>
             <div style="text-align:right;">
                 <div style="font-weight:bold; color:var(--teal); font-size:1.1rem; font-family:var(--mono);">
-                    ${(r.finalPay || 0).toLocaleString()} ₽
+                    ${Math.round(amount).toLocaleString()} ₽
                 </div>
                 <button class="btn-sm teal" style="margin-top:6px; padding:8px 16px; min-height:36px;"
                         onclick="document.getElementById('modalOverlay').classList.remove('active'); 
@@ -1584,7 +1663,8 @@ function showRequestsList(requests) {
                 </button>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 
     actions.innerHTML = `<button class="btn btn-ghost" id="closeListBtn">Закрыть</button>`;
     modal.classList.add('active');
@@ -1636,15 +1716,19 @@ async function sendBitrixReport() {
 
             const settings = getEmployeeSettings(emp.id);
             const stats = calculateWeekPay(weekData, settings);
+            const hasDed = hasDeduction(emp.id, settings);
+            const netValue = hasDed ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
 
             reportData.push({
                 name: emp.name || 'Без имени',
                 days: stats.days,
                 totalHours: stats.totalHours,
-                salary: stats.total
+                salary: stats.total,
+                net: netValue,
+                hasDed
             });
 
-            totalSalary += stats.total;
+            totalSalary += netValue;
             totalEmployees++;
         }
 
@@ -1657,11 +1741,12 @@ async function sendBitrixReport() {
         message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
         reportData.forEach((emp) => {
-            message += `👤 **${emp.name}**, ${emp.days} дн. / ${emp.totalHours.toFixed(2)} ч, **${emp.salary.toLocaleString()} ₽**\n`;
+            const dedMark = emp.hasDed ? ' (−20%)' : '';
+            message += `👤 **${emp.name}**, ${emp.days} дн. / ${emp.totalHours.toFixed(2)} ч, **${Math.round(emp.net).toLocaleString()} ₽**${dedMark}\n`;
         });
 
         message += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
-        message += `📊 **ИТОГО:** ${totalEmployees} сотр. · ${totalSalary.toLocaleString()} ₽`;
+        message += `📊 **ИТОГО:** ${totalEmployees} сотр. · ${Math.round(totalSalary).toLocaleString()} ₽ (к выплате)`;
 
         const url = webhook + 'im.message.add.json';
         const response = await fetch(url, {
@@ -1724,7 +1809,9 @@ window.showRequestDetails = function(requestId) {
     title.textContent = `💰 Запрос на ЗП`;
     sub.textContent = `${request.employeeName} · ${request.weekRange}`;
     
-    const finalPay = Math.max(0, stats.total - (request.advances || 0));
+    const grossAfterAdv = Math.max(0, stats.total - (request.advances || 0));
+    const hasDed = hasDeduction(request.employeeId, settings);
+    const netPay = hasDed ? grossAfterAdv * (1 - DEDUCTION_RATE) : grossAfterAdv;
     
     body.innerHTML = `
         <div style="background:rgba(62,207,168,.1); padding:14px; border-radius:10px; margin-bottom:16px; border:1px solid var(--teal);">
@@ -1750,7 +1837,7 @@ window.showRequestDetails = function(requestId) {
                 <div style="font-size:1.4rem; font-weight:bold; color:${stats.ot > 0 ? 'var(--amber)' : 'var(--mut)'};">${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</div>
             </div>
             <div style="background:rgba(255,181,46,.1); padding:12px; border-radius:8px; text-align:center; border:1px solid var(--amber);">
-                <div style="color:var(--mut); font-size:.7rem;">ЗП</div>
+                <div style="color:var(--mut); font-size:.7rem;">ЗП (до вычета)</div>
                 <div style="font-size:1.6rem; font-weight:bold; color:var(--amber);">${stats.total.toLocaleString()} ₽</div>
             </div>
         </div>
@@ -1769,10 +1856,16 @@ window.showRequestDetails = function(requestId) {
                 <div style="font-size:.65rem; color:var(--mut); margin-top:4px;">(вычитается из суммы к выплате)</div>
             </div>
         ` : ''}
+
+        ${hasDed ? `
+            <div style="background:rgba(62,207,168,.12); padding:10px; border-radius:8px; margin-bottom:12px; border:1px dashed var(--teal); text-align:center;">
+                <span style="color:var(--teal); font-size:.75rem; font-weight:600;">💰 Вычет −20% применён</span>
+            </div>
+        ` : ''}
         
         <div style="background:rgba(62,207,168,.15); padding:14px; border-radius:10px; border:2px solid var(--teal); text-align:center;">
             <div style="color:var(--mut); font-size:.75rem; margin-bottom:4px;">К ВЫПЛАТЕ</div>
-            <div style="font-size:2rem; font-weight:bold; color:var(--teal);">${finalPay.toLocaleString()} ₽</div>
+            <div style="font-size:2rem; font-weight:bold; color:var(--teal);">${Math.round(netPay).toLocaleString()} ₽</div>
         </div>
         
         <div style="border-top:1px solid var(--line); padding-top:12px; margin-top:16px;">
@@ -1804,19 +1897,19 @@ window.showRequestDetails = function(requestId) {
     modal.classList.add('active');
     
     document.getElementById('markPaidBtn').addEventListener('click', async () => {
-        if (!confirm(`✅ Подтвердить выплату ${finalPay.toLocaleString()} ₽ сотруднику ${request.employeeName}?`)) return;
+        if (!confirm(`✅ Подтвердить выплату ${Math.round(netPay).toLocaleString()} ₽ сотруднику ${request.employeeName}?`)) return;
         
         try {
             await updateDoc(doc(db, 'salaryRequests', requestId), {
                 status: 'paid',
                 paidAt: new Date().toISOString(),
-                paidBy: currentUser?.email || 'admin'
+                paidBy: currentUser?.email || 'admin',
+                paidAmount: Math.round(netPay)
             });
             
             modal.classList.remove('active');
             showNotification(`✅ Выплата ${request.employeeName} подтверждена!`);
             
-            // ★ Перерисовываем таблицу, чтобы статус обновился СРАЗУ
             if (typeof renderSalary === 'function') renderSalary();
             if (typeof renderRequestsBanner === 'function') renderRequestsBanner();
         } catch (error) {
