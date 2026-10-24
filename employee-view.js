@@ -10,9 +10,11 @@
 // ★ ДОБАВЛЕНО: Календарь-расписание сотрудников
 // ★ ДОБАВЛЕНО: Красивая модалка «Запросить ЗП»
 // ★ ДОБАВЛЕНО: Отправка уведомления в Битрикс24
+// ★ ИЗМЕНЕНО: Вычет 20% — зелёный блок, учёт в модалке и в запросе
 
 import { calculateWeekPay } from './modules/calculator.js';
 import { calculateDayHoursFromLogs } from './modules/attendance.js';
+import { hasDeduction, applyDeduction, DEDUCTION_RATE } from './modules/deductions.js';
 
 const { db, doc, getDoc, setDoc, collection, query, where, getDocs } = window;
 
@@ -38,16 +40,9 @@ let employeeName = 'Сотрудник';
 let allAttendance = {};
 let settings = { 
     rDay: 3000, rExtra: 3500, rOt1: 400, rOt2: 800, otLimit: 5, hpd: 8,
-    sundayBonusEnabled: false, sundayBonusAmount: 1000
+    sundayBonusEnabled: false, sundayBonusAmount: 1000,
+    deductionDisabled: false
 };
-
-// ★ СПИСОК СОТРУДНИКОВ С ВЫЧЕТОМ 20%
-const DEDUCTION_EMPLOYEES = [
-    'UD6ZrvVxPkm4CmKGWDiX', '69bXsB9wPyUjffVUuLFN', 'Ko5LMP5SQKGfFoB4yIx7', 'U4x9Kr0bpfdx7naoulpM', 'nbBjsOTTSRIO6aBsslAN', 'ZflATZ6egxRkx5fhpJ5o', 'NitjpMhCI9HqnjU1vyva', 'Uw59jW8WV5IehKtJ3ZnG',
-    'YaEeq4w5xFN2xLB3UcrS'
-    // сюда добавляй новые ID через запятую:
-    // 'Es8V40MRBaxZpFCSmK0j',
-];
 
 // Для календаря
 let scheduleWeekOffset = 0;
@@ -144,7 +139,8 @@ async function loadSettings() {
                 otLimit: data.otLimit || 5,
                 hpd: data.hpd || 8,
                 sundayBonusEnabled: data.sundayBonusEnabled === true,
-                sundayBonusAmount: data.sundayBonusAmount || 1000
+                sundayBonusAmount: data.sundayBonusAmount || 1000,
+                deductionDisabled: data.deductionDisabled === true
             };
         }
         const ids = ['rDay','rExtra','rOt1','rOt2','otLimit'];
@@ -451,17 +447,17 @@ function update() {
     void stamp.offsetWidth;
     stamp.classList.add('pop');
 
-       // ★ ДОБАВЛЕНО: Вычет 20% (по списку ID)
+    // ★ ВЫЧЕТ 20% — ЗЕЛЁНЫЙ БЛОК
     const totalRow = document.querySelector('.total-row');
     if (totalRow) {
         let netSalaryBlock = document.getElementById('netSalaryBlock');
-        if (DEDUCTION_EMPLOYEES.includes(EMPLOYEE_ID)) {
+        if (hasDeduction(EMPLOYEE_ID, settings)) {
             if (!netSalaryBlock) {
                 netSalaryBlock = document.createElement('div');
                 netSalaryBlock.id = 'netSalaryBlock';
                 netSalaryBlock.style.cssText = `
-                    background: rgba(255, 181, 46, 0.12);
-                    border: 1px dashed var(--amber);
+                    background: rgba(62, 207, 168, 0.12);
+                    border: 1px dashed var(--teal);
                     border-radius: 8px;
                     padding: 12px 16px;
                     margin-top: 12px;
@@ -472,10 +468,10 @@ function update() {
                 `;
                 totalRow.parentNode.insertBefore(netSalaryBlock, totalRow.nextSibling);
             }
-            const netTotal = total * 0.8;
+            const netTotal = total * (1 - DEDUCTION_RATE);
             netSalaryBlock.innerHTML = `
-                <span style="font-size: 0.85rem; font-weight: 600; color: var(--amber2);">💰 ЗП - 20% (на руки)</span>
-                <span style="font-size: 1.2rem; font-weight: bold; color: var(--amber);">${Math.round(netTotal).toLocaleString()} ₽</span>
+                <span style="font-size: 0.85rem; font-weight: 600; color: var(--teal);">💰 ЗП −${Math.round(DEDUCTION_RATE*100)}% (на руки)</span>
+                <span style="font-size: 1.2rem; font-weight: bold; color: var(--teal);">${Math.round(netTotal).toLocaleString()} ₽</span>
             `;
         } else if (netSalaryBlock) {
             netSalaryBlock.remove();
@@ -558,7 +554,7 @@ async function loadScheduleData(weekKey) {
 
 async function loadAllAttendanceForWeeks() {
     if (attendanceCacheLoaded) return;
-    
+
     try {
         console.log('📋 Загружаем attendance всех сотрудников...');
         const snap = await getDocs(collection(db, 'attendance'));
@@ -581,23 +577,23 @@ async function renderSchedule() {
     const wrap = document.getElementById('scheduleTableWrap');
     const label = document.getElementById('scheduleWeekLabel');
     if (!wrap) return;
-    
+
     const dates = getWeekDatesUTC(scheduleWeekOffset);
     const weekKey = getWeekKeyUTC(dates[0]);
-    
+
     if (label) {
         label.textContent = `${formatDateDisplay(dates[0])} – ${formatDateDisplay(dates[6])} (${weekKey})`;
     }
-    
+
     await loadScheduleData(weekKey);
     await loadAllAttendanceForWeeks();
-    
+
     const today = new Date();
     const todayWeekKey = getWeekKeyUTC(today);
     const isCurrentWeek = weekKey === todayWeekKey;
     const isFutureWeek = weekKey > todayWeekKey;
     const isEditableWeek = isCurrentWeek || isFutureWeek;
-    
+
     let html = `<table class="schedule-table">
         <thead>
             <tr>
@@ -610,22 +606,22 @@ async function renderSchedule() {
             </tr>
         </thead>
         <tbody>`;
-    
+
     for (const emp of allEmployees) {
         const isSelf = emp.id === EMPLOYEE_ID;
         html += `<tr class="${isSelf ? 'self-row' : ''}">`;
         html += `<td>${isSelf ? '👤 ' : ''}${emp.name || 'Без имени'}</td>`;
-        
+
         for (let i = 0; i < 7; i++) {
             const dateObj = dates[i];
             const dateStr = getUTCDateStr(dateObj);
             const dayIndex = i;
-            
+
             const isPast = isPastDate(dateStr);
-            
+
             let status = 'empty';
             let editable = false;
-            
+
             if (isPast) {
                 const attKey = emp.id + '_' + dateStr;
                 const hasAtt = employeesAttendance[attKey] > 0;
@@ -639,13 +635,13 @@ async function renderSchedule() {
                 }
                 editable = isSelf && isEditableWeek;
             }
-            
+
             let symbol = '⚪';
             if (status === 'work' || status === 'past-work') symbol = '🟢';
             else if (status === 'off' || status === 'past-off') symbol = '🔴';
-            
+
             const cls = `${status} ${editable ? 'editable' : ''}`;
-            
+
             html += `<td>
                 <div class="schedule-day ${cls}" 
                      data-employee="${emp.id}" 
@@ -658,13 +654,13 @@ async function renderSchedule() {
                 </div>
             </td>`;
         }
-        
+
         html += `</tr>`;
     }
-    
+
     html += `</tbody></table>`;
     wrap.innerHTML = html;
-    
+
     const hintEl = document.getElementById('scheduleHint');
     if (hintEl) {
         if (!isEditableWeek) {
@@ -684,50 +680,49 @@ function initMinimap() {
     const prevBtn = document.getElementById('scheduleWeekPrev');
     const nextBtn = document.getElementById('scheduleWeekNext');
     const todayBtn = document.getElementById('scheduleWeekToday');
-    
+
     if (!btn || !modal) return;
-    
+
     btn.addEventListener('click', async () => {
         modal.classList.add('active');
-        document.body.classList.add('schedule-open'); // для fixed-кнопки закрытия
+        document.body.classList.add('schedule-open');
         if (allEmployees.length === 0) {
             await loadAllEmployees();
         }
         await renderSchedule();
     });
-    
+
     const closeSchedule = () => {
         modal.classList.remove('active');
         document.body.classList.remove('schedule-open');
     };
-    
+
     closeBtn?.addEventListener('click', closeSchedule);
-    
+
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
             closeSchedule();
         }
     });
-    
-    // Закрытие по Escape
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('active')) {
             closeSchedule();
         }
     });
-    
+
     prevBtn?.addEventListener('click', async () => {
         if (scheduleWeekOffset <= 0) return;
         scheduleWeekOffset--;
         await renderSchedule();
     });
-    
+
     nextBtn?.addEventListener('click', async () => {
         if (scheduleWeekOffset >= 2) return;
         scheduleWeekOffset++;
         await renderSchedule();
     });
-    
+
     todayBtn?.addEventListener('click', async () => {
         scheduleWeekOffset = 0;
         await renderSchedule();
@@ -738,16 +733,16 @@ let currentPicker = null;
 
 window.openDayPicker = function(event, el) {
     event.stopPropagation();
-    
+
     if (currentPicker) {
         currentPicker.remove();
         currentPicker = null;
     }
-    
+
     const employeeId = el.dataset.employee;
     const dayIndex = parseInt(el.dataset.day);
     const weekKey = el.dataset.week;
-    
+
     const picker = document.createElement('div');
     picker.className = 'day-picker';
     picker.innerHTML = `
@@ -756,12 +751,12 @@ window.openDayPicker = function(event, el) {
         <button data-status="empty">⚪ Сбросить</button>
     `;
     document.body.appendChild(picker);
-    
+
     const rect = el.getBoundingClientRect();
     const pickerRect = picker.getBoundingClientRect();
     let left = rect.left + rect.width / 2 - pickerRect.width / 2;
     let top = rect.bottom + 8;
-    
+
     if (left < 8) left = 8;
     if (left + pickerRect.width > window.innerWidth - 8) {
         left = window.innerWidth - pickerRect.width - 8;
@@ -769,12 +764,12 @@ window.openDayPicker = function(event, el) {
     if (top + pickerRect.height > window.innerHeight - 8) {
         top = rect.top - pickerRect.height - 8;
     }
-    
+
     picker.style.left = left + 'px';
     picker.style.top = top + 'px';
-    
+
     currentPicker = picker;
-    
+
     picker.querySelectorAll('button').forEach(btn => {
         btn.addEventListener('click', async () => {
             const newStatus = btn.dataset.status;
@@ -784,7 +779,7 @@ window.openDayPicker = function(event, el) {
             await renderSchedule();
         });
     });
-    
+
     setTimeout(() => {
         document.addEventListener('click', function closePicker(e) {
             if (currentPicker && !currentPicker.contains(e.target)) {
@@ -800,17 +795,17 @@ async function saveDayStatus(employeeId, weekKey, dayIndex, status) {
     try {
         const docId = `${employeeId}_${weekKey}`;
         const docRef = doc(db, 'employeeSchedule', docId);
-        
+
         const existing = await getDoc(docRef);
-        
+
         let days = existing.exists() ? (existing.data().days || {}) : {};
-        
+
         if (status === 'empty') {
             days[dayIndex] = null;
         } else {
             days[dayIndex] = status;
         }
-        
+
         await setDoc(docRef, {
             employeeId,
             employeeName: allEmployees.find(e => e.id === employeeId)?.name || '',
@@ -818,7 +813,7 @@ async function saveDayStatus(employeeId, weekKey, dayIndex, status) {
             days,
             updatedAt: new Date().toISOString()
         }, { merge: true });
-        
+
         console.log(`✅ Сохранено: ${employeeId} ${weekKey} день ${dayIndex} = ${status}`);
     } catch (e) {
         console.error('Ошибка сохранения:', e);
@@ -869,49 +864,43 @@ async function init() {
 function initSalaryModal() {
     const btn = document.getElementById('requestSalaryBtn');
     if (!btn) return;
-    
+
     btn.addEventListener('click', openSalaryModal);
-    
-    // Кнопки модалки
+
     document.getElementById('salaryModalCancel')?.addEventListener('click', closeSalaryModal);
     document.getElementById('salaryModalConfirm')?.addEventListener('click', confirmSalaryRequest);
-    
-    // Закрытие по клику на фон
+
     document.getElementById('salaryModalOverlay')?.addEventListener('click', (e) => {
         if (e.target.id === 'salaryModalOverlay') closeSalaryModal();
     });
-    
-    // ESC
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeSalaryModal();
     });
 }
 
-// Состояние модалки
 let _modalData = null;
 
 async function openSalaryModal() {
     const btn = document.getElementById('requestSalaryBtn');
     if (!btn || btn.disabled) return;
-    
-    // Считаем данные
+
     if (!currentData) {
         showToast('❌ Данные ещё не загружены');
         return;
     }
-    
+
     const dates = getWeekDatesUTC(currentWeekOffset);
     const weekKey = getWeekKeyUTC(dates[0]);
     const weekRange = `${formatDateDisplay(dates[0])} – ${formatDateDisplay(dates[6])}`;
-    
+
     const stats = calculateWeekPay(currentData, settings);
-    
+
     if (stats.days === 0 || stats.total === 0) {
         showToast('❌ Нет данных для запроса. Обратитесь к руководителю.');
         return;
     }
-    
-    // Проверяем активные запросы
+
     try {
         const q = query(
             collection(db, 'salaryRequests'),
@@ -930,8 +919,7 @@ async function openSalaryModal() {
     } catch (e) {
         console.warn(e);
     }
-    
-    // Получаем активные авансы
+
     let totalAdvances = 0;
     try {
         const advQ = query(
@@ -946,25 +934,40 @@ async function openSalaryModal() {
     } catch (e) {
         console.warn('Ошибка загрузки авансов:', e);
     }
-    
-    const finalPay = Math.max(0, stats.total - totalAdvances);
-    
-    // Запоминаем
+
+    const grossAfterAdvances = Math.max(0, stats.total - totalAdvances);
+    const hasDed = hasDeduction(EMPLOYEE_ID, settings);
+    const netPay = hasDed ? grossAfterAdvances * (1 - DEDUCTION_RATE) : grossAfterAdvances;
+
     _modalData = {
         weekKey,
         weekRange,
         stats,
         totalAdvances,
-        finalPay
+        finalPay: grossAfterAdvances,
+        hasDeduction: hasDed,
+        netPay: netPay
     };
-    
-    // Заполняем модалку
+
     document.getElementById('salaryModalPeriod').textContent = weekRange;
     document.getElementById('salaryModalDays').textContent = stats.days;
     document.getElementById('salaryModalHours').textContent = stats.totalHours.toFixed(2).replace('.', ',');
-    document.getElementById('salaryModalFinal').textContent = finalPay.toLocaleString();
-    
-    // Надбавка
+
+    // ★ Сумма к выплате (после вычета)
+    document.getElementById('salaryModalFinal').textContent = Math.round(netPay).toLocaleString();
+
+    // ★ Блок "ЗП −20% к оплате!"
+    const netRow = document.getElementById('salaryModalNetRow');
+    if (netRow) {
+        if (hasDed) {
+            netRow.style.display = 'flex';
+            const netEl = document.getElementById('salaryModalNet');
+            if (netEl) netEl.textContent = '−' + Math.round(DEDUCTION_RATE * 100) + '% → ' + Math.round(netPay).toLocaleString() + ' ₽';
+        } else {
+            netRow.style.display = 'none';
+        }
+    }
+
     const bonusRow = document.getElementById('salaryModalBonusRow');
     if (stats.sundayBonus > 0) {
         bonusRow.style.display = 'flex';
@@ -972,8 +975,7 @@ async function openSalaryModal() {
     } else {
         bonusRow.style.display = 'none';
     }
-    
-    // Авансы
+
     const advanceRow = document.getElementById('salaryModalAdvanceRow');
     if (totalAdvances > 0) {
         advanceRow.style.display = 'flex';
@@ -981,8 +983,7 @@ async function openSalaryModal() {
     } else {
         advanceRow.style.display = 'none';
     }
-    
-    // По дням
+
     const daysGrid = document.getElementById('salaryModalDaysGrid');
     daysGrid.innerHTML = DAY_NAMES.map((d, i) => {
         const isWork = currentData.workDays[i] && currentData.hours[i] > 0;
@@ -996,8 +997,7 @@ async function openSalaryModal() {
             </div>
         `;
     }).join('');
-    
-    // Открываем
+
     const overlay = document.getElementById('salaryModalOverlay');
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
@@ -1017,16 +1017,15 @@ async function confirmSalaryRequest() {
     const confirmBtn = document.getElementById('salaryModalConfirm');
     const cancelBtn = document.getElementById('salaryModalCancel');
     if (!_modalData || !confirmBtn) return;
-    
-    const { weekKey, weekRange, stats, totalAdvances, finalPay } = _modalData;
-    
-    // Блокируем кнопки
+
+    const { weekKey, weekRange, stats, totalAdvances, finalPay, hasDeduction: hasDed, netPay } = _modalData;
+
     confirmBtn.disabled = true;
     cancelBtn.disabled = true;
     confirmBtn.textContent = '⏳ Отправка...';
-    
+
     try {
-        // 1. Сохраняем в Firebase
+        // 1. Сохраняем в Firebase — теперь с полями netPay и deductionApplied
         await setDoc(doc(collection(db, 'salaryRequests')), {
             employeeId: EMPLOYEE_ID,
             employeeName: employeeName,
@@ -1037,27 +1036,28 @@ async function confirmSalaryRequest() {
             total: stats.total,
             sundayBonus: stats.sundayBonus || 0,
             advances: totalAdvances,
-            finalPay: finalPay,
+            finalPay: finalPay,          // до вычета, за вычетом авансов
+            deductionApplied: hasDed,    // ★ применён ли вычет
+            netPay: Math.round(netPay),  // ★ сумма к выплате (после вычета)
             status: 'pending',
             createdAt: new Date().toISOString(),
             paidAt: null
         });
-        
-        console.log('✅ Запрос на ЗП отправлен');
-        
-        // 2. Отправляем в Битрикс
+
+        console.log('✅ Запрос на ЗП отправлен. К выплате:', netPay);
+
+        // 2. Отправляем в Битрикс — сумму к выплате (после вычета)
         try {
             await sendBitrixSalaryRequestNotification({
                 employeeName,
-                finalPay,
+                finalPay: Math.round(netPay),
                 weekRange
             });
         } catch (bitrixError) {
             console.warn('⚠️ Не удалось отправить в Битрикс:', bitrixError);
-            // Не прерываем процесс, т.к. запись в БД уже создана
         }
-        
-        // 3. Обновляем кнопку на странице
+
+        // 3. Обновляем кнопку
         const mainBtn = document.getElementById('requestSalaryBtn');
         if (mainBtn) {
             mainBtn.textContent = '⏳ ЗП запрошена';
@@ -1065,10 +1065,10 @@ async function confirmSalaryRequest() {
             mainBtn.disabled = true;
             mainBtn.style.cursor = 'not-allowed';
         }
-        
+
         closeSalaryModal();
         setTimeout(() => showToast('✅ Запрос на зарплату отправлен!'), 250);
-        
+
     } catch (error) {
         console.error('Ошибка:', error);
         confirmBtn.disabled = false;
@@ -1083,7 +1083,6 @@ async function confirmSalaryRequest() {
 // ============================================
 async function sendBitrixSalaryRequestNotification({ employeeName, finalPay, weekRange }) {
     try {
-        // Получаем настройки Битрикса
         const bitrixRef = doc(db, 'settings', 'bitrix24');
         const bitrixSnap = await getDoc(bitrixRef);
 
@@ -1101,19 +1100,15 @@ async function sendBitrixSalaryRequestNotification({ employeeName, finalPay, wee
             return;
         }
 
-               // Формируем ссылки
         const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
         const dashboardUrl = `${baseUrl}admin-dashboard.html`;
         const employeeUrl = `${baseUrl}employee-view.html?id=${EMPLOYEE_ID}`;
 
-        // Формируем сообщение (BB-код для Битрикс24)
-        // Обрати внимание: весь текст внутри обратных кавычек ` `
         const message = `[URL=${dashboardUrl}]ЗАПРОС ЗП[/URL]\n` +
             `👤 [URL=${employeeUrl}]${employeeName}[/URL]\n` +
             `📅 ${weekRange}\n` +
             `💵 ${finalPay.toLocaleString()} ₽`;
 
-        // Отправляем
         const url = webhook + 'im.message.add.json';
         const response = await fetch(url, {
             method: 'POST',
@@ -1145,10 +1140,10 @@ async function checkExistingRequest() {
     try {
         const btn = document.getElementById('requestSalaryBtn');
         if (!btn) return;
-        
+
         const dates = getWeekDatesUTC(currentWeekOffset);
         const weekKey = getWeekKeyUTC(dates[0]);
-        
+
         const q = query(
             collection(db, 'salaryRequests'),
             where('employeeId', '==', EMPLOYEE_ID),
@@ -1156,7 +1151,7 @@ async function checkExistingRequest() {
             where('status', '==', 'pending')
         );
         const snap = await getDocs(q);
-        
+
         if (!snap.empty) {
             btn.textContent = '⏳ ЗП запрошена';
             btn.style.background = 'var(--amber)';
@@ -1175,7 +1170,6 @@ async function checkExistingRequest() {
     }
 }
 
-// Всплывающее уведомление (улучшенное)
 function showToast(message) {
     let el = document.getElementById('toast');
     if (!el) {
