@@ -480,6 +480,25 @@
             transform: none !important;
         }
 
+        /* ★ Скрытый блок "Дополнительно" в настройках */
+        details > summary {
+            cursor: pointer;
+            list-style: none;
+            user-select: none;
+        }
+        details > summary::-webkit-details-marker {
+            display: none;
+        }
+        details > summary::before {
+            content: '▸ ';
+            display: inline-block;
+            transition: transform .15s;
+            color: var(--mut);
+        }
+        details[open] > summary::before {
+            content: '▾ ';
+        }
+
         /* ===== РАСПИСАНИЕ ===== */
         .schedule-summary {
             display: inline-flex;
