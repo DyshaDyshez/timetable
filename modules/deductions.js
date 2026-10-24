@@ -5,8 +5,9 @@
 export const DEDUCTION_EMPLOYEES = [
     'UD6ZrvVxPkm4CmKGWDiX', '69bXsB9wPyUjffVUuLFN', 'Ko5LMP5SQKGfFoB4yIx7',
     'U4x9Kr0bpfdx7naoulpM', 'nbBjsOTTSRIO6aBsslAN', 'ZflATZ6egxRkx5fhpJ5o',
-    'NitjpMhCI9HqnjU1vyva', 'Uw59jW8WV5IehKtJ3ZnG',
-    'YaEeq4w5xFN2xLB3UcrS'
+    'NitjpMhCI9HqnjU1vyva', 'Uw59jW8WV5IehKtJ3ZnG', '4Wl858egRyTOWKRABwJn',
+    'YaEeq4w5xFN2xLB3UcrS', 'IjqWMErzDg5Vrq4WRy57',
+    'U4ph0Kduj2KJUPF0eCC4', 'Es8V40MRBaxZpFCSmK0j',
     // сюда добавляй новые ID через запятую:
     // 'Es8V40MRBaxZpFCSmK0j',
 ];
