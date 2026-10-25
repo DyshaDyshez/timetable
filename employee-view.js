@@ -847,11 +847,46 @@ async function init() {
     document.getElementById('weekNext').addEventListener('click', async () => { currentWeekOffset++; await refreshWeek(); });
     document.getElementById('weekToday').addEventListener('click', async () => { currentWeekOffset = 0; await refreshWeek(); });
 
-    document.getElementById('copyBtn').addEventListener('click', async () => {
-        const total = document.getElementById('totalOut').textContent;
-        const dates = getWeekDatesUTC(currentWeekOffset);
-        const text = `Зарплата за неделю ${formatDateDisplay(dates[0])}–${formatDateDisplay(dates[6])}: ${total} ₽`;
-        try { await navigator.clipboard.writeText(text); } catch (e) {}
+        document.getElementById('copyBtn').addEventListener('click', async () => {
+        if (!currentData) {
+            showToast('❌ Данные ещё не загружены');
+            return;
+        }
+
+        // Считаем зарплату
+        const stats = calculateWeekPay(currentData, settings);
+        const hasDed = hasDeduction(EMPLOYEE_ID, settings);
+        
+        // Если есть вычет, берем сумму с вычетом. Если нет — обычную.
+        // Math.round убирает копейки.
+        const finalAmount = hasDed ? Math.round(stats.total * (1 - DEDUCTION_RATE)) : Math.round(stats.total);
+        
+        // Если нужны пробелы между разрядами (например, 22 529), используй:
+        // const text = finalAmount.toLocaleString('ru-RU').replace(/\s/g, ''); 
+        // Но сейчас мы копируем просто цифры слитно (22529)
+        const text = finalAmount.toString();
+
+        try {
+            await navigator.clipboard.writeText(text);
+            
+            // Визуальный отклик на кнопке
+            const btn = document.getElementById('copyBtn');
+            const oldText = btn.textContent;
+            btn.textContent = '✓ Скопировано';
+            setTimeout(() => btn.textContent = oldText, 1500);
+            
+            showToast('✅ Сумма скопирована');
+        } catch (e) {
+            console.error('Ошибка копирования:', e);
+            // Фолбэк для старых браузеров
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+            showToast('✅ Сумма скопирована');
+        }
     });
 
     console.log('✅ employee-view готов');
