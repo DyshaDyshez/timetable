@@ -422,7 +422,7 @@ function renderSalary() {
         // ===== Desktop: таблица =====
     let tableHTML = `<table style="table-layout:fixed; min-width: 960px; width: 100%;">
         <colgroup>
-            <col style="width: 180px;"> <!-- Сотрудник -->
+            <col style="width: 110px;"> <!-- Сотрудник -->
             <col style="width: 60px;">  <!-- Дней -->
             <col style="width: 70px;">  <!-- Часов -->
             <col style="width: 80px;">  <!-- Перераб. -->

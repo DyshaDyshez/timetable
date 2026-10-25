@@ -279,16 +279,30 @@
         tr:hover td {
             background: rgba(255,255,255,.03);
         }
-                .col-employee {
+        .col-employee {
             font-weight: 600;
-            min-width: 120px;
+            /* Уменьшили минимальную ширину */
+            min-width: 100px;
+            max-width: 140px; 
             
-            /* ★ ЗАКРЕПЛЕНИЕ ПЕРВОЙ КОЛОНКИ */
+            /* ★ ЗАКРЕПЛЕНИЕ И ПОЛУПРОЗРАЧНОСТЬ */
             position: sticky !important;
             left: 0;
-            z-index: 5; /* Чтобы колонка была поверх остальных */
-            background-color: var(--card); /* Фон, чтобы не просвечивало */
-            box-shadow: 2px 0 5px rgba(0,0,0,0.2); /* Тень для отделения */
+            z-index: 5;
+            
+            /* Полупрозрачный фон (80% непрозрачности) */
+            background-color: rgba(19, 32, 47, 0.85) !important; 
+            backdrop-filter: blur(8px); /* Эффект матового стекла */
+            -webkit-backdrop-filter: blur(8px);
+            
+            /* Тонкая тень справа для отделения */
+            box-shadow: 2px 0 8px rgba(0,0,0,0.3); 
+            
+            /* Обрезаем длинные имена */
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        
         }
         .col-pay {
             font-weight: 700;
