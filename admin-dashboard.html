@@ -268,7 +268,7 @@
             position: sticky;
             top: 0;
             background: var(--card);
-            z-index: 2;
+            z-index: 6;
         }
         td {
             padding: 10px 14px;
@@ -279,9 +279,16 @@
         tr:hover td {
             background: rgba(255,255,255,.03);
         }
-        .col-employee {
+                .col-employee {
             font-weight: 600;
             min-width: 120px;
+            
+            /* ★ ЗАКРЕПЛЕНИЕ ПЕРВОЙ КОЛОНКИ */
+            position: sticky !important;
+            left: 0;
+            z-index: 5; /* Чтобы колонка была поверх остальных */
+            background-color: var(--card); /* Фон, чтобы не просвечивало */
+            box-shadow: 2px 0 5px rgba(0,0,0,0.2); /* Тень для отделения */
         }
         .col-pay {
             font-weight: 700;
