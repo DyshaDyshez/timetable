@@ -495,8 +495,8 @@ function renderSalary() {
             <td style="text-align:center;">${stats.days}</td>
             <td style="text-align:center;">${stats.totalHours.toFixed(1)}</td>
             <td style="text-align:center;">${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</td>
-            <td style="text-align:right;font-weight:700;font-size:1.05rem;white-space:nowrap; ${payStyle}">${stats.total.toLocaleString()} ₽</td>
-            <td style="text-align:right;">${netCell}</td>
+                        <td style="text-align:right;font-weight:700;font-size:1.05rem;white-space:nowrap; ${payStyle}">${stats.total.toLocaleString()} ₽</td>
+            <td style="text-align:right; vertical-align: middle;">${netCell}</td>
             <td style="text-align:center;">${statusBadge}</td>
             <td style="text-align:center;white-space:nowrap;">
                 ${actionButtons}
@@ -610,8 +610,9 @@ function renderSalary() {
         </div>
     `;
 
-    wrap.innerHTML = `
+        wrap.innerHTML = `
         ${tableHTML}
+        <div class="salary-cards">${cardsHTML}</div>
     `;
 }
 
