@@ -9,7 +9,7 @@
 
                 /* ===== КАРТОЧКИ ДЛЯ МОБИЛКИ ===== */
         .salary-cards {
-            display: none; /* На десктопе скрыты */
+            
             flex-direction: column;
             gap: 10px;
         }
@@ -887,8 +887,9 @@
 
         /* ===== МОБИЛЬНАЯ АДАПТАЦИЯ ===== */
         @media (max-width: 768px) {
-            #salaryTableWrap > table { display: none !important; }
-            .salary-cards { display: flex !important; }
+            table { font-size: .75rem; min-width: 850px; }
+            th, td { padding: 6px 8px; }
+            
             body { padding: 12px; }
             .dashboard-header {
                 flex-direction: column;
