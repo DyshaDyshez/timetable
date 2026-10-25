@@ -610,10 +610,7 @@ function renderSalary() {
         </div>
     `;
 
-        wrap.innerHTML = `
-        ${tableHTML}
-        <div class="salary-cards">${cardsHTML}</div>
-    `;
+            wrap.innerHTML = tableHTML;
 }
 
 // ============================================
