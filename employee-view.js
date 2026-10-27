@@ -34,6 +34,9 @@ if (!EMPLOYEE_ID) {
 // ============================================
 // СОСТОЯНИЕ
 // ============================================
+
+let useAdvanceInCalc = true;
+
 let currentWeekOffset = 0;
 let currentData = null;
 let employeeName = 'Сотрудник';
@@ -354,7 +357,7 @@ function updateTimeInputs() {
     });
 }
 
-function update() {
+async function update() {
     if (!currentData) return;
     const dates = getWeekDatesUTC(currentWeekOffset);
     const weekKey = getWeekKeyUTC(dates[0]);
@@ -448,35 +451,63 @@ function update() {
     stamp.classList.add('pop');
 
     // ★ ВЫЧЕТ 20% — ЗЕЛЁНЫЙ БЛОК
-    const totalRow = document.querySelector('.total-row');
-    if (totalRow) {
-        let netSalaryBlock = document.getElementById('netSalaryBlock');
-        if (hasDeduction(EMPLOYEE_ID, settings)) {
-            if (!netSalaryBlock) {
-                netSalaryBlock = document.createElement('div');
-                netSalaryBlock.id = 'netSalaryBlock';
-                netSalaryBlock.style.cssText = `
-                    background: rgba(62, 207, 168, 0.12);
-                    border: 1px dashed var(--teal);
-                    border-radius: 8px;
-                    padding: 12px 16px;
-                    margin-top: 12px;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    font-family: var(--mono);
-                `;
-                totalRow.parentNode.insertBefore(netSalaryBlock, totalRow.nextSibling);
+        // ★ Учет аванса и 20%
+        const totalRow = document.querySelector('.total-row');
+        if (totalRow) {
+            let netSalaryBlock = document.getElementById('netSalaryBlock');
+            let advanceBlock = document.getElementById('advanceBlock');
+            let activeAdvance = 0;
+    
+            // Если у сотрудника есть активный аванс — показываем чекбокс
+            try {
+                const advQ = query(collection(db, 'salaryAdvances'), where('employeeId', '==', EMPLOYEE_ID), where('status', '==', 'active'));
+                const advSnap = await getDocs(advQ);
+                advSnap.forEach(d => activeAdvance += d.data().amount || 0);
+            } catch(e) {}
+    
+            if (activeAdvance > 0) {
+                if (advanceBlock) {
+                    advanceBlock.style.display = 'block';
+                    document.getElementById('advanceAmountLabel').textContent = activeAdvance.toLocaleString() + ' ₽';
+                }
+            } else {
+                if (advanceBlock) advanceBlock.style.display = 'none';
+                useAdvanceInCalc = false; // Если аванса нет — не учитываем
             }
-            const netTotal = total * (1 - DEDUCTION_RATE);
-            netSalaryBlock.innerHTML = `
-                <span style="font-size: 0.85rem; font-weight: 600; color: var(--teal);">💰 ЗП −${Math.round(DEDUCTION_RATE*100)}% (на руки)</span>
-                <span style="font-size: 1.2rem; font-weight: bold; color: var(--teal);">${Math.round(netTotal).toLocaleString()} ₽</span>
+    
+            // Считаем сумму после аванса
+            const amountAfterAdvance = Math.max(0, total - (useAdvanceInCalc ? activeAdvance : 0));
+            const hasDed = hasDeduction(EMPLOYEE_ID, settings);
+            const netTotal = hasDed ? amountAfterAdvance * (1 - DEDUCTION_RATE) : amountAfterAdvance;
+    
+            if (hasDed || (useAdvanceInCalc && activeAdvance > 0)) {
+                if (!netSalaryBlock) {
+                    netSalaryBlock = document.createElement('div');
+                    netSalaryBlock.id = 'netSalaryBlock';
+                    netSalaryBlock.className = 'net-salary-block'; // ★ Применяем класс
+                    totalRow.parentNode.insertBefore(netSalaryBlock, totalRow.nextSibling);
+                }
+                
+                let html = '';
+                if (useAdvanceInCalc && activeAdvance > 0) {
+                    html += `<div style="font-size:0.9rem; color:var(--red);">− аванс ${activeAdvance.toLocaleString()} ₽</div>`;
+                }
+                if (hasDed) {
+                    html += `<div style="font-size:0.9rem; color:var(--teal);">− ${Math.round(DEDUCTION_RATE*100)}% налог</div>`;
+                }
+                html += `<div style="font-size: 1.5rem; font-weight: bold; color: var(--teal);">${Math.round(netTotal).toLocaleString()} ₽</div>`;
+    
+                netSalaryBlock.innerHTML = `
+                <div>
+                    <div class="net-label">💰 К выплате на руки</div>
+                    <div class="net-deductions">${html}</div>
+                </div>
+                <div class="net-value">${Math.round(netTotal).toLocaleString()} ₽</div>
             `;
-        } else if (netSalaryBlock) {
-            netSalaryBlock.remove();
+            } else if (netSalaryBlock) {
+                netSalaryBlock.remove();
+            }
         }
-    }
 
     const parts = [];
     if (payBase > 0) parts.push(`<b class="f-n">${days}×${settings.rDay.toLocaleString()}</b>`);
@@ -829,7 +860,7 @@ async function refreshWeek() {
     const weekKey = getWeekKeyUTC(dates[0]);
     updateWeekLabel(dates);
     currentData = await getWeekData(weekKey, dates);
-    update();
+    await update(); // <- Добавь await сюда
     await checkExistingRequest();
 }
 
@@ -841,8 +872,17 @@ async function init() {
     buildUI();
     initMinimap();
     initSalaryModal();
+    initAdvanceModal();
     await refreshWeek();
+    await refreshWeek();
+    await loadMyAdvances(); // ★ Загружаем авансы
 
+
+    document.getElementById('useAdvanceCheckbox')?.addEventListener('change', (e) => {
+        useAdvanceInCalc = e.target.checked;
+        update(); // Пересчитываем
+    });
+    
     document.getElementById('weekPrev').addEventListener('click', async () => { currentWeekOffset--; await refreshWeek(); });
     document.getElementById('weekNext').addEventListener('click', async () => { currentWeekOffset++; await refreshWeek(); });
     document.getElementById('weekToday').addEventListener('click', async () => { currentWeekOffset = 0; await refreshWeek(); });
@@ -970,25 +1010,25 @@ async function openSalaryModal() {
         console.warn('Ошибка загрузки авансов:', e);
     }
 
-    const grossAfterAdvances = Math.max(0, stats.total - totalAdvances);
+    // ★ ЗП запрашивается БЕЗ учета аванса (только вычет 20%, если есть)
     const hasDed = hasDeduction(EMPLOYEE_ID, settings);
-    const netPay = hasDed ? grossAfterAdvances * (1 - DEDUCTION_RATE) : grossAfterAdvances;
+    const netPay = hasDed ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
 
     _modalData = {
         weekKey,
         weekRange,
         stats,
-        totalAdvances,
-        finalPay: grossAfterAdvances,
+        totalAdvances, // сохраняем для отображения
+        finalPay: stats.total, // ★ Полная сумма ЗП (до аванса)
         hasDeduction: hasDed,
-        netPay: netPay
+        netPay: netPay // ★ Сумма к выплате БЕЗ учета аванса
     };
 
     document.getElementById('salaryModalPeriod').textContent = weekRange;
     document.getElementById('salaryModalDays').textContent = stats.days;
     document.getElementById('salaryModalHours').textContent = stats.totalHours.toFixed(2).replace('.', ',');
 
-    // ★ Сумма к выплате (после вычета)
+    // ★ Выводим сумму БЕЗ учета аванса
     document.getElementById('salaryModalFinal').textContent = Math.round(netPay).toLocaleString();
 
     // ★ Блок "ЗП −20% к оплате!"
@@ -1014,7 +1054,9 @@ async function openSalaryModal() {
     const advanceRow = document.getElementById('salaryModalAdvanceRow');
     if (totalAdvances > 0) {
         advanceRow.style.display = 'flex';
-        document.getElementById('salaryModalAdvance').textContent = '−' + totalAdvances.toLocaleString() + ' ₽';
+        // ★ Пишем, что аванс НЕ вычтен из этой суммы, а будет удержан при выплате
+        document.getElementById('salaryModalAdvance').textContent = `${totalAdvances.toLocaleString()} ₽ (будет удержан)`;
+        document.getElementById('salaryModalAdvance').style.color = 'var(--mut)';
     } else {
         advanceRow.style.display = 'none';
     }
@@ -1171,6 +1213,65 @@ async function sendBitrixSalaryRequestNotification({ employeeName, finalPay, wee
     }
 }
 
+// ============================================
+// ★ ОТПРАВКА УВЕДОМЛЕНИЯ ОБ АВАНСЕ В БИТРИКС24
+// ============================================
+async function sendBitrixAdvanceRequestNotification({ employeeName, amount, comment }) {
+    try {
+        const bitrixRef = doc(db, 'settings', 'bitrix24');
+        const bitrixSnap = await getDoc(bitrixRef);
+
+        if (!bitrixSnap.exists()) {
+            console.warn('❌ Настройки Битрикс24 не найдены');
+            return;
+        }
+
+        const bitrixData = bitrixSnap.data();
+        const webhook = bitrixData.webhook;
+        const chatId = bitrixData.chatId || 'chat1104';
+
+        if (!webhook) {
+            console.warn('❌ Вебхук Битрикс24 не указан');
+            return;
+        }
+
+        const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
+        const dashboardUrl = `${baseUrl}admin-dashboard.html`;
+        const employeeUrl = `${baseUrl}employee-view.html?id=${EMPLOYEE_ID}`;
+
+        const message = `[URL=${dashboardUrl}]ЗАПРОС АВАНСА[/URL]\n` +
+            `👤 [URL=${employeeUrl}]${employeeName}[/URL]\n` +
+            `💰 Сумма: **${amount.toLocaleString()} ₽**` +
+            (comment ? `\n💬 Комментарий: ${comment}` : '');
+
+        const url = webhook + 'im.message.add.json';
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                DIALOG_ID: chatId,
+                MESSAGE: message
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.error) {
+            throw new Error(result.error_description || result.error);
+        }
+
+        console.log('✅ Уведомление об авансе отправлено в Битрикс');
+    } catch (error) {
+        console.error('❌ Ошибка отправки в Битрикс:', error);
+        throw error;
+    }
+}
+
+
 async function checkExistingRequest() {
     try {
         const btn = document.getElementById('requestSalaryBtn');
@@ -1241,6 +1342,166 @@ function showToast(message) {
         el.style.opacity = '0';
         el.style.transform = 'translateX(-50%) translateY(20px)';
     }, 3200);
+}
+
+
+// ============================================
+// ★ СИСТЕМА АВАНСОВ (Запрос у сотрудника)
+// ============================================
+
+function initAdvanceModal() {
+    const btn = document.getElementById('requestAdvanceBtn');
+    if (!btn) return;
+
+    btn.addEventListener('click', () => {
+        document.getElementById('advanceAmountInput').value = '';
+        document.getElementById('advanceCommentInput').value = '';
+        document.getElementById('advanceModalOverlay').classList.add('active');
+    });
+
+    const closeModal = () => {
+        document.getElementById('advanceModalOverlay').classList.remove('active');
+    };
+
+    document.getElementById('advanceModalCancel')?.addEventListener('click', closeModal);
+    
+    document.getElementById('advanceModalOverlay')?.addEventListener('click', (e) => {
+        if (e.target.id === 'advanceModalOverlay') closeModal();
+    });
+
+    document.getElementById('advanceModalConfirm')?.addEventListener('click', submitAdvanceRequest);
+}
+
+async function submitAdvanceRequest() {
+    const amountInput = document.getElementById('advanceAmountInput');
+    const commentInput = document.getElementById('advanceCommentInput');
+    const confirmBtn = document.getElementById('advanceModalConfirm');
+
+    const amount = parseFloat(amountInput.value);
+    const comment = commentInput.value.trim();
+
+    if (!amount || amount <= 0) {
+        alert('❌ Введите корректную сумму');
+        return;
+    }
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '⏳ Отправка...';
+
+    try {
+        // Проверяем, нет ли уже активного запроса на аванс
+        const q = query(
+            collection(db, 'salaryAdvanceRequests'),
+            where('employeeId', '==', EMPLOYEE_ID),
+            where('status', '==', 'pending')
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+            alert('⏳ У вас уже есть активный запрос на аванс. Дождитесь его рассмотрения.');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = '🏦 Запросить';
+            return;
+        }
+
+        // Отправляем запрос в базу
+                // Отправляем запрос в базу
+                await addDoc(collection(db, 'salaryAdvanceRequests'), {
+                    employeeId: EMPLOYEE_ID,
+                    employeeName: employeeName,
+                    amount: amount,
+                    comment: comment,
+                    status: 'pending',
+                    createdAt: new Date().toISOString()
+                });
+        
+                console.log('✅ Запрос на аванс отправлен');
+        
+                // ★ Отправляем уведомление в Битрикс24
+                try {
+                    await sendBitrixAdvanceRequestNotification({
+                        employeeName,
+                        amount,
+                        comment
+                    });
+                } catch (bitrixError) {
+                    console.warn('⚠️ Не удалось отправить в Битрикс:', bitrixError);
+                }
+        
+        document.getElementById('advanceModalOverlay').classList.remove('active');
+        showToast('✅ Запрос на аванс отправлен!');
+        
+        // Визуально блокируем кнопку на время сессии (админ потом увидит)
+        const mainBtn = document.getElementById('requestAdvanceBtn');
+        if (mainBtn) {
+            mainBtn.disabled = true;
+            mainBtn.style.opacity = '0.5';
+            mainBtn.textContent = '⏳ Аванс запрошен';
+        }
+
+    } catch (error) {
+        console.error('Ошибка запроса аванса:', error);
+        alert('❌ Ошибка: ' + error.message);
+    } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '🏦 Запросить';
+    }
+}
+// ============================================
+// ★ ЗАГРУЗКА И ОТОБРАЖЕНИЕ АВАНСОВ
+// ============================================
+async function loadMyAdvances() {
+    const block = document.getElementById('myAdvancesBlock');
+    const listEl = document.getElementById('advanceList');
+    const totalEl = document.getElementById('totalAdvanceAmount');
+    if (!block || !listEl || !totalEl) return;
+
+    try {
+        const q = query(
+            collection(db, 'salaryAdvances'),
+            where('employeeId', '==', EMPLOYEE_ID),
+            where('status', '==', 'active')
+        );
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            block.style.display = 'none';
+            return;
+        }
+
+        let total = 0;
+        let html = '';
+
+        // Сортируем по дате (новые сверху)
+        const advances = [];
+        snap.forEach(d => advances.push({ id: d.id, ...d.data() }));
+        advances.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        for (const adv of advances) {
+            total += adv.amount || 0;
+            
+            const date = adv.createdAt ? new Date(adv.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }) : '—';
+            const comment = adv.comment || 'Без комментария';
+
+            html += `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: rgba(255,255,255,.03); border-radius: 6px; font-size: .85rem;">
+                    <div>
+                        <div style="font-weight: 600;">Аванс</div>
+                        <div style="font-size: .7rem; color: var(--mut);">${date} · ${comment}</div>
+                    </div>
+                    <div style="font-weight: bold; color: var(--red); font-family: var(--mono); white-space: nowrap;">
+                        ${adv.amount.toLocaleString()} ₽
+                    </div>
+                </div>
+            `;
+        }
+
+        listEl.innerHTML = html;
+        totalEl.textContent = total.toLocaleString() + ' ₽';
+        block.style.display = 'block';
+
+    } catch (error) {
+        console.error('Ошибка загрузки авансов:', error);
+    }
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

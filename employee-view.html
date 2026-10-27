@@ -718,6 +718,14 @@
             .salary-modal-footer { padding: 12px 14px 18px; }
             .salary-modal-btn { min-height: 46px; font-size: .88rem; }
         }
+
+        .salary-final .final-value {
+    font-family: var(--mono);
+    font-size: 2.6rem; /* ★ Увеличили с 2rem */
+    font-weight: bold;
+    color: var(--teal);
+    line-height: 1;
+}
     </style>
 
     <!-- ============================================ -->
@@ -1107,6 +1115,47 @@
             .schedule-table td:first-child { font-size: .7rem; padding: 4px 6px; max-width: 80px; }
             .schedule-day { min-height: 36px; font-size: .75rem; }
         }
+
+
+        .net-salary-block {
+    background: rgba(62, 207, 168, 0.12);
+    border: 1px dashed var(--teal);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-top: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+}
+.net-salary-block .net-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--teal);
+}
+.net-salary-block .net-deductions {
+    font-size: 0.8rem;
+    color: var(--mut);
+    margin-top: 2px;
+}
+.net-salary-block .net-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--teal);
+}
+
+
+/* Было: font-size: clamp(2.2rem, 4vw, 3rem); */
+.t-val { 
+    font-size: clamp(1.6rem, 3vw, 2.2rem); 
+    font-weight: 700; 
+    line-height: 1; 
+    display: flex; 
+    align-items: baseline; 
+    gap: 8px; 
+     /* Сделаем её чуть бледнее, чтобы не перебивала итог */
+}
+
     </style>
 </head>
 <body>
@@ -1255,16 +1304,45 @@
                 </section>
                 <div class="tear" aria-hidden="true"></div>
 
+
+                                <!-- ★ Блок аванса -->
+                                <div id="advanceBlock" style="display: none; background: rgba(229,72,77,.1); border: 1px dashed var(--red); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.85rem; color: var(--txt);">
+                                        <input type="checkbox" id="useAdvanceCheckbox" style="width: auto; transform: scale(1.3); cursor: pointer;" checked>
+                                        <span>Учитывать аванс: <b id="advanceAmountLabel" style="color: var(--red);">0 ₽</b></span>
+                                    </label>
+                                </div>
+                                <div class="actions">
+            
                 <div class="actions">
                     <button class="btn btn-amber" id="copyBtn">📋 Скопировать</button>
+                    <button class="btn" id="requestAdvanceBtn" style="background:var(--red); color:#fff;">
+                        🏦 Взять аванс
+                    </button>
                     <button class="btn" id="requestSalaryBtn" style="background:var(--teal); color:#0c1520;">
                         💰 Запросить ЗП
                     </button>
                     <a href="employee-stats.html?id=ЗАМЕНИТЬ_НА_ID" class="btn-stats-link" id="statsLink" style="display:none;">📊 Статистика</a>
                 </div>
             </div>
+            
         </main>
+<!-- ★ Блок с авансами сотрудника -->
+<div id="myAdvancesBlock" style="display: none; margin-top: 20px; background: var(--card); max-width: 200px; border: 1px solid var(--red); border-radius: 12px; padding: 16px;">
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+        <span style="font-size: 1.2rem;">🏦</span>
+        <h3 style="margin: 0; font-size: 1rem; color: var(--red); font-family: var(--display); text-transform: uppercase;">Ваши авансы</h3>
+    </div>
+    
+    <div style="background: rgba(229,72,77,.1); border: 1px dashed var(--red); border-radius: 8px; padding: 12px; margin-bottom: 12px; text-align: center;">
+        <div style="font-size: .75rem; color: var(--mut); margin-bottom: 4px;">Общая сумма долга</div>
+        <div id="totalAdvanceAmount" style="font-size: 1.8rem; font-weight: bold; color: var(--red); font-family: var(--mono);">0 ₽</div>
+    </div>
 
+    <div id="advanceList" style="display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto;">
+        <!-- Сюда будут вставляться строки -->
+    </div>
+</div>
         <section class="rules">
             <h2 class="reveal">Как это <em>считается</em></h2>
             <p class="rules-sub reveal">Три правила, зашитые в калькулятор. Ставки выше можно поменять — логика сохраняется.</p>
@@ -1366,6 +1444,43 @@
             </div>
         </div>
     </div>
+
+    <!-- ============================================ -->
+    <!-- ★ МОДАЛКА «ВЗЯТЬ АВАНС» -->
+    <!-- ============================================ -->
+    <div class="salary-modal-overlay" id="advanceModalOverlay">
+        <div class="salary-modal">
+            <div class="salary-modal-header">
+                <div class="salary-modal-icon" style="border-color:var(--red); background:radial-gradient(circle, rgba(229,72,77,.25), rgba(229,72,77,.05));">🏦</div>
+                <div class="salary-modal-title">Взять <em style="color:var(--red);">аванс</em>?</div>
+                <div class="salary-modal-sub">Запрос уйдёт администратору</div>
+            </div>
+
+            <div class="salary-modal-body">
+                <div class="field" style="margin-bottom:16px;">
+                    <label style="display:block; font-size:.75rem; color:var(--mut); margin-bottom:4px; font-weight:600;">Сумма аванса, ₽</label>
+                    <input type="number" id="advanceAmountInput" placeholder="Например: 5000" step="500" min="0" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--line); background:var(--bg2); color:var(--txt); font-size:1.2rem; text-align:center; font-weight:bold; font-family:var(--mono);">
+                </div>
+                <div class="field">
+                    <label style="display:block; font-size:.75rem; color:var(--mut); margin-bottom:4px; font-weight:600;">Комментарий (зачем)</label>
+                    <input type="text" id="advanceCommentInput" placeholder="Необязательно" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--line); background:var(--bg2); color:var(--txt); font-size:.9rem;">
+                </div>
+            </div>
+
+            <div class="salary-modal-footer">
+                <button class="salary-modal-btn confirm" id="advanceModalConfirm" style="background:linear-gradient(135deg, var(--red), #c0392b); color:#fff; box-shadow:0 8px 24px rgba(229,72,77,.35);">
+                    🏦 Запросить
+                </button>
+                <button class="salary-modal-btn cancel" id="advanceModalCancel">
+                    Отмена
+                </button>
+                <div class="salary-modal-hint">
+                    Администратор получит уведомление и выдаст средства
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <!-- ============================================ -->
     <!-- ★ МИНИКАРТА — иконка расписания -->

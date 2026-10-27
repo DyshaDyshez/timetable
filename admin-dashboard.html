@@ -995,6 +995,26 @@
             }
             .schedule-day { min-height: 36px; font-size: .78rem; }
         }
+
+                .history-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: rgba(255,255,255,.08);
+            color: var(--mut);
+            border: 1px solid var(--line);
+            border-radius: 50%;
+            text-decoration: none;
+            font-size: 1rem;
+            transition: .2s;
+        }
+        .history-btn:hover {
+            border-color: var(--amber);
+            background: rgba(255,181,46,.1);
+            transform: scale(1.1);
+        }
     </style>
 </head>
 <body>
@@ -1005,6 +1025,7 @@
             <div class="header-actions">
                 <a href="index.html" class="btn-back">← Назад</a>
                 <span class="user-info" id="userEmail">Загрузка...</span>
+                <a href="audit-log.html" class="history-btn" title="История действий">🕒</a>
                 <button class="logout-btn" id="logoutBtn">Выйти</button>
             </div>
         </header>

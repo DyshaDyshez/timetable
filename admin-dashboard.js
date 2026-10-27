@@ -26,7 +26,11 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { calculateWeekPay } from './modules/calculator.js';
 import { calculateDayHoursFromLogs } from './modules/attendance.js';
+
+import { initAudit, logAction } from './modules/audit.js';
 import { DEDUCTION_EMPLOYEES, DEDUCTION_RATE, hasDeduction } from './modules/deductions.js';
+
+
 
 // ============================================
 // ИНИЦИАЛИЗАЦИЯ
@@ -34,7 +38,12 @@ import { DEDUCTION_EMPLOYEES, DEDUCTION_RATE, hasDeduction } from './modules/ded
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
+initAudit(app); // ★ Включаем логирование
 
+
+
+let allAdvanceRequests = {}; // ★ Запросы на аванс
+let allAdvances = {};
 let currentUser = null;
 let allEmployees = [];
 let allWeeks = {};
@@ -65,6 +74,8 @@ onAuthStateChanged(auth, (user) => {
 });
 
 document.getElementById('logoutBtn')?.addEventListener('click', () => signOut(auth));
+
+
 
 // ============================================
 // ВКЛАДКИ
@@ -142,6 +153,32 @@ function startListening() {
         window.__allRequests = allRequests;
         scheduleRender();
     }, () => showNotification('❌ Ошибка загрузки запросов', true));
+
+        // ★ СЛУШАТЕЛЬ ЗАПРОСОВ НА АВАНС (Pending)
+        onSnapshot(collection(db, 'salaryAdvanceRequests'), (snapshot) => {
+            allAdvanceRequests = {};
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.status === 'pending') {
+                    allAdvanceRequests[data.employeeId] = { id: doc.id, ...data };
+                }
+            });
+            scheduleRender();
+        }, () => showNotification('❌ Ошибка загрузки запросов авансов', true));
+    
+        // ★ СЛУШАТЕЛЬ ВЫДАННЫХ АВАНСОВ (Активные)
+        onSnapshot(collection(db, 'salaryAdvances'), (snapshot) => {
+            allAdvances = {};
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.status === 'active') {
+                    if (!allAdvances[data.employeeId]) allAdvances[data.employeeId] = { total: 0, list: [] };
+                    allAdvances[data.employeeId].total += (data.amount || 0);
+                    allAdvances[data.employeeId].list.push({ id: doc.id, ...data });
+                }
+            });
+            scheduleRender();
+        }, () => showNotification('❌ Ошибка загрузки авансов', true));
 
     onSnapshot(collection(db, 'employeeSchedule'), (snapshot) => {
         allSchedules = {};
@@ -353,17 +390,20 @@ function renderSalary() {
     if (label) label.textContent = `${formatDateShort(start)} – ${formatDateShort(end)} (${weekKey})`;
 
     const rows = [];
-    let totalPay = 0, totalCount = 0, totalNet = 0, totalDeduction = 0;
+    let totalPay = 0, totalCount = 0, totalNet = 0, totalDeduction = 0, totalAdvSum = 0;
 
     for (const emp of allEmployees) {
-        const requestKey = emp.id + '_' + weekKey;
-        const requestData = allRequests[requestKey] || null; 
+        const requestData = allRequests[emp.id + '_' + weekKey] || null; 
         const hasRequest = requestData !== null;
-
         const weekData = getWeekDataForEmployee(emp.id, weekKey, dates);
+        
+        // Авансы
+        const activeAdv = allAdvances[emp.id]?.total || 0;
+        const advReq = allAdvanceRequests[emp.id] || null;
+        totalAdvSum += activeAdv;
 
         if (!weekData.anyData && !hasRequest) {
-            rows.push({ emp, weekData, hasRequest: false, requestData: null, noData: true });
+            rows.push({ emp, weekData, hasRequest: false, requestData: null, noData: true, activeAdv, advReq });
             continue;
         }
 
@@ -371,137 +411,112 @@ function renderSalary() {
             const settings0 = getEmployeeSettings(emp.id);
             const ded0 = hasDeduction(emp.id, settings0);
             const gross0 = requestData.finalPay || requestData.total || 0;
-            const net0 = ded0 ? gross0 * (1 - DEDUCTION_RATE) : gross0;
+            
+            const afterAdv = Math.max(0, gross0 - activeAdv);
+            const net0 = ded0 ? afterAdv * (1 - DEDUCTION_RATE) : afterAdv;
+
             rows.push({
-                emp, weekData, hasRequest: true, requestData,
-                noData: false,
-                stats: {
-                    days: requestData.days || 0,
-                    totalHours: requestData.totalHours || 0,
-                    ot: 0,
-                    total: gross0
-                },
-                hasDed: ded0,
-                netValue: net0,
-                sourceLabel: ''
+                emp, weekData, hasRequest: true, requestData, noData: false,
+                stats: { days: requestData.days || 0, totalHours: requestData.totalHours || 0, ot: 0, total: gross0 },
+                hasDed: ded0, netValue: net0, activeAdv, advReq, sourceLabel: ''
             });
-            totalCount++;
-            totalPay += gross0;
-            if (ded0) { totalDeduction += gross0 - net0; }
-            totalNet += net0;
+            totalCount++; totalPay += gross0; totalNet += net0;
+            if (ded0) totalDeduction += (afterAdv - net0);
             continue;
         }
 
         const settings = getEmployeeSettings(emp.id);
         const stats = calculateWeekPay(weekData, settings);
         const hasDed = hasDeduction(emp.id, settings);
-        const netValue = hasDed ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
+        
+        const afterAdv = Math.max(0, stats.total - activeAdv);
+        const netValue = hasDed ? afterAdv * (1 - DEDUCTION_RATE) : afterAdv;
 
         totalPay += stats.total;
         totalNet += netValue;
-        if (hasDed) totalDeduction += stats.total - netValue;
+        if (hasDed) totalDeduction += (afterAdv - netValue);
         totalCount++;
 
-        const hasAdmin = weekData.daySource.includes('admin');
-        const hasAtt = weekData.daySource.includes('attendance');
         let sourceLabel = '';
-        if (hasAdmin && hasAtt) sourceLabel = ' 🔒📌';
-        else if (hasAdmin) sourceLabel = ' 🔒';
-        else if (hasAtt) sourceLabel = ' 📌';
+        if (weekData.daySource.includes('admin') && weekData.daySource.includes('attendance')) sourceLabel = ' 🔒📌';
+        else if (weekData.daySource.includes('admin')) sourceLabel = ' 🔒';
+        else if (weekData.daySource.includes('attendance')) sourceLabel = ' 📌';
 
-        rows.push({
-            emp, weekData, hasRequest, requestData,
-            noData: false,
-            stats, sourceLabel,
-            hasDed,
-            netValue
-        });
+        rows.push({ emp, weekData, hasRequest, requestData, noData: false, stats, sourceLabel, hasDed, netValue, activeAdv, advReq });
     }
 
-    // ===== Desktop: таблица =====
-        // ===== Desktop: таблица =====
-    let tableHTML = `<table style="table-layout:fixed; min-width: 960px; width: 100%;">
+    // ===== Таблица =====
+    let tableHTML = `<table style="table-layout:fixed; min-width: 1050px; width: 100%;">
         <colgroup>
-            <col style="width: 110px;"> <!-- Сотрудник -->
-            <col style="width: 60px;">  <!-- Дней -->
-            <col style="width: 70px;">  <!-- Часов -->
-            <col style="width: 80px;">  <!-- Перераб. -->
-            <col style="width: 130px;"> <!-- Зарплата -->
-            <col style="width: 130px;"> <!-- -20% -->
-            <col style="width: 110px;"> <!-- Статус -->
-            <col style="width: 100px;"> <!-- Действия -->
+            <col style="width: 160px;"><col style="width: 60px;"><col style="width: 70px;">
+            <col style="width: 80px;"><col style="width: 120px;"><col style="width: 120px;">
+            <col style="width: 120px;"><col style="width: 100px;"><col style="width: 110px;">
         </colgroup>
         <thead><tr>
-            <th>Сотрудник</th>
+            <th class="col-employee">Сотрудник</th>
             <th style="text-align:center;">Дней</th>
             <th style="text-align:center;">Часов</th>
             <th style="text-align:center;">Перераб.</th>
             <th style="text-align:right;">Зарплата</th>
-            <th style="text-align:right;">−20% (к выплате)</th>
+            <th style="text-align:center;">Аванс</th>
+            <th style="text-align:right;">К выплате</th>
             <th style="text-align:center;">Статус</th>
             <th style="text-align:center;">Действия</th>
         </tr></thead><tbody>`;
 
     for (const row of rows) {
-        const { emp, hasRequest, requestData, noData, stats, sourceLabel, hasDed, netValue } = row;
+        const { emp, hasRequest, requestData, noData, stats, sourceLabel, hasDed, netValue, activeAdv, advReq } = row;
 
         if (noData) {
             tableHTML += `<tr>
-                <td class="col-employee" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${emp.name || 'Без имени'}</td>
-                <td colspan="7" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td>
+                <td class="col-employee">${emp.name || 'Без имени'}</td>
+                <td colspan="8" style="text-align:center;color:var(--mut);font-size:.8rem;">Нет данных</td>
             </tr>`;
             continue;
         }
 
         const isPaid = hasRequest && requestData.status === 'paid';
-        const rowStyle = hasRequest 
-            ? (isPaid ? 'background:rgba(255,255,255,.02);' : 'background:rgba(62,207,168,.08); border-left:4px solid var(--teal);')
-            : '';
-        
-        const payStyle = isPaid 
-            ? 'text-decoration:line-through; opacity:0.5;' 
-            : 'color:var(--amber);';
+        const rowStyle = hasRequest ? (isPaid ? 'background:rgba(255,255,255,.02);' : 'background:rgba(62,207,168,.08); border-left:4px solid var(--teal);') : '';
+        const payStyle = isPaid ? 'text-decoration:line-through; opacity:0.5;' : 'color:var(--amber);';
 
-        const netCell = hasDed
-            ? `<span style="font-weight:700;color:var(--teal);white-space:nowrap; ${isPaid ? 'text-decoration:line-through; opacity:.5;' : ''}">${Math.round(netValue).toLocaleString()} ₽</span>`
-            : `<span style="color:var(--mut);">—</span>`;
+        let advCell = `<span style="color:var(--mut);">—</span>`;
+        if (activeAdv > 0) {
+            advCell = `<span style="font-weight:700; color:var(--red); white-space:nowrap;">${activeAdv.toLocaleString()} ₽</span>`;
+        }
+        if (advReq) {
+            advCell += `<button class="btn-sm teal" onclick="window.showAdvanceDetails('${advReq.id}')" 
+                                style="padding:4px 8px; font-weight:bold; animation: requestPulse 1.5s infinite; font-size:0.65rem; margin-left:4px;">
+                                💰 +АВАНС</button>`;
+        }
+
+        const netCell = `<span style="font-weight:700; color:var(--teal); white-space:nowrap; ${isPaid ? 'text-decoration:line-through; opacity:.5;' : ''}">
+                            ${Math.round(netValue).toLocaleString()} ₽
+                         </span>`;
 
         let statusBadge = '<span style="color:var(--mut); font-size:.8rem;">—</span>';
         if (hasRequest) {
-            if (isPaid) {
-                statusBadge = `<span style="background:rgba(62,207,168,.15); color:var(--teal); padding:4px 10px; border-radius:99px; font-size:.75rem; font-weight:bold;">✅ Оплачено</span>`;
-            } else {
-                statusBadge = `<span style="background:rgba(255,181,46,.15); color:var(--amber2); padding:4px 10px; border-radius:99px; font-size:.75rem; font-weight:bold;">⏳ Ожидает</span>`;
-            }
+            if (isPaid) statusBadge = `<span style="background:rgba(62,207,168,.15); color:var(--teal); padding:4px 10px; border-radius:99px; font-size:.75rem; font-weight:bold;">✅ Оплачено</span>`;
+            else statusBadge = `<span style="background:rgba(255,181,46,.15); color:var(--amber2); padding:4px 10px; border-radius:99px; font-size:.75rem; font-weight:bold;">⏳ Ожидает</span>`;
         }
 
         let actionButtons = '';
         if (hasRequest && !isPaid) {
-            actionButtons = `
-                <button class="btn-sm teal" onclick="window.showRequestDetails('${requestData.id}')" 
-                        title="Показать запрос" 
-                        style="padding:6px 12px; font-weight:bold; animation: requestPulse 1.5s infinite;">
-                    💰 ЗАПРОС!
-                </button>
-            `;
+            actionButtons = `<button class="btn-sm teal" onclick="window.showRequestDetails('${requestData.id}')" style="padding:6px 12px; font-weight:bold; animation: requestPulse 1.5s infinite;">💰 ЗП</button>`;
         } else {
-            actionButtons = `
-                <button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')" title="Настройки">⚙️</button>
-                <button class="btn-sm amber" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')" title="Детали">👁️</button>
-            `;
+            actionButtons = `<button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')">⚙️</button>
+                             <button class="btn-sm amber" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')">👁️</button>`;
         }
         
         tableHTML += `<tr style="${rowStyle}">
-            <td class="col-employee" title="${emp.name}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${hasRequest ? '💰 ' : ''}${emp.name}${sourceLabel}</td>
+            <td class="col-employee" title="${emp.name}">${hasRequest ? '💰 ' : ''}${emp.name}${sourceLabel}</td>
             <td style="text-align:center;">${stats.days}</td>
             <td style="text-align:center;">${stats.totalHours.toFixed(1)}</td>
             <td style="text-align:center;">${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}</td>
-                        <td style="text-align:right;font-weight:700;font-size:1.05rem;white-space:nowrap; ${payStyle}">${stats.total.toLocaleString()} ₽</td>
+            <td style="text-align:right;font-weight:700;font-size:1.05rem;white-space:nowrap; ${payStyle}">${stats.total.toLocaleString()} ₽</td>
+            <td style="text-align:center;">${advCell}</td>
             <td style="text-align:right; vertical-align: middle;">${netCell}</td>
             <td style="text-align:center;">${statusBadge}</td>
-            <td style="text-align:center;white-space:nowrap;">
-                ${actionButtons}
-            </td>
+            <td style="text-align:center;white-space:nowrap;">${actionButtons}</td>
         </tr>`;
     }
 
@@ -509,109 +524,12 @@ function renderSalary() {
         <td><b style="color:var(--amber);">📊 ИТОГО</b></td>
         <td colspan="3" style="text-align:center;font-size:.8rem;color:var(--mut);">${totalCount} сотрудников</td>
         <td style="text-align:right;font-weight:700;color:var(--amber);font-size:1.1rem;white-space:nowrap;">${totalPay.toLocaleString()} ₽</td>
+        <td style="text-align:center;font-weight:700;color:var(--red);font-size:1.1rem;white-space:nowrap;">${totalAdvSum.toLocaleString()} ₽</td>
         <td style="text-align:right;font-weight:700;color:var(--teal);font-size:1.1rem;white-space:nowrap;">${Math.round(totalNet).toLocaleString()} ₽</td>
-        <td colspan="2" style="text-align:right;font-size:.7rem;color:var(--mut);">вычет: −${Math.round(totalDeduction).toLocaleString()} ₽</td>
+        <td colspan="2"></td>
     </tr></tbody></table>`;
 
-    // ===== Mobile: карточки =====
-    let cardsHTML = '';
-    for (const row of rows) {
-        const { emp, hasRequest, requestData, noData, stats, sourceLabel, hasDed, netValue } = row;
-
-        if (noData) {
-            cardsHTML += `
-                <div class="salary-card">
-                    <div class="card-header">
-                        <div class="card-name">${emp.name || 'Без имени'}</div>
-                    </div>
-                    <div class="card-no-data">Нет данных</div>
-                    <div class="card-actions">
-                        <button class="btn-settings" onclick="window.showEmployeeSettings('${emp.id}')">⚙️ Настройки</button>
-                        <button class="btn-details" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')">👁️ Детали</button>
-                    </div>
-                </div>
-            `;
-            continue;
-        }
-
-        const isPaid = hasRequest && requestData.status === 'paid';
-        const cardClass = hasRequest 
-            ? (isPaid ? 'salary-card' : 'salary-card has-request') 
-            : 'salary-card';
-        
-        const payStyle = isPaid 
-            ? 'text-decoration:line-through; opacity:0.5;' 
-            : '';
-
-        let statusBadge = '';
-        if (hasRequest) {
-            if (isPaid) {
-                statusBadge = `<span style="background:rgba(62,207,168,.15); color:var(--teal); padding:3px 10px; border-radius:99px; font-size:.7rem; font-weight:bold;">✅ Оплачено</span>`;
-            } else {
-                statusBadge = `<span style="background:rgba(255,181,46,.15); color:var(--amber2); padding:3px 10px; border-radius:99px; font-size:.7rem; font-weight:bold;">⏳ Ожидает</span>`;
-            }
-        }
-
-        const actions = (hasRequest && !isPaid)
-            ? `<button class="btn-request-pulse" onclick="window.showRequestDetails('${requestData.id}')">
-                   💰 ЗАПРОС!
-               </button>`
-            : `<button class="btn-settings" onclick="window.showEmployeeSettings('${emp.id}')">⚙️ Настройки</button>
-               <button class="btn-details" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')">👁️ Детали</button>`;
-
-        const netLine = hasDed
-            ? `<div style="margin-top:6px;font-size:.8rem;color:var(--teal);font-weight:600; ${isPaid ? 'opacity:.5;text-decoration:line-through;' : ''}">
-                   💰 К выплате (−20%): ${Math.round(netValue).toLocaleString()} ₽
-               </div>`
-            : '';
-
-        cardsHTML += `
-            <div class="${cardClass}">
-                <div class="card-header">
-                    <div class="card-name">${emp.name}${sourceLabel}</div>
-                    <div class="card-pay" style="${payStyle}">${stats.total.toLocaleString()} ₽</div>
-                </div>
-                ${netLine}
-                ${statusBadge ? `<div style="margin-bottom:4px;">${statusBadge}</div>` : ''}
-                <div class="card-stats">
-                    <div class="stat-item">
-                        <div class="stat-label">Дней</div>
-                        <div class="stat-value">${stats.days}</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Часов</div>
-                        <div class="stat-value">${stats.totalHours.toFixed(1)}</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Перераб.</div>
-                        <div class="stat-value ${stats.ot > 0 ? 'amber' : 'mut'}">
-                            ${stats.ot > 0 ? stats.ot.toFixed(1) + 'ч' : '—'}
-                        </div>
-                    </div>
-                </div>
-                <div class="card-actions">
-                    ${actions}
-                </div>
-            </div>
-        `;
-    }
-
-    cardsHTML += `
-        <div class="salary-card" style="background:linear-gradient(135deg, rgba(255,181,46,.12), rgba(255,181,46,.02)); border-color:var(--amber);">
-            <div class="card-header">
-                <div class="card-name" style="color:var(--amber);">📊 ИТОГО</div>
-                <div class="card-pay" style="font-size:1.2rem;">${totalPay.toLocaleString()} ₽</div>
-            </div>
-            <div style="font-size:.75rem; color:var(--teal); text-align:center; font-weight:600;">
-                к выплате (−20%): ${Math.round(totalNet).toLocaleString()} ₽
-            </div>
-            <div style="font-size:.7rem; color:var(--mut); text-align:center; margin-top:4px;">
-                ${totalCount} сотрудников · вычет −${Math.round(totalDeduction).toLocaleString()} ₽
-            </div>
-        </div>
-    `;
-
-            wrap.innerHTML = tableHTML;
+    wrap.innerHTML = tableHTML;
 }
 
 // ============================================
@@ -1123,6 +1041,10 @@ window.showEmployeeSettings = function(employeeId) {
             }
             await setDoc(doc(db, 'salarySettings', employeeId), payload, { merge: true });
             if (data.pin) await updateDoc(doc(db, 'salaryEmployees', employeeId), { pin: data.pin });
+            await logAction('settings_changed', { 
+                employeeName: emp.name, 
+                newSettings: data 
+            });
             modal.classList.remove('active');
             showNotification('✅ Настройки сохранены');
         } catch (error) {
@@ -1144,7 +1066,9 @@ window.viewWeekDetails = function(employeeId, weekKey) {
     const settings = getEmployeeSettings(employeeId);
     const stats = calculateWeekPay(weekData, settings);
     const hasDed = hasDeduction(employeeId, settings);
-    const netValue = hasDed ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
+    const activeAdv = allAdvances[employeeId]?.total || 0; // ★ Получаем аванс
+    const afterAdv = Math.max(0, stats.total - activeAdv);
+    const netValue = hasDed ? afterAdv * (1 - DEDUCTION_RATE) : afterAdv;
 
     const modal = document.getElementById('modalOverlay');
     const body = document.getElementById('modalBody');
@@ -1176,10 +1100,20 @@ window.viewWeekDetails = function(employeeId, weekKey) {
             </div>
         </div>
 
-        ${hasDed ? `
-            <div style="background:rgba(62,207,168,.12); padding:12px 14px; border-radius:8px; margin-bottom:12px; border:1px dashed var(--teal); display:flex; justify-content:space-between; align-items:center;">
-                <span style="color:var(--teal); font-size:.8rem; font-weight:600;">💰 −20% к выплате</span>
-                <span style="color:var(--teal); font-weight:bold; font-size:1.2rem;">${Math.round(netValue).toLocaleString()} ₽</span>
+                ${(hasDed || activeAdv > 0) ? `
+            <div style="background:rgba(62,207,168,.12); padding:12px 14px; border-radius:8px; margin-bottom:12px; border:1px dashed var(--teal);">
+                ${activeAdv > 0 ? `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; color:var(--red); font-size:.8rem;">
+                    <span>💳 Аванс (активный)</span>
+                    <span style="font-weight:bold;">−${activeAdv.toLocaleString()} ₽</span>
+                </div>` : ''}
+                ${hasDed ? `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; color:var(--teal); font-size:.8rem;">
+                    <span>💰 Вычет −20%</span>
+                    <span style="font-weight:bold;">применён</span>
+                </div>` : ''}
+                <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px dashed var(--line); padding-top:6px; margin-top:6px;">
+                    <span style="color:var(--teal); font-size:.85rem; font-weight:600;">К выплате на руки</span>
+                    <span style="color:var(--teal); font-weight:bold; font-size:1.2rem;">${Math.round(netValue).toLocaleString()} ₽</span>
+                </div>
             </div>
         ` : ''}
         
@@ -1427,7 +1361,15 @@ async function saveEmployeeDay() {
         
         document.getElementById('editDayModal').classList.remove('active');
         document.getElementById('editDayModal').style.display = 'none';
-        
+
+        await logAction('day_edited', { 
+            employeeName: editDayData.employeeName, 
+            date: dateStr, 
+            hours: hours,
+            start: start,
+            end: end
+        });
+
         showNotification(`✅ День обновлён: ${hours > 0 ? hours + 'ч' : 'нерабочий'}`);
     } catch (error) {
         showNotification('❌ Ошибка сохранения: ' + error.message, true);
@@ -1484,6 +1426,13 @@ window.deleteDayAttendance = async function(employeeId, date) {
             await deleteDoc(d.ref);
             deleted++;
         }
+
+        await logAction('attendance_deleted', { 
+            employeeId: employeeId, 
+            date: date, 
+            deletedCount: deleted 
+        });
+
         showNotification(`🗑️ Удалено ${deleted} отметок за ${date}`);
     } catch (error) {
         showNotification('❌ Ошибка: ' + error.message, true);
@@ -1590,34 +1539,36 @@ function renderRequestsBanner() {
     const btn = document.getElementById('requestsBannerBtn');
     if (!banner) return;
 
-    const requests = Object.values(allRequests).filter(r => r.status === 'pending');
+    const reqsZp = Object.values(allRequests).filter(r => r.status === 'pending');
+    const reqsAdv = Object.values(allAdvanceRequests);
 
-    if (requests.length === 0) {
+    if (reqsZp.length === 0 && reqsAdv.length === 0) {
         banner.classList.remove('active');
         return;
     }
 
     banner.classList.add('active');
+    
+    let totalZp = reqsZp.reduce((sum, r) => sum + (r.netPay || r.finalPay || 0), 0);
+    let totalAdv = reqsAdv.reduce((sum, r) => sum + (r.amount || 0), 0);
 
-    // К выплате: netPay (после вычета), если есть, иначе finalPay
-    const total = requests.reduce((sum, r) => {
-        const amount = (typeof r.netPay === 'number') ? r.netPay : (r.finalPay || 0);
-        return sum + amount;
-    }, 0);
+    let html = '';
+    if (reqsZp.length > 0) html += `💰 ${reqsZp.length} ЗП (${totalZp.toLocaleString()} ₽)`;
+    if (reqsZp.length > 0 && reqsAdv.length > 0) html += ` | `;
+    if (reqsAdv.length > 0) html += `🏦 ${reqsAdv.length} Аванс (${totalAdv.toLocaleString()} ₽)`;
 
-    text.innerHTML = `💰 ${requests.length} ${pluralizeRequests(requests.length)} на ЗП
-        <small>Общая сумма к выплате: ${Math.round(total).toLocaleString()} ₽</small>`;
-    sub.textContent = requests.map(r => `${r.employeeName} (${r.weekRange})`).join(' · ');
+    text.innerHTML = `${html}<small>Нажмите, чтобы обработать</small>`;
+    sub.textContent = [
+        ...reqsZp.map(r => `${r.employeeName} (ЗП)`),
+        ...reqsAdv.map(r => `${r.employeeName} (Аванс)`)
+    ].join(' · ');
 
     btn.onclick = () => {
-        if (requests.length === 1) {
-            window.showRequestDetails(requests[0].id);
-        } else {
-            showRequestsList(requests);
-        }
+        if (reqsZp.length === 1 && reqsAdv.length === 0) window.showRequestDetails(reqsZp[0].id);
+        else if (reqsAdv.length === 1 && reqsZp.length === 0) window.showAdvanceDetails(reqsAdv[0].id);
+        else showAllRequestsList(reqsZp, reqsAdv);
     };
 }
-
 function pluralizeRequests(n) {
     const mod10 = n % 10;
     const mod100 = n % 100;
@@ -1918,5 +1869,197 @@ window.showRequestDetails = function(requestId) {
     
     document.getElementById('closeRequestBtn').addEventListener('click', () => modal.classList.remove('active'));
 };
+
+function showAllRequestsList(reqsZp, reqsAdv) {
+    const modal = document.getElementById('modalOverlay');
+    document.getElementById('modalTitle').textContent = 'Активные запросы';
+    let html = '';
+    reqsZp.forEach(r => {
+        html += `<div style="padding:10px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+            <div><b>${r.employeeName}</b> <span style="color:var(--mut); font-size:.8rem;">(ЗП)</span></div>
+            <button class="btn-sm teal" onclick="document.getElementById('modalOverlay').classList.remove('active'); window.showRequestDetails('${r.id}')">Открыть</button>
+        </div>`;
+    });
+    reqsAdv.forEach(r => {
+        html += `<div style="padding:10px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+            <div><b>${r.employeeName}</b> <span style="color:var(--mut); font-size:.8rem;">(Аванс)</span></div>
+            <button class="btn-sm teal" onclick="document.getElementById('modalOverlay').classList.remove('active'); window.showAdvanceDetails('${r.id}')">Открыть</button>
+        </div>`;
+    });
+    document.getElementById('modalBody').innerHTML = html;
+    document.getElementById('modalActions').innerHTML = `<button class="btn btn-ghost" onclick="document.getElementById('modalOverlay').classList.remove('active')">Закрыть</button>`;
+    modal.classList.add('active');
+}
+
+window.showAdvanceDetails = function(requestId) {
+    const request = Object.values(allAdvanceRequests).find(r => r.id === requestId);
+    if (!request) return;
+    
+    const modal = document.getElementById('modalOverlay');
+    document.getElementById('modalTitle').textContent = `🏦 Запрос на Аванс`;
+    document.getElementById('modalSub').textContent = `${request.employeeName} · ${new Date(request.createdAt).toLocaleDateString()}`;
+    
+    document.getElementById('modalBody').innerHTML = `
+        <div style="background:rgba(255,255,255,.05); padding:20px; border-radius:10px; text-align:center; margin-bottom:16px;">
+            <div style="color:var(--mut); font-size:.8rem; margin-bottom:8px;">Сумма запроса</div>
+            <div style="font-size:2.5rem; font-weight:bold; color:var(--amber);">${request.amount.toLocaleString()} ₽</div>
+        </div>
+        ${request.comment ? `
+            <div style="background:rgba(255,255,255,.02); padding:12px; border-radius:8px; font-size:.85rem; color:var(--mut);">
+                💬 <i>${request.comment}</i>
+            </div>
+        ` : ''}
+    `;
+    
+    document.getElementById('modalActions').innerHTML = `
+        <button class="btn btn-amber" id="approveAdvBtn" style="background:var(--teal); color:#0c1520; font-weight:bold;">✅ Выдать аванс</button>
+        <button class="btn btn-ghost" id="closeAdvBtn">Закрыть</button>
+    `;
+    modal.classList.add('active');
+    
+    document.getElementById('approveAdvBtn').onclick = async () => {
+        // if (!confirm(`✅ Подтвердить выдачу аванса ${request.amount.toLocaleString()} ₽?`)) return;
+        try {
+            await addDoc(collection(db, 'salaryAdvances'), {
+                employeeId: request.employeeId,
+                employeeName: request.employeeName,
+                amount: request.amount,
+                type: 'advance',
+                status: 'active',
+                createdAt: new Date().toISOString(),
+                comment: request.comment || 'Аванс из системы'
+            });
+            
+            await updateDoc(doc(db, 'salaryAdvanceRequests', requestId), {
+                status: 'paid', paidAt: new Date().toISOString()
+            });
+            await logAction('advance_approved', { 
+                employeeName: request.employeeName, 
+                amount: request.amount 
+            });
+
+            modal.classList.remove('active');
+            showNotification(`✅ Аванс выдан!`);
+            renderSalary();
+            renderRequestsBanner();
+        } catch (e) { showNotification('❌ Ошибка: ' + e.message, true); }
+    };
+    document.getElementById('closeAdvBtn').onclick = () => modal.classList.remove('active');
+};
+
+window.showRequestDetails = function(requestId) {
+    const request = Object.values(allRequests).find(r => r.id === requestId);
+    if (!request) {
+        showNotification('❌ Запрос не найден', true);
+        return;
+    }
+    
+    const emp = allEmployees.find(e => e.id === request.employeeId);
+    const dates = getWeekDatesUTC(currentSalaryWeek);
+    const weekData = getWeekDataForEmployee(request.employeeId, request.weekKey, dates);
+    const settings = getEmployeeSettings(request.employeeId);
+    const stats = calculateWeekPay(weekData, settings);
+    
+    const modal = document.getElementById('modalOverlay');
+    const body = document.getElementById('modalBody');
+    const actions = document.getElementById('modalActions');
+    const title = document.getElementById('modalTitle');
+    const sub = document.getElementById('modalSub');
+    if (!modal || !body) return;
+    
+    title.textContent = `💰 Запрос на ЗП`;
+    sub.textContent = `${request.employeeName} · ${request.weekRange}`;
+    
+    const activeAdv = allAdvances[request.employeeId]?.total || 0;
+    const grossAfterAdv = Math.max(0, stats.total - activeAdv);
+    const hasDed = hasDeduction(request.employeeId, settings);
+    const netPay = hasDed ? grossAfterAdv * (1 - DEDUCTION_RATE) : grossAfterAdv;
+    
+    body.innerHTML = `
+        <div style="background:rgba(62,207,168,.1); padding:14px; border-radius:10px; margin-bottom:16px; border:1px solid var(--teal);">
+            <div style="color:var(--teal); font-size:.75rem; font-weight:bold; margin-bottom:8px;">
+                💰 СОТРУДНИК ЗАПРАШИВАЕТ ЗАРПЛАТУ
+            </div>
+            <div style="font-size:.7rem; color:var(--mut);">
+                Запрос создан: ${new Date(request.createdAt).toLocaleString('ru-RU')}
+            </div>
+        </div>
+        
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
+            <div style="background:rgba(255,255,255,.05); padding:12px; border-radius:8px; text-align:center;">
+                <div style="color:var(--mut); font-size:.7rem;">Дней</div>
+                <div style="font-size:1.4rem; font-weight:bold; color:var(--amber2);">${stats.days}</div>
+            </div>
+            <div style="background:rgba(255,255,255,.05); padding:12px; border-radius:8px; text-align:center;">
+                <div style="color:var(--mut); font-size:.7rem;">Часов</div>
+                <div style="font-size:1.4rem; font-weight:bold; color:var(--amber2);">${stats.totalHours.toFixed(1)}</div>
+            </div>
+            <div style="background:rgba(255,255,255,.05); padding:12px; border-radius:8px; text-align:center;">
+                <div style="color:var(--mut); font-size:.7rem;">ЗП (всего)</div>
+                <div style="font-size:1.4rem; font-weight:bold; color:var(--amber);">${stats.total.toLocaleString()} ₽</div>
+            </div>
+            <div style="background:rgba(229,72,77,.1); padding:12px; border-radius:8px; text-align:center; border:1px solid var(--red);">
+                <div style="color:var(--mut); font-size:.7rem;">Аванс</div>
+                <div style="font-size:1.4rem; font-weight:bold; color:var(--red);">−${activeAdv.toLocaleString()} ₽</div>
+            </div>
+        </div>
+        
+        ${hasDed ? `
+            <div style="background:rgba(62,207,168,.12); padding:10px; border-radius:8px; margin-bottom:12px; border:1px dashed var(--teal); text-align:center;">
+                <span style="color:var(--teal); font-size:.75rem; font-weight:600;">💰 Вычет −20% применён к остатку</span>
+            </div>
+        ` : ''}
+        
+        <div style="background:rgba(62,207,168,.15); padding:14px; border-radius:10px; border:2px solid var(--teal); text-align:center;">
+            <div style="color:var(--mut); font-size:.75rem; margin-bottom:4px;">К ВЫПЛАТЕ НА РУКИ</div>
+            <div style="font-size:2rem; font-weight:bold; color:var(--teal);">${Math.round(netPay).toLocaleString()} ₽</div>
+        </div>
+    `;
+    
+    actions.innerHTML = `
+        <button class="btn btn-amber" id="markPaidBtn" style="background:var(--teal); color:#0c1520; font-weight:bold;">
+            ✅ Оплачено
+        </button>
+        <button class="btn btn-ghost" id="closeRequestBtn">Закрыть</button>
+    `;
+    
+    modal.classList.add('active');
+    
+    document.getElementById('markPaidBtn').addEventListener('click', async () => {
+        if (!confirm(`✅ Подтвердить выплату ${Math.round(netPay).toLocaleString()} ₽ сотруднику ${request.employeeName}?`)) return;
+        
+        try {
+            await updateDoc(doc(db, 'salaryRequests', requestId), {
+                status: 'paid',
+                paidAt: new Date().toISOString(),
+                paidBy: currentUser?.email || 'admin',
+                paidAmount: Math.round(netPay)
+            });
+            await logAction('salary_paid', { 
+                employeeName: request.employeeName, 
+                amount: Math.round(netPay) 
+            });
+            
+            if (activeAdv > 0 && allAdvances[request.employeeId]?.list) {
+                for (const adv of allAdvances[request.employeeId].list) {
+                    await updateDoc(doc(db, 'salaryAdvances', adv.id), {
+                        status: 'repaid', repaidAt: new Date().toISOString()
+                    });
+                }
+            }
+
+            modal.classList.remove('active');
+            showNotification(`✅ Выплата ${request.employeeName} подтверждена!`);
+            
+            renderSalary();
+            renderRequestsBanner();
+        } catch (error) {
+            showNotification('❌ Ошибка: ' + error.message, true);
+        }
+    });
+    
+    document.getElementById('closeRequestBtn').addEventListener('click', () => modal.classList.remove('active'));
+};
+
 
 console.log('✅ Админ-панель загружена');

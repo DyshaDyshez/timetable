@@ -35,6 +35,8 @@
         } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import { calculateWeekPay } from './modules/calculator.js';
         import { calculateDayHoursFromLogs } from './modules/attendance.js';
+        import { DEDUCTION_EMPLOYEES, DEDUCTION_RATE, hasDeduction } from './modules/deductions.js';
+
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -195,15 +197,20 @@
 
                     const weekData = { workDays, hours };
                     const stats = calculateWeekPay(weekData, settings);
+                    
+                    // ★ Считаем вычет 20%
+                    const ded = hasDeduction(emp.id, settings);
+                    const netValue = ded ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
 
                     reportData.push({
                         name: emp.name || 'Без имени',
                         days: stats.days,
                         totalHours: stats.totalHours,
-                        salary: stats.total
+                        salary: netValue, // ★ Отправляем сумму с вычетом
+                        hasDed: ded
                     });
 
-                    totalSalary += stats.total;
+                    totalSalary += netValue; // ★ В итог тоже идет сумма с вычетом
                     totalEmployees++;
                 }
 
@@ -219,7 +226,8 @@
                 message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
                 reportData.forEach((emp) => {
-                    message += `👤 ${emp.name}   |   ${emp.days} дн. / ${emp.totalHours.toFixed(2)} ч  |  ${emp.salary.toLocaleString()} ₽\n`;
+                    const dedMark = emp.hasDed ? ' (−20%)' : '';
+                    message += `👤 ${emp.name}   |   ${emp.days} дн. / ${emp.totalHours.toFixed(2)} ч  |  ${Math.round(emp.salary).toLocaleString()} ₽${dedMark}\n`;
                 });
 
                 message += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
