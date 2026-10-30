@@ -462,7 +462,10 @@ async function update() {
             try {
                 const advQ = query(collection(db, 'salaryAdvances'), where('employeeId', '==', EMPLOYEE_ID), where('status', '==', 'active'));
                 const advSnap = await getDocs(advQ);
-                advSnap.forEach(d => activeAdvance += d.data().amount || 0);
+                advSnap.forEach(d => {
+                    const rem = d.data().remainingAmount !== undefined ? d.data().remainingAmount : d.data().amount;
+                    activeAdvance += rem || 0;
+                });
             } catch(e) {}
     
             if (activeAdvance > 0) {
@@ -475,10 +478,10 @@ async function update() {
                 useAdvanceInCalc = false; // Если аванса нет — не учитываем
             }
     
-            // Считаем сумму после аванса
-            const amountAfterAdvance = Math.max(0, total - (useAdvanceInCalc ? activeAdvance : 0));
+            // Считаем сумму: сначала вычитаем налог, потом аванс
             const hasDed = hasDeduction(EMPLOYEE_ID, settings);
-            const netTotal = hasDed ? amountAfterAdvance * (1 - DEDUCTION_RATE) : amountAfterAdvance;
+            const afterTax = hasDed ? total * (1 - DEDUCTION_RATE) : total;
+            const netTotal = Math.max(0, afterTax - (useAdvanceInCalc ? activeAdvance : 0));
     
             if (hasDed || (useAdvanceInCalc && activeAdvance > 0)) {
                 if (!netSalaryBlock) {
@@ -874,7 +877,6 @@ async function init() {
     initSalaryModal();
     initAdvanceModal();
     await refreshWeek();
-    await refreshWeek();
     await loadMyAdvances(); // ★ Загружаем авансы
 
 
@@ -1004,24 +1006,25 @@ async function openSalaryModal() {
         );
         const advSnap = await getDocs(advQ);
         advSnap.forEach(d => {
-            totalAdvances += d.data().amount || 0;
+            const rem = d.data().remainingAmount !== undefined ? d.data().remainingAmount : d.data().amount;
+            totalAdvances += rem || 0;
         });
     } catch (e) {
         console.warn('Ошибка загрузки авансов:', e);
     }
 
-    // ★ ЗП запрашивается БЕЗ учета аванса (только вычет 20%, если есть)
     const hasDed = hasDeduction(EMPLOYEE_ID, settings);
-    const netPay = hasDed ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
+    const afterTax = hasDed ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
+    const netPay = Math.max(0, afterTax - totalAdvances);
 
     _modalData = {
         weekKey,
         weekRange,
         stats,
-        totalAdvances, // сохраняем для отображения
-        finalPay: stats.total, // ★ Полная сумма ЗП (до аванса)
+        totalAdvances,
+        deductAmount: totalAdvances, // сумма к вычету (по умолчанию всё)
         hasDeduction: hasDed,
-        netPay: netPay // ★ Сумма к выплате БЕЗ учета аванса
+        netPay: netPay
     };
 
     document.getElementById('salaryModalPeriod').textContent = weekRange;
@@ -1052,11 +1055,23 @@ async function openSalaryModal() {
     }
 
     const advanceRow = document.getElementById('salaryModalAdvanceRow');
+    const deductInput = document.getElementById('salaryDeductInput');
     if (totalAdvances > 0) {
         advanceRow.style.display = 'flex';
-        // ★ Пишем, что аванс НЕ вычтен из этой суммы, а будет удержан при выплате
-        document.getElementById('salaryModalAdvance').textContent = `${totalAdvances.toLocaleString()} ₽ (будет удержан)`;
-        document.getElementById('salaryModalAdvance').style.color = 'var(--mut)';
+        document.getElementById('salaryModalAdvance').textContent = totalAdvances.toLocaleString() + ' ₽';
+        deductInput.max = totalAdvances;
+        deductInput.value = totalAdvances; // по умолчанию вычитаем всё
+        
+        // Пересчёт при изменении поля
+        deductInput.oninput = () => {
+            let deduct = parseFloat(deductInput.value) || 0;
+            if (deduct > totalAdvances) deduct = totalAdvances;
+            if (deduct < 0) deduct = 0;
+            const newNetPay = Math.max(0, afterTax - deduct);
+            document.getElementById('salaryModalFinal').textContent = Math.round(newNetPay).toLocaleString();
+            _modalData.netPay = newNetPay;
+            _modalData.deductAmount = deduct;
+        };
     } else {
         advanceRow.style.display = 'none';
     }
@@ -1095,7 +1110,7 @@ async function confirmSalaryRequest() {
     const cancelBtn = document.getElementById('salaryModalCancel');
     if (!_modalData || !confirmBtn) return;
 
-    const { weekKey, weekRange, stats, totalAdvances, finalPay, hasDeduction: hasDed, netPay } = _modalData;
+    const { weekKey, weekRange, stats, totalAdvances, deductAmount, hasDeduction: hasDed, netPay } = _modalData;
 
     confirmBtn.disabled = true;
     cancelBtn.disabled = true;
@@ -1113,7 +1128,8 @@ async function confirmSalaryRequest() {
             total: stats.total,
             sundayBonus: stats.sundayBonus || 0,
             advances: totalAdvances,
-            finalPay: finalPay,          // до вычета, за вычетом авансов
+            deductAmount: deductAmount, // ★ Сумма, которую сотрудник хочет погасить
+            finalPay: netPay,           // ★ Сумма, которая реально к выплате     // до вычета, за вычетом авансов
             deductionApplied: hasDed,    // ★ применён ли вычет
             netPay: Math.round(netPay),  // ★ сумма к выплате (после вычета)
             status: 'pending',
@@ -1477,7 +1493,9 @@ async function loadMyAdvances() {
         advances.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         for (const adv of advances) {
-            total += adv.amount || 0;
+            // Используем remainingAmount (остаток), если его нет — берем amount
+            const currentBalance = adv.remainingAmount !== undefined ? adv.remainingAmount : adv.amount;
+            total += currentBalance;
             
             const date = adv.createdAt ? new Date(adv.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }) : '—';
             const comment = adv.comment || 'Без комментария';
@@ -1485,11 +1503,11 @@ async function loadMyAdvances() {
             html += `
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: rgba(255,255,255,.03); border-radius: 6px; font-size: .85rem;">
                     <div>
-                        <div style="font-weight: 600;">Аванс</div>
+                         <div style="font-weight: 600;">Аванс ${currentBalance < adv.amount ? '(остаток)' : ''} — ${currentBalance.toLocaleString()} ₽</div>
                         <div style="font-size: .7rem; color: var(--mut);">${date} · ${comment}</div>
                     </div>
                     <div style="font-weight: bold; color: var(--red); font-family: var(--mono); white-space: nowrap;">
-                        ${adv.amount.toLocaleString()} ₽
+                        ${currentBalance.toLocaleString()} ₽
                     </div>
                 </div>
             `;

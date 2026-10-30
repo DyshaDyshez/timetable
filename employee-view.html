@@ -106,7 +106,7 @@
             line-height: 1;
             color: transparent;
             -webkit-text-stroke: 1.5px var(--amber);
-            text-stroke: 1.5px var(--amber);
+            /* text-stroke: 1.5px var(--amber); */
         }
         @supports not (-webkit-text-stroke: 1px red) {
             .rule .num { color: var(--amber); }
@@ -1411,9 +1411,16 @@
                 </div>
 
                 <!-- Авансы (если есть) -->
-                <div class="salary-extra-row advance" id="salaryModalAdvanceRow" style="display: none;">
-                    <span class="extra-label">💳 Активные авансы</span>
-                    <span class="extra-value" id="salaryModalAdvance">−0 ₽</span>
+                <div class="salary-extra-row advance" id="salaryModalAdvanceRow" style="display: none; flex-direction: column; align-items: stretch; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span class="extra-label">💳 Остаток аванса</span>
+                        <span class="extra-value" id="salaryModalAdvance">0 ₽</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.2); padding: 6px 10px; border-radius: 6px;">
+                        <span style="font-size: 0.75rem; color: var(--txt);">Вычесть сейчас:</span>
+                        <input type="number" id="salaryDeductInput" style="flex: 1; background: var(--bg2); border: 1px solid var(--line); color: var(--txt); border-radius: 4px; padding: 4px 8px; text-align: right; font-family: var(--mono);" min="0" step="100">
+                        <span style="font-size: 0.8rem; color: var(--mut);">₽</span>
+                    </div>
                 </div>
 
                 <!-- К выплате -->
