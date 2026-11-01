@@ -500,7 +500,7 @@ async function update() {
                 html += `<div style="font-size:0.9rem; color:var(--red);">− аванс ${activeAdvance.toLocaleString()} ₽</div>`;
             }
             if (hasDed) {
-                html += `<div style="font-size:0.9rem; color:var(--teal);">− ${Math.round(DEDUCTION_RATE*100)}% налог</div>`;
+                html += `<div style="font-size:0.9rem; color:var(--teal);">− ${Math.round(DEDUCTION_RATE*100)}% вычет</div>`;
             }
             html += `<div style="font-size: 1.5rem; font-weight: bold; color: var(--teal);">${Math.round(netTotal).toLocaleString()} ₽</div>`;
 

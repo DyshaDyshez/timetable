@@ -15,7 +15,7 @@
 import { firebaseConfig } from './config.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { 
-    getFirestore, 
+    initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
     collection, doc, getDocs, addDoc, updateDoc, deleteDoc, setDoc,
     query, where, onSnapshot, getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -36,7 +36,11 @@ import { DEDUCTION_EMPLOYEES, DEDUCTION_RATE, hasDeduction } from './modules/ded
 // ИНИЦИАЛИЗАЦИЯ
 // ============================================
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+    })
+});
 const auth = getAuth(app);
 initAudit(app); // ★ Включаем логирование
 
@@ -1879,7 +1883,7 @@ document.getElementById('sendBitrixBtn')?.addEventListener('click', sendBitrixRe
 //                 <div style="font-size:1.4rem; font-weight:bold; color:var(--amber2);">${stats.totalHours.toFixed(1)}</div>
 //             </div>
 //             <div style="background:rgba(255,255,255,.05); padding:12px; border-radius:8px; text-align:center;">
-//                 <div style="color:var(--mut); font-size:.7rem;">ЗП (после налога 20%)</div>
+//                 <div style="color:var(--mut); font-size:.7rem;">ЗП (после вычета 20%)</div>
 //                 <div style="font-size:1.4rem; font-weight:bold; color:var(--amber);">${Math.round(afterTax).toLocaleString()} ₽</div>
 //             </div>
 //             <div style="background:rgba(229,72,77,.1); padding:12px; border-radius:8px; text-align:center; border:1px solid var(--red);">
@@ -2122,7 +2126,7 @@ window.showRequestDetails = function(requestId) {
     title.textContent = `💰 Запрос на ЗП`;
     sub.textContent = `${request.employeeName} · ${request.weekRange}`;
     
-    // ★ ПРАВИЛЬНЫЙ РАСЧЁТ: сначала налог, потом аванс
+    // ★ ПРАВИЛЬНЫЙ РАСЧЁТ: сначала вычет, потом аванс
     const activeAdv = allAdvances[request.employeeId]?.total || 0;
     const hasDed = hasDeduction(request.employeeId, settings);
     const afterTax = hasDed ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
@@ -2148,7 +2152,7 @@ window.showRequestDetails = function(requestId) {
                 <div style="font-size:1.4rem; font-weight:bold; color:var(--amber2);">${stats.totalHours.toFixed(1)}</div>
             </div>
             <div style="background:rgba(255,255,255,.05); padding:12px; border-radius:8px; text-align:center;">
-                <div style="color:var(--mut); font-size:.7rem;">ЗП (после налога 20%)</div>
+                <div style="color:var(--mut); font-size:.7rem;">ЗП (после вычета 20%)</div>
                 <div style="font-size:1.4rem; font-weight:bold; color:var(--amber);">${Math.round(afterTax).toLocaleString()} ₽</div>
             </div>
             <div style="background:rgba(229,72,77,.1); padding:12px; border-radius:8px; text-align:center; border:1px solid var(--red);">
