@@ -1031,7 +1031,11 @@ window.showEmployeeSettings = function(employeeId) {
         `
         : '';
 
-    body.innerHTML = `
+        body.innerHTML = `
+        <div class="field" style="background:rgba(255,181,46,.1); padding:10px; border-radius:8px; margin-bottom:12px; border:1px dashed var(--amber);">
+            <label style="color:var(--amber); font-weight:bold;">✏️ Имя сотрудника (Фамилия И.)</label>
+            <input type="text" id="set_name" value="${(emp.name || '').replace(/"/g, '&quot;')}" placeholder="Например: Каюдин И." style="font-size:1.1rem; font-weight:bold; padding:10px;">
+        </div>
         <div class="field"><label>Базовая ставка (день 1–5), ₽</label><input type="number" id="set_rDay" value="${settings.rDay}" step="100" min="0"></div>
         <div class="field"><label>Повышенная ставка (день 6–7), ₽</label><input type="number" id="set_rExtra" value="${settings.rExtra}" step="100" min="0"></div>
         <div class="field"><label>Переработка (до лимита), ₽/ч</label><input type="number" id="set_rOt1" value="${settings.rOt1}" step="50" min="0"></div>
@@ -1073,6 +1077,8 @@ window.showEmployeeSettings = function(employeeId) {
     modal.classList.add('active');
 
     document.getElementById('modalSaveBtn').addEventListener('click', async () => {
+        const newName = (document.getElementById('set_name')?.value || '').trim();
+        
         const data = {
             rDay: parseFloat(document.getElementById('set_rDay')?.value) || 3000,
             rExtra: parseFloat(document.getElementById('set_rExtra')?.value) || 3500,
@@ -1086,6 +1092,7 @@ window.showEmployeeSettings = function(employeeId) {
                 ? (document.getElementById('set_deductionDisabled')?.checked || false)
                 : undefined
         };
+        
         try {
             const payload = {
                 rDay: data.rDay, rExtra: data.rExtra, rOt1: data.rOt1, rOt2: data.rOt2,
@@ -1099,12 +1106,34 @@ window.showEmployeeSettings = function(employeeId) {
             }
             await setDoc(doc(db, 'salarySettings', employeeId), payload, { merge: true });
             if (data.pin) await updateDoc(doc(db, 'salaryEmployees', employeeId), { pin: data.pin });
+            
+            // ★ ЛОГИКА ПЕРЕИМЕНОВАНИЯ
+            if (newName && newName !== emp.name) {
+                await updateDoc(doc(db, 'salaryEmployees', employeeId), { name: newName });
+                
+                // Обновляем имя в старых записях, чтобы в истории не было путаницы
+                const colls = ['salaryRequests', 'salaryAdvances', 'salaryAdvanceRequests', 'employeeSchedule'];
+                for (const coll of colls) {
+                    try {
+                        const q = query(collection(db, coll), where('employeeId', '==', employeeId));
+                        const snap = await getDocs(q);
+                        for (const d of snap.docs) {
+                            await updateDoc(d.ref, { employeeName: newName });
+                        }
+                    } catch (e) {
+                        console.warn(`Не удалось обновить имя в ${coll}`, e);
+                    }
+                }
+            }
+
             await logAction('settings_changed', { 
-                employeeName: emp.name, 
+                employeeName: newName || emp.name, 
                 newSettings: data 
             });
             modal.classList.remove('active');
-            showNotification('✅ Настройки сохранены');
+            showNotification(newName && newName !== emp.name 
+                ? `✅ Имя изменено: ${emp.name} → ${newName}` 
+                : '✅ Настройки сохранены');
         } catch (error) {
             showNotification('❌ Ошибка сохранения настроек', true);
         }
