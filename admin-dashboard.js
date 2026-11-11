@@ -56,6 +56,7 @@ let allSettings = {};
 let allRequests = {};
 let allSchedules = {};
 let currentSalaryWeek = 0;
+let useAdvanceInAdminCalc = true; // ★ Переключатель: учитывать аванс в итоговой ЗП
 let currentAttWeek = 0;
 let currentScheduleWeek = 0;
 let isRendering = false;
@@ -413,13 +414,13 @@ function renderSalary() {
             continue;
         }
 
-        if (!weekData.anyData && hasRequest) {
+                if (!weekData.anyData && hasRequest) {
             const settings0 = getEmployeeSettings(emp.id);
             const ded0 = hasDeduction(emp.id, settings0);
             const gross0 = requestData.finalPay || requestData.total || 0;
             
             const afterTax = ded0 ? gross0 * (1 - DEDUCTION_RATE) : gross0;
-            const net0 = Math.max(0, afterTax - activeAdv);
+            const net0 = Math.max(0, afterTax - (useAdvanceInAdminCalc ? activeAdv : 0)); // ★ Учитываем чекбокс
 
             rows.push({
                 emp, weekData, hasRequest: true, requestData, noData: false,
@@ -431,12 +432,12 @@ function renderSalary() {
             continue;
         }
 
-        const settings = getEmployeeSettings(emp.id);
+                const settings = getEmployeeSettings(emp.id);
         const stats = calculateWeekPay(weekData, settings);
         const hasDed = hasDeduction(emp.id, settings);
         
         const afterTax = hasDed ? stats.total * (1 - DEDUCTION_RATE) : stats.total;
-        const netValue = Math.max(0, afterTax - activeAdv);
+        const netValue = Math.max(0, afterTax - (useAdvanceInAdminCalc ? activeAdv : 0)); // ★ Учитываем чекбокс
 
         totalPay += stats.total;
         totalNet += netValue;
@@ -458,18 +459,23 @@ function renderSalary() {
             <col style="width: 80px;"><col style="width: 120px;"><col style="width: 120px;">
             <col style="width: 120px;"><col style="width: 100px;"><col style="width: 110px;">
         </colgroup>
-                <thead><tr>
+                        <thead><tr>
             <th class="col-employee">Сотрудник</th>
             <th style="text-align:center;">Дней</th>
             <th style="text-align:center;">Часов</th>
             <th style="text-align:center;">Перераб.</th>
             <th style="text-align:right;">Начислено</th>
-            <th style="text-align:center;">Аванс</th>
+            <th style="text-align:center;">
+                Аванс<br>
+                <label style="font-size:0.65rem; font-weight:normal; cursor:pointer; display:inline-flex; align-items:center; gap:4px; margin-top:4px; color:var(--txt); opacity:0.9;" title="Учитывать аванс при расчете К выплате">
+                    <input type="checkbox" ${useAdvanceInAdminCalc ? 'checked' : ''} onchange="window.toggleAdminAdvance(this.checked)" style="cursor:pointer; transform:scale(1.2);">
+                    вычитать
+                </label>
+            </th>
             <th style="text-align:right;">К выплате</th>
             <th style="text-align:center;">Статус</th>
             <th style="text-align:center;">Действия</th>
         </tr></thead><tbody>`;
-
     for (const row of rows) {
         const { emp, hasRequest, requestData, noData, stats, sourceLabel, hasDed, netValue, activeAdv, advReq } = row;
 
@@ -485,10 +491,13 @@ function renderSalary() {
         const rowStyle = hasRequest ? (isPaid ? 'background:rgba(255,255,255,.02);' : 'background:rgba(62,207,168,.08); border-left:4px solid var(--teal);') : '';
         const payStyle = isPaid ? 'text-decoration:line-through; opacity:0.5;' : 'color:var(--amber);';
 
-        let advCell = `<span style="color:var(--mut);">—</span>`;
+                let advCell = `<span style="color:var(--mut);">—</span>`;
         if (activeAdv > 0) {
-            // ★ Добавили title (всплывающую подсказку) и пометку
-            advCell = `<span style="font-weight:700; color:var(--red); white-space:nowrap; cursor:help;" title="Остаток аванса, перенесенный с прошлых недель">${activeAdv.toLocaleString()} ₽*</span>`;
+            // ★ Если чекбокс снят, делаем текст серым и зачеркнутым
+            const advStyle = useAdvanceInAdminCalc 
+                ? 'color:var(--red); font-weight:700;' 
+                : 'color:var(--mut); text-decoration:line-through; font-weight:400;';
+            advCell = `<span style="${advStyle} white-space:nowrap; cursor:help;" title="Остаток аванса">${activeAdv.toLocaleString()} ₽</span>`;
         }
         
         if (advReq) {
@@ -2384,5 +2393,10 @@ window.manualPayout = async function(employeeId, weekKey, total, days, totalHour
     }
 };
 
+// ★ Переключатель аванса
+window.toggleAdminAdvance = function(isChecked) {
+    useAdvanceInAdminCalc = isChecked;
+    renderSalary();
+};
 
 console.log('✅ Админ-панель загружена');
