@@ -56,7 +56,8 @@ let allSettings = {};
 let allRequests = {};
 let allSchedules = {};
 let currentSalaryWeek = 0;
-let useAdvanceInAdminCalc = true; // ★ Переключатель: учитывать аванс в итоговой ЗП
+// ★ Читаем сохранённое значение из localStorage (по умолчанию true, если ничего нет)
+let useAdvanceInAdminCalc = localStorage.getItem('admin_useAdvanceInCalc') !== 'false';
 let currentAttWeek = 0;
 let currentScheduleWeek = 0;
 let isRendering = false;
@@ -2396,6 +2397,7 @@ window.manualPayout = async function(employeeId, weekKey, total, days, totalHour
 // ★ Переключатель аванса
 window.toggleAdminAdvance = function(isChecked) {
     useAdvanceInAdminCalc = isChecked;
+    localStorage.setItem('admin_useAdvanceInCalc', isChecked); // ★ Сохраняем выбор
     renderSalary();
 };
 
