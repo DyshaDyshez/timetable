@@ -1060,10 +1060,6 @@ window.showEmployeeSettings = function(employeeId) {
                 <span>Почасовая (часы × ставка)</span>
             </label>
         </div>
-        <div class="hourly-rate-field" id="hourlyRateField" style="${settings.payType === 'hourly' ? '' : 'display:none;'}">
-            <label>Ставка в час, ₽</label>
-            <input type="number" id="set_hourlyRate" value="${settings.hourlyRate || 500}" step="50" min="0">
-        </div>
         <div class="field" id="hourlyRateField" style="${settings.payType === 'hourly' ? '' : 'display:none;'}">
             <label>Ставка в час, ₽</label>
             <input type="number" id="set_hourlyRate" value="${settings.hourlyRate || 500}" step="50" min="0">
@@ -1225,7 +1221,8 @@ window.showEmployeeSettings = function(employeeId) {
             showNotification('❌ Ошибка удаления: ' + error.message, true);
         }
     });
-};
+}; // <--- ВОТ ЭТА СКОБКА ЗАКРЫВАЕТ ФУНКЦИЮ showEmployeeSettings
+
 
 // ============================================
 // ДЕТАЛИ НЕДЕЛИ

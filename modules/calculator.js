@@ -21,6 +21,51 @@ export function calculateWeekPay(weekData, settings = {}) {
     // ★ НАДБАВКА ЗА ВОСКРЕСЕНЬЕ
     const sundayBonusEnabled = settings.sundayBonusEnabled === true;
     const sundayBonusAmount = settings.sundayBonusAmount || 1000;
+
+    // ═══════════════════════════════════════════════════════════
+    // ★ ПОЧАСОВАЯ ОПЛАТА (если выбран этот тип — считаем только часы)
+    // ═══════════════════════════════════════════════════════════
+    if (settings.payType === 'hourly') {
+        let daysCount = 0;
+        let totalHours = 0;
+        
+        for (let i = 0; i < workDays.length; i++) {
+            if (workDays[i] && hours[i] > 0) {
+                daysCount++;
+                totalHours += Number(hours[i]);
+            }
+        }
+
+        const hourlyRate = Number(settings.hourlyRate) || 0;
+        const payBase = totalHours * hourlyRate;
+        
+        let sundayBonus = 0;
+        let sundayBonusCount = 0;
+        if (sundayBonusEnabled && workDays[6] && hours[6] > 0) {
+            sundayBonus = sundayBonusAmount;
+            sundayBonusCount = 1;
+        }
+
+        const total = payBase + sundayBonus;
+        const norm = daysCount * hpd;
+
+        return {
+            days: daysCount,
+            totalHours,
+            norm,
+            ot: 0, ot1: 0, ot2: 0,
+            payBase,
+            payExtra: 0,
+            payOt1: 0,
+            payOt2: 0,
+            total,
+            sundayBonus,
+            sundayBonusCount,
+            workDays,
+            hours
+        };
+    }
+    // ═══════════════════════════════════════════════════════════
     
     // Собираем рабочие дни (только где часы > 0)
     const workingDays = [];
