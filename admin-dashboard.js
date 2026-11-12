@@ -232,6 +232,8 @@ function getEmployeeSettings(employeeId) {
     const s = allSettings[employeeId];
     if (s) {
         return {
+            payType: s.payType || 'daily',
+            hourlyRate: s.hourlyRate || 0,
             rDay: s.rDay || 3000,
             rExtra: s.rExtra || 3500,
             rOt1: s.rOt1 || 400,
@@ -244,6 +246,7 @@ function getEmployeeSettings(employeeId) {
         };
     }
     return { 
+        payType: 'daily', hourlyRate: 0,
         rDay: 3000, rExtra: 3500, rOt1: 400, rOt2: 800, otLimit: 5, hpd: 8,
         sundayBonusEnabled: false,
         sundayBonusAmount: 1000,
@@ -1036,6 +1039,25 @@ window.showEmployeeSettings = function(employeeId) {
             <label style="color:var(--amber); font-weight:bold;">✏️ Имя сотрудника (Фамилия И.)</label>
             <input type="text" id="set_name" value="${(emp.name || '').replace(/"/g, '&quot;')}" placeholder="Например: Каюдин И." style="font-size:1.1rem; font-weight:bold; padding:10px;">
         </div>
+        <div class="pay-type-block">
+            <span class="pay-type-title">💵 Тип оплаты</span>
+            <label class="pay-type-option ${settings.payType !== 'hourly' ? 'active' : ''}">
+                <input type="radio" name="set_payType" value="daily" ${settings.payType !== 'hourly' ? 'checked' : ''}>
+                <span>По дням (оклад + переработка)</span>
+            </label>
+            <label class="pay-type-option ${settings.payType === 'hourly' ? 'active' : ''}">
+                <input type="radio" name="set_payType" value="hourly" ${settings.payType === 'hourly' ? 'checked' : ''}>
+                <span>Почасовая (часы × ставка)</span>
+            </label>
+        </div>
+        <div class="hourly-rate-field" id="hourlyRateField" style="${settings.payType === 'hourly' ? '' : 'display:none;'}">
+            <label>Ставка в час, ₽</label>
+            <input type="number" id="set_hourlyRate" value="${settings.hourlyRate || 500}" step="50" min="0">
+        </div>
+        <div class="field" id="hourlyRateField" style="${settings.payType === 'hourly' ? '' : 'display:none;'}">
+            <label>Ставка в час, ₽</label>
+            <input type="number" id="set_hourlyRate" value="${settings.hourlyRate || 500}" step="50" min="0">
+        </div>
         <div class="field"><label>Базовая ставка (день 1–5), ₽</label><input type="number" id="set_rDay" value="${settings.rDay}" step="100" min="0"></div>
         <div class="field"><label>Повышенная ставка (день 6–7), ₽</label><input type="number" id="set_rExtra" value="${settings.rExtra}" step="100" min="0"></div>
         <div class="field"><label>Переработка (до лимита), ₽/ч</label><input type="number" id="set_rOt1" value="${settings.rOt1}" step="50" min="0"></div>
@@ -1076,10 +1098,27 @@ window.showEmployeeSettings = function(employeeId) {
 `;
     modal.classList.add('active');
 
+        // ★ Показываем поле «Ставка в час» только для почасовиков
+        document.querySelectorAll('input[name="set_payType"]').forEach(r => {
+            r.addEventListener('change', () => {
+                const hourlyField = document.getElementById('hourlyRateField');
+                const isHourly = document.querySelector('input[name="set_payType"]:checked')?.value === 'hourly';
+                if (hourlyField) hourlyField.style.display = isHourly ? '' : 'none';
+                
+                // ★ Переключаем подсветку
+                document.querySelectorAll('.pay-type-option').forEach(opt => {
+                    const radio = opt.querySelector('input[type="radio"]');
+                    opt.classList.toggle('active', radio && radio.checked);
+                });
+            });
+        });
+
     document.getElementById('modalSaveBtn').addEventListener('click', async () => {
         const newName = (document.getElementById('set_name')?.value || '').trim();
         
         const data = {
+            payType: document.querySelector('input[name="set_payType"]:checked')?.value || 'daily',
+            hourlyRate: parseFloat(document.getElementById('set_hourlyRate')?.value) || 0,
             rDay: parseFloat(document.getElementById('set_rDay')?.value) || 3000,
             rExtra: parseFloat(document.getElementById('set_rExtra')?.value) || 3500,
             rOt1: parseFloat(document.getElementById('set_rOt1')?.value) || 400,
@@ -1095,6 +1134,8 @@ window.showEmployeeSettings = function(employeeId) {
         
         try {
             const payload = {
+                payType: data.payType,
+                hourlyRate: data.hourlyRate,
                 rDay: data.rDay, rExtra: data.rExtra, rOt1: data.rOt1, rOt2: data.rOt2,
                 otLimit: data.otLimit,
                 sundayBonusEnabled: data.sundayBonusEnabled,
@@ -1104,10 +1145,14 @@ window.showEmployeeSettings = function(employeeId) {
             if (isDeductionListed && data.deductionDisabled !== undefined) {
                 payload.deductionDisabled = data.deductionDisabled;
             }
+            
+            // 1. Сохраняем настройки (ставки, тип оплаты, почасовку и т.д.)
             await setDoc(doc(db, 'salarySettings', employeeId), payload, { merge: true });
+            
+            // 2. Сохраняем PIN
             if (data.pin) await updateDoc(doc(db, 'salaryEmployees', employeeId), { pin: data.pin });
             
-            // ★ ЛОГИКА ПЕРЕИМЕНОВАНИЯ
+            // 3. Логика переименования
             if (newName && newName !== emp.name) {
                 await updateDoc(doc(db, 'salaryEmployees', employeeId), { name: newName });
                 
@@ -1130,11 +1175,14 @@ window.showEmployeeSettings = function(employeeId) {
                 employeeName: newName || emp.name, 
                 newSettings: data 
             });
+            
             modal.classList.remove('active');
             showNotification(newName && newName !== emp.name 
                 ? `✅ Имя изменено: ${emp.name} → ${newName}` 
                 : '✅ Настройки сохранены');
+                
         } catch (error) {
+            console.error('Ошибка сохранения:', error);
             showNotification('❌ Ошибка сохранения настроек', true);
         }
     });
@@ -1168,10 +1216,6 @@ window.showEmployeeSettings = function(employeeId) {
         }
     });
 };
-
-
-
-
 
 // ============================================
 // ДЕТАЛИ НЕДЕЛИ

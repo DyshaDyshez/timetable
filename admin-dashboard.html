@@ -1015,6 +1015,113 @@
             background: rgba(255,181,46,.1);
             transform: scale(1.1);
         }
+
+        /* ============================================ */
+/* ★ БЛОК ВЫБОРА ТИПА ОПЛАТЫ В НАСТРОЙКАХ */
+/* ============================================ */
+.pay-type-block {
+    background: rgba(62, 207, 168, 0.08);
+    padding: 12px;
+    border-radius: 10px;
+    margin-bottom: 14px;
+    border: 1px dashed var(--teal);
+}
+
+.pay-type-block .pay-type-title {
+    color: var(--teal);
+    font-weight: bold;
+    display: block;
+    margin-bottom: 10px;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.pay-type-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    transition: background 0.2s, border-color 0.2s, transform 0.1s;
+    margin-bottom: 6px;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.pay-type-option:last-child {
+    margin-bottom: 0;
+}
+
+.pay-type-option:hover {
+    background: rgba(62, 207, 168, 0.12);
+    border-color: rgba(62, 207, 168, 0.3);
+}
+
+.pay-type-option.active {
+    background: rgba(62, 207, 168, 0.18);
+    border-color: var(--teal);
+    box-shadow: 0 0 0 1px var(--teal) inset;
+}
+
+.pay-type-option input[type="radio"] {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--teal);
+    margin: 0;
+}
+
+.pay-type-option span {
+    font-size: 0.9rem;
+    color: var(--txt);
+    user-select: none;
+}
+
+/* Поле для почасовой ставки */
+.hourly-rate-field {
+    background: rgba(62, 207, 168, 0.05);
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    border-left: 3px solid var(--teal);
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.hourly-rate-field label {
+    font-size: 0.75rem;
+    color: var(--teal);
+    margin-bottom: 8px;
+    display: block;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.hourly-rate-field input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--bg2);
+    color: var(--txt);
+    font-family: var(--mono);
+    font-size: 1.05rem;
+    font-weight: bold;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.hourly-rate-field input:focus {
+    border-color: var(--teal);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(62, 207, 168, 0.15);
+}
     </style>
 </head>
 <body>

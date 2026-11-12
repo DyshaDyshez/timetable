@@ -42,6 +42,7 @@ let currentData = null;
 let employeeName = 'Сотрудник';
 let allAttendance = {};
 let settings = { 
+    payType: 'daily', hourlyRate: 0,
     rDay: 3000, rExtra: 3500, rOt1: 400, rOt2: 800, otLimit: 5, hpd: 8,
     sundayBonusEnabled: false, sundayBonusAmount: 1000,
     deductionDisabled: false
@@ -135,6 +136,8 @@ async function loadSettings() {
         if (d.exists()) {
             const data = d.data();
             settings = {
+                payType: data.payType || 'daily',
+                hourlyRate: data.hourlyRate || 0,
                 rDay: data.rDay || 3000,
                 rExtra: data.rExtra || 3500,
                 rOt1: data.rOt1 || 400,
@@ -393,9 +396,24 @@ async function update() {
         uwB.textContent = `меньше нормы на ${formatHours(norm - totalHours)} ч`;
     } else uwB.hidden = true;
 
-    document.getElementById('qBase').textContent =
-        `${days} дн × ${settings.rDay.toLocaleString()} ₽ (пропорционально)`;
+    // ★ Логика отображения для почасовика
+    if (settings.payType === 'hourly') {
+        document.getElementById('rowBase').querySelector('.lbl').textContent = 'Почасовая оплата';
+        document.getElementById('qBase').textContent =
+            `${formatHours(totalHours)} ч × ${(settings.hourlyRate || 0).toLocaleString()} ₽`;
+    } else {
+        document.getElementById('rowBase').querySelector('.lbl').textContent = 'Основные дни (1–5 рабочие)';
+        document.getElementById('qBase').textContent =
+            `${days} дн × ${settings.rDay.toLocaleString()} ₽ (пропорционально)`;
+    }
     document.getElementById('vBase').textContent = payBase.toLocaleString() + ' ₽';
+
+    // Для почасовика скрываем переработку и 6-7 дни (они не применяются)
+    if (settings.payType === 'hourly') {
+        document.getElementById('rowExtra').classList.add('gone');
+        document.getElementById('rowOt1').classList.add('gone');
+        document.getElementById('rowOt2').classList.add('gone');
+    }
 
     const rowExtra = document.getElementById('rowExtra');
     const extraDaysCount = Math.max(0, Math.min(2, days - 5));
@@ -517,10 +535,14 @@ async function update() {
     }
 
     const parts = [];
-    if (payBase > 0) parts.push(`<b class="f-n">${days}×${settings.rDay.toLocaleString()}</b>`);
-    if (payExtra > 0) parts.push(`<b class="f-n">${extraDaysCount}×${settings.rExtra.toLocaleString()}</b>`);
-    if (ot1 > 0) parts.push(`<b class="f-1">${formatHours(ot1)}×${settings.rOt1.toLocaleString()}</b>`);
-    if (ot2 > 0) parts.push(`<b class="f-2">${formatHours(ot2)}×${settings.rOt2.toLocaleString()}</b>`);
+    if (settings.payType === 'hourly') {
+        if (payBase > 0) parts.push(`<b class="f-n">${formatHours(totalHours)}ч×${(settings.hourlyRate || 0).toLocaleString()}</b>`);
+    } else {
+        if (payBase > 0) parts.push(`<b class="f-n">${days}×${settings.rDay.toLocaleString()}</b>`);
+        if (payExtra > 0) parts.push(`<b class="f-n">${extraDaysCount}×${settings.rExtra.toLocaleString()}</b>`);
+        if (ot1 > 0) parts.push(`<b class="f-1">${formatHours(ot1)}×${settings.rOt1.toLocaleString()}</b>`);
+        if (ot2 > 0) parts.push(`<b class="f-2">${formatHours(ot2)}×${settings.rOt2.toLocaleString()}</b>`);
+    }
     if (stats.sundayBonus > 0) {
         parts.push(`<b style="color:var(--amber);">${stats.sundayBonus.toLocaleString()}₽ (Вс)</b>`);
     }
@@ -531,10 +553,18 @@ async function update() {
     document.getElementById('metaLine').textContent =
         `отработано ${formatHours(totalHours)} ч · норма ${formatHours(norm)} ч`;
 
-    document.getElementById('chip1').textContent = `1–5 день · ${settings.rDay.toLocaleString()} ₽`;
-    document.getElementById('chip2').textContent = `6–7 день · ${settings.rExtra.toLocaleString()} ₽`;
-    document.getElementById('chip3').textContent =
-        `переработка · ${settings.rOt1.toLocaleString()} / ${settings.rOt2.toLocaleString()} ₽/ч`;
+        if (settings.payType === 'hourly') {
+            document.getElementById('chip1').textContent = `Почасовка · ${(settings.hourlyRate || 0).toLocaleString()} ₽/ч`;
+            document.getElementById('chip2').style.display = 'none';
+            document.getElementById('chip3').style.display = 'none';
+        } else {
+            document.getElementById('chip1').textContent = `1–5 день · ${settings.rDay.toLocaleString()} ₽`;
+            document.getElementById('chip2').textContent = `6–7 день · ${settings.rExtra.toLocaleString()} ₽`;
+            document.getElementById('chip3').textContent =
+                `переработка · ${settings.rOt1.toLocaleString()} / ${settings.rOt2.toLocaleString()} ₽/ч`;
+            document.getElementById('chip2').style.display = '';
+            document.getElementById('chip3').style.display = '';
+        }
 
     const weekLabel = `неделя №${weekKey.replace('W', '')} · ${formatDateDisplay(dates[0])} – ${formatDateDisplay(dates[6])}`;
     document.getElementById('eyebrow').textContent = `Табель · ${weekLabel}`;
