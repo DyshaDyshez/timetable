@@ -398,9 +398,11 @@ async function update() {
 
     // ★ Логика отображения для почасовика
     if (settings.payType === 'hourly') {
-        document.getElementById('rowBase').querySelector('.lbl').textContent = 'Почасовая оплата';
+        // ★ Используем billedHours (часы к оплате), если они есть
+        const displayHours = stats.billedHours !== undefined ? stats.billedHours : totalHours;
+        document.getElementById('rowBase').querySelector('.lbl').textContent = 'Почасовая оплата (мин. 1 ч/день)';
         document.getElementById('qBase').textContent =
-            `${formatHours(totalHours)} ч × ${(settings.hourlyRate || 0).toLocaleString()} ₽`;
+            `${formatHours(displayHours)} ч × ${(settings.hourlyRate || 0).toLocaleString()} ₽`;
     } else {
         document.getElementById('rowBase').querySelector('.lbl').textContent = 'Основные дни (1–5 рабочие)';
         document.getElementById('qBase').textContent =
@@ -536,7 +538,9 @@ async function update() {
 
     const parts = [];
     if (settings.payType === 'hourly') {
-        if (payBase > 0) parts.push(`<b class="f-n">${formatHours(totalHours)}ч×${(settings.hourlyRate || 0).toLocaleString()}</b>`);
+        // ★ В формуле тоже используем billedHours
+        const displayHours = stats.billedHours !== undefined ? stats.billedHours : totalHours;
+        if (payBase > 0) parts.push(`<b class="f-n">${formatHours(displayHours)}ч×${(settings.hourlyRate || 0).toLocaleString()}</b>`);
     } else {
         if (payBase > 0) parts.push(`<b class="f-n">${days}×${settings.rDay.toLocaleString()}</b>`);
         if (payExtra > 0) parts.push(`<b class="f-n">${extraDaysCount}×${settings.rExtra.toLocaleString()}</b>`);
