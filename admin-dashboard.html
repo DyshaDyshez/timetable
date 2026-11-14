@@ -1122,6 +1122,233 @@
     outline: none;
     box-shadow: 0 0 0 3px rgba(62, 207, 168, 0.15);
 }
+
+
+        /* ============================================ */
+/* ★ НОВАЯ ПОСЕЩАЕМОСТЬ (Табы, Sticky, Мобилка) */
+/* ============================================ */
+
+/* Табы переключения */
+.att-view-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    position: sticky;
+    top: 0;
+    background: var(--bg); /* Цвет фона страницы, чтобы контент не просвечивал */
+    z-index: 20;
+    padding: 10px 0;
+}
+
+.att-view-tabs button {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--txt);
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.att-view-tabs button.active {
+    background: var(--teal);
+    color: #0c1520;
+    border-color: var(--teal);
+    box-shadow: 0 4px 12px rgba(62, 207, 168, 0.2);
+}
+
+/* Липкий заголовок дня */
+.attendance-day {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    background: var(--card);
+    overflow: hidden;
+}
+
+.attendance-day .day-header {
+    position: sticky;
+    top: 60px; /* Отступ под табами */
+    z-index: 10;
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 16px;
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 6px -4px rgba(0,0,0,0.2);
+}
+
+/* Строка сотрудника (режим "По дням") */
+.attendance-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 10px;
+    border-bottom: 1px dashed var(--line);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.attendance-row:last-child { border-bottom: none; }
+.attendance-row:hover { background: rgba(255,255,255,.02); }
+
+.emp-name-col {
+    flex: 1;
+    min-width: 140px;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.time-group-col {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.day-total-col {
+    font-family: var(--mono);
+    font-weight: bold;
+    color: var(--teal);
+    font-size: 0.9rem;
+    min-width: 60px;
+    text-align: right;
+}
+
+.actions-col {
+    display: flex;
+    gap: 6px;
+}
+
+/* Скрываем сегменты по умолчанию */
+.segments-row {
+    display: none;
+    width: 100%;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: var(--mut);
+}
+.attendance-row.expanded .segments-row {
+    display: block;
+}
+
+/* Мобильная адаптация */
+@media (max-width: 768px) {
+    .attendance-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    .time-group-col {
+        width: 100%;
+    }
+    .actions-col {
+        width: 100%;
+        margin-top: 4px;
+    }
+    .actions-col button {
+        flex: 1;
+        min-height: 44px;
+        font-size: 1.1rem;
+    }
+    .day-total-col {
+        text-align: left;
+        background: rgba(62,207,168,.1);
+        padding: 4px 8px;
+        border-radius: 4px;
+    }
+    .attendance-day .day-header {
+        top: 60px;
+        font-size: 0.85rem;
+        padding: 10px 12px;
+    }
+}
+
+/* ============================================ */
+/* ★ РЕЖИМ "ПО СОТРУДНИКАМ" (Карточки как в employee-view) */
+/* ============================================ */
+.emp-att-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.emp-att-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+}
+
+.emp-att-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 1rem;
+    font-weight: bold;
+}
+
+.emp-att-header .total {
+    color: var(--teal);
+    font-family: var(--mono);
+}
+
+.emp-att-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+
+.emp-att-tile {
+    text-align: center;
+    padding: 8px 2px;
+    border-radius: 6px;
+    background: rgba(255,255,255,.03);
+    border: 1px solid var(--line);
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+.emp-att-tile:active { transform: scale(0.95); }
+
+.emp-att-tile .d-name {
+    font-size: 0.55rem;
+    color: var(--mut);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+.emp-att-tile .d-hours {
+    font-size: 0.8rem;
+    font-weight: bold;
+    font-family: var(--mono);
+}
+
+.emp-att-tile.work {
+    background: rgba(62,207,168,.12);
+    border-color: rgba(62,207,168,.35);
+}
+.emp-att-tile.work .d-hours { color: var(--teal); }
+
+.emp-att-tile.empty {
+    opacity: 0.5;
+}
+.emp-att-tile.empty .d-hours { color: var(--mut); }
+
+@media (min-width: 769px) {
+    .emp-att-days { gap: 8px; }
+    .emp-att-tile { padding: 10px; }
+    .emp-att-tile .d-name { font-size: 0.7rem; }
+    .emp-att-tile .d-hours { font-size: 1rem; }
+}
+
+
+        
     </style>
 </head>
 <body>
