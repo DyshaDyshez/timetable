@@ -27,17 +27,23 @@ export function calculateWeekPay(weekData, settings = {}) {
     // ═══════════════════════════════════════════════════════════
     if (settings.payType === 'hourly') {
         let daysCount = 0;
-        let totalHours = 0;
+        let totalHours = 0;   // фактические часы
+        let billedHours = 0;  // часы к оплате (с учетом минимального 1 часа)
         
         for (let i = 0; i < workDays.length; i++) {
             if (workDays[i] && hours[i] > 0) {
                 daysCount++;
-                totalHours += Number(hours[i]);
+                const actualH = Number(hours[i]);
+                totalHours += actualH;
+                
+                // ★ ПРАВИЛО: любая часть первого часа округляется до 1 полного часа
+                const dayBilledHours = actualH < 1 ? 1 : actualH;
+                billedHours += dayBilledHours;
             }
         }
 
         const hourlyRate = Number(settings.hourlyRate) || 0;
-        const payBase = totalHours * hourlyRate;
+        const payBase = billedHours * hourlyRate;
         
         let sundayBonus = 0;
         let sundayBonusCount = 0;
@@ -52,6 +58,7 @@ export function calculateWeekPay(weekData, settings = {}) {
         return {
             days: daysCount,
             totalHours,
+            billedHours, // ★ Возвращаем часы к оплате
             norm,
             ot: 0, ot1: 0, ot2: 0,
             payBase,
