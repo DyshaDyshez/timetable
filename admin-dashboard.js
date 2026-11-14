@@ -611,6 +611,15 @@ function renderSalary() {
 // ============================================
 // РЕНДЕР ПОСЕЩАЕМОСТИ
 // ============================================
+// ★ Состояние вида (запоминается в localStorage)
+let attViewMode = localStorage.getItem('att_view_mode') || 'day';
+
+window.setAttViewMode = function(mode) {
+    attViewMode = mode;
+    localStorage.setItem('att_view_mode', mode);
+    renderAttendance();
+};
+
 function renderAttendance() {
     const container = document.getElementById('attendanceContent');
     const label = document.getElementById('attWeekLabel');
@@ -622,8 +631,10 @@ function renderAttendance() {
     const weekDates = dates.map(d => d.toISOString().slice(0, 10));
     const allDayData = [];
 
+    // 1. Собираем данные (как и раньше)
     for (const emp of allEmployees) {
-        for (const dateStr of weekDates) {
+        for (let i = 0; i < 7; i++) {
+            const dateStr = weekDates[i];
             const key = emp.id + '_' + dateStr;
             const logs = allAttendance[key] || [];
             
@@ -647,42 +658,60 @@ function renderAttendance() {
                 employeeId: emp.id,
                 employeeName: emp.name || 'Без имени',
                 date: dateStr,
+                dayIndex,
                 logs, hasLogs: logs.length > 0,
                 dayInfo, plannedHours, isWorkDay,
-                weekKey: dayWeekKey, dayIndex, adminEdited
+                weekKey: dayWeekKey, adminEdited
             });
         }
     }
 
-    allDayData.sort((a, b) => {
-        if (a.date !== b.date) return a.date.localeCompare(b.date);
-        return a.employeeName.localeCompare(b.employeeName);
-    });
+    // 2. Рендерим Табы
+    let html = `
+        <div class="att-view-tabs">
+            <button class="${attViewMode === 'day' ? 'active' : ''}" onclick="window.setAttViewMode('day')">📅 По дням</button>
+            <button class="${attViewMode === 'employee' ? 'active' : ''}" onclick="window.setAttViewMode('employee')">👥 По сотрудникам</button>
+        </div>
+    `;
 
-    if (allDayData.length === 0) {
-        container.innerHTML = `<div class="no-data">Нет данных за эту неделю</div>`;
-        return;
+    // 3. Рендерим контент в зависимости от режима
+    if (attViewMode === 'day') {
+        html += renderAttByDay(allDayData, weekDates);
+    } else {
+        html += renderAttByEmployee(allDayData, weekDates);
     }
 
+    container.innerHTML = html;
+}
+
+// --- РЕНДЕР ПО ДНЯМ ---
+function renderAttByDay(allDayData, weekDates) {
     const grouped = {};
     for (const data of allDayData) {
         if (!grouped[data.date]) grouped[data.date] = [];
         grouped[data.date].push(data);
     }
 
-    let html = `<div class="attendance-grid">`;
     const sortedDates = Object.keys(grouped).sort();
+    let html = '<div class="attendance-grid">';
 
     for (const date of sortedDates) {
         const dayName = getDayName(date);
         const dayMonth = getDayMonth(date);
         const isTodayDate = isToday(date);
         const items = grouped[date];
+        
+        // Считаем сумму часов за день для шапки
+        const totalHoursDay = items.reduce((sum, item) => {
+            return sum + (item.hasLogs && item.dayInfo ? item.dayInfo.totalHoursDecimal : 0);
+        }, 0);
 
-        html += `<div class="attendance-day" style="${isTodayDate ? 'border-color: var(--amber);' : ''}">
-            <div class="day-header">
-                <span>${dayName}, ${dayMonth} ${isTodayDate ? '⭐ Сегодня' : ''}</span>
-                <span class="date">${items.length} сотрудников</span>
+        html += `<div class="attendance-day">
+            <div class="day-header" style="${isTodayDate ? 'border-left: 4px solid var(--amber);' : ''}">
+                <span>${dayName}, ${dayMonth} ${isTodayDate ? '⭐' : ''}</span>
+                <span style="font-size:0.75rem; color:var(--mut); font-weight:normal;">
+                    ${items.length} сотр. · ${totalHoursDay.toFixed(1)} ч
+                </span>
             </div>`;
 
         for (const item of items) {
@@ -691,6 +720,7 @@ function renderAttendance() {
             
             if (item.hasLogs && item.dayInfo) {
                 const sorted = [...item.logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+                // ... (фильтрация логов как было) ...
                 const filtered = [];
                 let lastType = null;
                 for (const log of sorted) {
@@ -704,21 +734,13 @@ function renderAttendance() {
                 for (const log of filtered) {
                     const time = new Date(log.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
                     const icon = log.type === 'in' ? '✅' : '🚪';
-                    const label = log.type === 'in' ? 'Пришёл' : 'Ушёл';
-                    logsHtml += `
-                        <span class="time-badge ${log.type}" 
-                              onclick="window.editAttendanceTime('${log.id}', '${log.timestamp}')"
-                              title="Нажмите чтобы изменить время">
-                            ${icon} ${time} (${label})
-                            <span class="edit-hint">✏️</span>
-                        </span>
-                    `;
+                    logsHtml += `<span class="time-badge ${log.type}" onclick="event.stopPropagation(); window.editAttendanceTime('${log.id}', '${log.timestamp}')">${icon} ${time}</span>`;
                 }
 
-                if (item.dayInfo.segments && item.dayInfo.segments.length > 0) {
+                if (item.dayInfo.segments) {
                     segmentsHtml = item.dayInfo.segments.map((seg) => {
                         const startStr = formatTime(seg.start);
-                        const endStr = seg.isOpen ? '... (сейчас)' : formatTime(seg.end);
+                        const endStr = seg.isOpen ? '...' : formatTime(seg.end);
                         const h = Math.floor(seg.minutes / 60);
                         const m = seg.minutes % 60;
                         return `<span class="segment">${startStr} → ${endStr} <span class="segment-time">${h}ч ${m}м</span></span>`;
@@ -726,49 +748,142 @@ function renderAttendance() {
                 }
             }
 
-            let totalDisplay = '';
-            let totalClass = '';
-            
+            let totalDisplay = '—';
+            let totalClass = 'empty';
             if (item.hasLogs && item.dayInfo) {
                 totalDisplay = item.dayInfo.totalHours;
                 totalClass = 'has-time';
             } else if (item.adminEdited && item.plannedHours > 0) {
-                totalDisplay = `${Math.floor(item.plannedHours)}ч ${Math.round((item.plannedHours % 1) * 60)}м (админ)`;
+                totalDisplay = `${item.plannedHours.toFixed(1)}ч (адм)`;
                 totalClass = 'planned';
-            } else {
-                totalDisplay = '—';
-                totalClass = 'empty';
             }
 
-            const totalMinutes = item.hasLogs && item.dayInfo ? item.dayInfo.totalMinutes : 0;
+            html += `
+                <div class="attendance-row" onclick="this.classList.toggle('expanded')">
+                    <div class="emp-name-col">${item.employeeName}</div>
+                    <div class="time-group-col">
+                        ${item.hasLogs ? logsHtml : '<span style="font-size:.7rem;color:var(--mut);">Нет отметок</span>'}
+                    </div>
+                    <div class="day-total-col ${totalClass}">${totalDisplay}</div>
+                    <div class="actions-col">
+                        <button class="btn-sm amber" onclick="event.stopPropagation(); window.editEmployeeDay('${item.employeeId}', '${item.date}', ${item.dayIndex})">✏️</button>
+                        ${item.hasLogs ? `<button class="btn-sm red" onclick="event.stopPropagation(); window.deleteDayAttendance('${item.employeeId}', '${item.date}')">🗑️</button>` : ''}
+                    </div>
+                    ${segmentsHtml ? `<div class="segments-row">${segmentsHtml}</div>` : ''}
+                </div>
+            `;
+        }
+        html += `</div>`;
+    }
+    html += `</div>`;
+    return html;
+}
+
+// --- РЕНДЕР ПО СОТРУДНИКАМ ---
+function renderAttByEmployee(allDayData, weekDates) {
+    const empMap = {};
+    for (const emp of allEmployees) {
+        empMap[emp.id] = { name: emp.name || 'Без имени', days: {} };
+    }
+
+    for (const item of allDayData) {
+        empMap[item.employeeId].days[item.date] = item;
+    }
+
+    let html = '<div class="emp-att-grid">';
+    const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+    for (const empId in empMap) {
+        const emp = empMap[empId];
+        let weekTotal = 0;
+        
+        // Сначала считаем общую сумму часов за неделю
+        for (const dateStr of weekDates) {
+            const item = emp.days[dateStr];
+            if (item && item.hasLogs && item.dayInfo) {
+                weekTotal += item.dayInfo.totalHoursDecimal;
+            } else if (item && item.adminEdited && item.plannedHours > 0) {
+                weekTotal += item.plannedHours;
+            }
+        }
+
+        html += `
+            <div class="emp-att-card">
+                <div class="emp-att-header">
+                    <span>👤 ${emp.name}</span>
+                    <span class="total">${weekTotal.toFixed(1)} ч</span>
+                </div>
+                <div class="emp-att-days">`;
+
+        for (let i = 0; i < 7; i++) {
+            const dateStr = weekDates[i];
+            const item = emp.days[dateStr];
+            const hasWork = item && (item.hasLogs || (item.adminEdited && item.plannedHours > 0));
+            
+            let hoursDisplay = '—';
+            if (item && item.hasLogs && item.dayInfo) {
+                hoursDisplay = item.dayInfo.totalHoursDecimal.toFixed(1);
+            } else if (item && item.adminEdited && item.plannedHours > 0) {
+                hoursDisplay = item.plannedHours.toFixed(1);
+            }
 
             html += `
-                <div class="attendance-row ${item.hasLogs ? 'has-logs' : 'no-logs'}">
-                    <span class="emp-name">${item.employeeName}</span>
-                    <div class="time-group">
-                        ${item.hasLogs ? logsHtml : '<span style="font-size:.65rem;color:var(--mut);">Нет отметок</span>'}
-                    </div>
-                    <div class="day-total">
-                        <span class="total-badge ${totalClass}">
-                            📊 ${totalDisplay}
-                            ${item.hasLogs && totalMinutes > 0 ? `<span class="total-decimal">(${item.dayInfo.totalHoursDecimal.toFixed(2)} ч)</span>` : ''}
-                        </span>
-                    </div>
-                    ${item.hasLogs && segmentsHtml ? `<div class="segments-info">${segmentsHtml}</div>` : ''}
-                    <div class="actions">
-                        <button class="btn-sm amber" onclick="window.editEmployeeDay('${item.employeeId}', '${item.date}', ${item.dayIndex})" title="Редактировать день">✏️</button>
-                        ${item.hasLogs ? `<button class="btn-sm red" onclick="window.deleteDayAttendance('${item.employeeId}', '${item.date}')" title="Удалить все отметки за день">🗑️</button>` : ''}
-                    </div>
+                <div class="emp-att-tile ${hasWork ? 'work' : 'empty'}" 
+                     onclick="window.showAttDayModal('${empId}', '${dateStr}', ${i})">
+                    <div class="d-name">${dayNames[i]}</div>
+                    <div class="d-hours">${hoursDisplay}</div>
                 </div>
             `;
         }
 
-        html += `</div>`;
+        html += `</div></div>`;
+    }
+    html += `</div>`;
+    return html;
+}
+
+// --- МОДАЛКА ДЕТАЛЕЙ ДНЯ (Для режима "По сотрудникам") ---
+window.showAttDayModal = function(empId, dateStr, dayIndex) {
+    const emp = allEmployees.find(e => e.id === empId);
+    if (!emp) return;
+    
+    // Находим данные этого дня
+    const key = empId + '_' + dateStr;
+    const logs = allAttendance[key] || [];
+    const dayInfo = logs.length > 0 ? calculateDayHoursFromLogs(logs) : null;
+    
+    const modal = document.getElementById('modalOverlay');
+    document.getElementById('modalTitle').textContent = `📅 ${emp.name}`;
+    document.getElementById('modalSub').textContent = `${formatDateDisplay(new Date(dateStr + 'T00:00:00Z'))} (${getDayName(dateStr)})`;
+
+    let logsHtml = '';
+    if (dayInfo) {
+        const sorted = [...logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        logsHtml = sorted.map(l => {
+            const t = new Date(l.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            return `<span class="time-badge ${l.type}" style="margin:4px; padding:6px 12px; font-size:.9rem;">${l.type === 'in' ? '✅' : '🚪'} ${t}</span>`;
+        }).join('');
     }
 
-    html += `</div>`;
-    container.innerHTML = html;
-}
+    document.getElementById('modalBody').innerHTML = `
+        <div style="text-align:center; padding:20px 0;">
+            ${logsHtml || '<span style="color:var(--mut);">Нет отметок</span>'}
+        </div>
+        ${dayInfo ? `<div style="text-align:center; font-size:1.5rem; font-weight:bold; color:var(--teal); margin-bottom:20px;">⏱ ${dayInfo.totalHours}</div>` : ''}
+    `;
+
+    document.getElementById('modalActions').innerHTML = `
+        <button class="btn btn-amber" id="openEditDayBtn">✏️ Редактировать</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('modalOverlay').classList.remove('active')">Закрыть</button>
+    `;
+    
+    modal.classList.add('active');
+    
+    document.getElementById('openEditDayBtn').onclick = () => {
+        modal.classList.remove('active');
+        window.editEmployeeDay(empId, dateStr, dayIndex);
+    };
+};
 
 // ============================================
 // ★ РЕНДЕР РАСПИСАНИЯ
