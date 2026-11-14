@@ -458,10 +458,10 @@ function renderSalary() {
 
     // ===== Таблица =====
     let tableHTML = `<table style="table-layout:fixed; min-width: 1050px; width: 100%;">
-        <colgroup>
+                <colgroup>
             <col style="width: 160px;"><col style="width: 60px;"><col style="width: 70px;">
             <col style="width: 80px;"><col style="width: 120px;"><col style="width: 120px;">
-            <col style="width: 120px;"><col style="width: 100px;"><col style="width: 110px;">
+            <col style="width: 120px;"><col style="width: 100px;"><col style="width: 140px;">
         </colgroup>
                         <thead><tr>
             <th class="col-employee">Сотрудник</th>
@@ -523,15 +523,21 @@ function renderSalary() {
         }
 
         let actionButtons = '';
+        // ★ Новая кнопка "Глазик" для перехода на страницу сотрудника
+        const eyeBtn = `<button class="btn-sm ghost" onclick="window.openAsEmployee('${emp.id}')" title="Открыть страницу сотрудника" style="padding: 4px 8px;">👁️</button>`;
+
         if (hasRequest && !isPaid) {
-            actionButtons = `<button class="btn-sm teal" onclick="window.showRequestDetails('${requestData.id}')" style="padding:6px 12px; font-weight:bold; animation: requestPulse 1.5s infinite;">💰 ЗП</button>`;
+            actionButtons = `<button class="btn-sm teal" onclick="window.showRequestDetails('${requestData.id}')" style="padding:6px 12px; font-weight:bold; animation: requestPulse 1.5s infinite;">💰 ЗП</button>
+                             ${eyeBtn}`;
         } else if (!hasRequest && stats.days > 0 && stats.total > 0) {
             // ★ Нет запроса, но есть рабочие дни — даём кнопку "Выплатить"
             actionButtons = `<button class="btn-sm teal" onclick="window.manualPayout('${emp.id}', '${weekKey}', ${stats.total}, ${stats.days}, ${stats.totalHours})" style="padding:6px 12px; font-weight:bold;">💸 Выплатить</button>
-                             <button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')">⚙️</button>`;
+                             <button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')" title="Настройки">⚙️</button>
+                             ${eyeBtn}`;
         } else {
-            actionButtons = `<button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')">⚙️</button>
-                             <button class="btn-sm amber" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')">👁️</button>`;
+            actionButtons = `<button class="btn-sm ghost" onclick="window.showEmployeeSettings('${emp.id}')" title="Настройки">⚙️</button>
+                             <button class="btn-sm amber" onclick="window.viewWeekDetails('${emp.id}','${weekKey}')" title="Детали недели">📊</button>
+                             ${eyeBtn}`;
         }
         
         tableHTML += `<tr style="${rowStyle}">
