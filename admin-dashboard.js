@@ -2303,6 +2303,9 @@ window.showRequestDetails = function(requestId) {
         <button class="btn btn-amber" id="markPaidBtn" style="background:var(--teal); color:#0c1520; font-weight:bold;">
             ✅ Оплачено
         </button>
+        <button class="btn btn-red" id="cancelRequestBtn" style="background:var(--red); color:#fff; border-color:var(--red);">
+            ❌ Отменить
+        </button>
         <button class="btn btn-ghost" id="closeRequestBtn">Закрыть</button>
     `;
     
@@ -2346,7 +2349,8 @@ window.showRequestDetails = function(requestId) {
                 status: 'paid',
                 paidAt: new Date().toISOString(),
                 paidBy: currentUser?.email || 'admin',
-                paidAmount: Math.round(finalPayToConfirm)
+                paidAmount: Math.round(finalPayToConfirm),
+                deductAmount: actualDeduct // ★ Сохраняем сумму удержания для возможной отмены
             });
             await logAction('salary_paid', { 
                 employeeName: request.employeeName, 
@@ -2392,6 +2396,64 @@ window.showRequestDetails = function(requestId) {
         }
     });
     
+    // ★ Логика отмены запроса
+    document.getElementById('cancelRequestBtn').addEventListener('click', async () => {
+        const isPaid = request.status === 'paid';
+        const confirmMsg = isPaid 
+            ? '⚠️ Эта выплата уже подтверждена!\n\nОтменить её, вернуть в статус «Ожидает» и восстановить списанный аванс?'
+            : '❌ Отменить этот запрос на ЗП?\n\nОн будет полностью удалён из системы.';
+            
+        if (!confirm(confirmMsg)) return;
+        
+        try {
+            if (isPaid) {
+                // Возвращаем в ожидание
+                await updateDoc(doc(db, 'salaryRequests', requestId), {
+                    status: 'pending',
+                    paidAt: null,
+                    paidAmount: 0
+                });
+                
+                // Восстанавливаем аванс
+                const deductAmount = Number(request.deductAmount || 0);
+                if (deductAmount > 0) {
+                    const advList = allAdvances[request.employeeId]?.list || [];
+                    if (advList.length > 0) {
+                        const adv = advList[0];
+                        const advRemaining = adv.remainingAmount !== undefined ? adv.remainingAmount : adv.amount;
+                        await updateDoc(doc(db, 'salaryAdvances', adv.id), {
+                            remainingAmount: advRemaining + deductAmount,
+                            status: 'active',
+                            repaidAt: null
+                        });
+                    } else {
+                        await addDoc(collection(db, 'salaryAdvances'), {
+                            employeeId: request.employeeId,
+                            employeeName: request.employeeName,
+                            amount: deductAmount,
+                            remainingAmount: deductAmount,
+                            type: 'advance_restore',
+                            status: 'active',
+                            createdAt: new Date().toISOString(),
+                            comment: 'Восстановление при отмене выплаты'
+                        });
+                    }
+                }
+                showNotification('🔄 Выплата отменена, аванс восстановлен. Статус: Ожидает.');
+            } else {
+                // Удаляем, если ожидает
+                await deleteDoc(doc(db, 'salaryRequests', requestId));
+                showNotification('🗑️ Запрос на ЗП успешно отменён.');
+            }
+            modal.classList.remove('active');
+            renderSalary();
+            renderRequestsBanner();
+        } catch (error) {
+            console.error(error);
+            showNotification('❌ Ошибка отмены: ' + error.message, true);
+        }
+    });
+
     document.getElementById('closeRequestBtn').addEventListener('click', () => modal.classList.remove('active'));
 };
 
